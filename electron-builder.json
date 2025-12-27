@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.humanizer.desktop",
+  "productName": "Humanizer",
+  "directories": {
+    "output": "release",
+    "buildResources": "build-resources"
+  },
+  "files": [
+    "dist-electron/**/*",
+    "apps/web/dist/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "../narrative-studio/archive-server.js",
+      "to": "archive-server.js"
+    }
+  ],
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["universal"]
+      },
+      {
+        "target": "zip",
+        "arch": ["universal"]
+      }
+    ],
+    "category": "public.app-category.productivity",
+    "icon": "build-resources/icon.icns",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build-resources/entitlements.mac.plist",
+    "entitlementsInherit": "build-resources/entitlements.mac.plist",
+    "notarize": false
+  },
+  "dmg": {
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ],
+    "window": {
+      "width": 540,
+      "height": 400
+    }
+  },
+  "win": {
+    "target": ["nsis"],
+    "icon": "build-resources/icon.ico"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Office",
+    "icon": "build-resources/icon.png"
+  }
+}

@@ -1,0 +1,20 @@
+/**
+ * Workspace Components
+ *
+ * Components for the main workspace pane
+ */
+
+// Core content views
+export { BookContentView, type BookContent, type BookContentType } from './BookContentView';
+export { ContainerWorkspace } from './ContainerWorkspace';
+
+// Analysis and highlighting
+export { HighlightableText, SentenceHighlightableText } from './HighlightableText';
+export { AnalyzableMarkdown, AnalyzableMarkdownWithMetrics } from './AnalyzableMarkdown';
+export { DiffView } from './DiffView';
+
+// Welcome and onboarding
+export { WelcomeScreen } from './WelcomeScreen';
+
+// Data structure inspection
+export { StructureInspector } from './StructureInspector';
