@@ -26,6 +26,9 @@ import { getChatService, closeChatService, type ChatServiceConfig, type SendMess
 import { getCouncilOrchestrator, type CouncilOrchestrator, type ProposedAction, type TaskOptions } from './agents/council/orchestrator';
 import { getAgentRegistry } from './agents/runtime/registry';
 
+// Embedded Archive Server
+import { startArchiveServer as startEmbeddedArchiveServer, stopArchiveServer as stopEmbeddedArchiveServer, isArchiveServerRunning } from './archive-server';
+
 // Set app name for macOS menu bar (development mode)
 // In production, this comes from electron-builder.json productName
 app.name = 'Humanizer';
@@ -147,6 +150,8 @@ async function startArchiveServer(): Promise<number | null> {
   }
 
   const devPort = 3002;
+
+  // In development, check if external server is already running
   if (!app.isPackaged) {
     const externalRunning = await checkServerRunning(devPort);
     if (externalRunning) {
@@ -156,65 +161,35 @@ async function startArchiveServer(): Promise<number | null> {
     }
   }
 
-  const serverPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'archive-server.js')
-    : path.join(__dirname, '../../narrative-studio/archive-server.js');
-
-  if (!fs.existsSync(serverPath)) {
-    console.warn('Archive server not found at:', serverPath);
-    return null;
-  }
-
+  // Use embedded archive server
   const port = app.isPackaged ? await findFreePort() : devPort;
   const archivePath = store.get('archivePath');
 
-  console.log(`Starting archive server on port ${port}...`);
-
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    PORT: port.toString(),
-  };
-
+  // Set environment for archive path if configured
   if (archivePath) {
-    env.ARCHIVE_PATH = archivePath;
+    process.env.ARCHIVE_PATH = archivePath;
   }
+  process.env.ARCHIVE_SERVER_PORT = port.toString();
 
-  const command = app.isPackaged ? 'node' : 'npx';
-  const args = app.isPackaged ? [serverPath] : ['tsx', serverPath];
+  console.log(`Starting embedded archive server on port ${port}...`);
 
-  archiveServerProcess = spawn(command, args, {
-    env,
-    cwd: path.dirname(serverPath),
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  archiveServerProcess.stdout?.on('data', (data) => {
-    console.log(`[Archive] ${data}`);
-  });
-
-  archiveServerProcess.stderr?.on('data', (data) => {
-    console.error(`[Archive Error] ${data}`);
-  });
-
-  archiveServerProcess.on('exit', (code) => {
-    console.log(`Archive server exited (${code})`);
-    archiveServerProcess = null;
-  });
-
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    if (await checkServerRunning(port)) {
-      console.log('Archive server ready');
-      archiveServerPort = port;
-      return port;
-    }
+  try {
+    const serverUrl = await startEmbeddedArchiveServer(port);
+    console.log('Archive server ready:', serverUrl);
+    archiveServerPort = port;
+    return port;
+  } catch (err) {
+    console.error('Failed to start embedded archive server:', err);
+    return null;
   }
-
-  console.error('Archive server failed to start');
-  return null;
 }
 
-function stopArchiveServer() {
+async function stopArchiveServer() {
+  if (isArchiveServerRunning()) {
+    await stopEmbeddedArchiveServer();
+    archiveServerPort = null;
+  }
+  // Legacy cleanup for spawned process
   if (archiveServerProcess) {
     archiveServerProcess.kill();
     archiveServerProcess = null;
@@ -284,9 +259,9 @@ function registerIPCHandlers() {
     return { success: !!port, port };
   });
 
-  ipcMain.handle('archive:disable', () => {
+  ipcMain.handle('archive:disable', async () => {
     store.set('archiveServerEnabled', false);
-    stopArchiveServer();
+    await stopArchiveServer();
     return { success: true };
   });
 
@@ -294,7 +269,7 @@ function registerIPCHandlers() {
     if (newPath) {
       store.set('archivePath', newPath);
     }
-    stopArchiveServer();
+    await stopArchiveServer();
     const port = await startArchiveServer();
     return { success: !!port, port };
   });
