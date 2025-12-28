@@ -16,6 +16,10 @@ import { createArchivesRouter } from './routes/archives';
 import { createConversationsRouter } from './routes/conversations';
 import { createEmbeddingsRouter } from './routes/embeddings';
 import { createFacebookRouter } from './routes/facebook';
+import { createContentRouter } from './routes/content';
+
+// Service registry for cleanup on archive switch
+import { resetServices } from './services/registry';
 
 // ═══════════════════════════════════════════════════════════════════
 // SERVER INSTANCE
@@ -86,6 +90,7 @@ function createApp(): Express {
   app.use('/api/conversations', createConversationsRouter());
   app.use('/api/embeddings', createEmbeddingsRouter());
   app.use('/api/facebook', createFacebookRouter());
+  app.use('/api/content', createContentRouter());
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

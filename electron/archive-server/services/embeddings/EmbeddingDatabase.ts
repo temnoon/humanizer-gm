@@ -3352,6 +3352,18 @@ export class EmbeddingDatabase {
   }
 
   // ===========================================================================
+  // Raw Access (for complex queries in routes)
+  // ===========================================================================
+
+  /**
+   * Get raw database instance for complex queries
+   * Use sparingly - prefer adding methods to this class
+   */
+  getRawDb(): Database.Database {
+    return this.db;
+  }
+
+  // ===========================================================================
   // Cleanup
   // ===========================================================================
 
