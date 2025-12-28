@@ -29,6 +29,9 @@ import { getAgentRegistry } from './agents/runtime/registry';
 // Embedded Archive Server
 import { startArchiveServer as startEmbeddedArchiveServer, stopArchiveServer as stopEmbeddedArchiveServer, isArchiveServerRunning } from './archive-server';
 
+// Embedded NPE-Local Server (AI Detection, Transformations)
+import { startNpeLocalServer, stopNpeLocalServer, isNpeLocalServerRunning, getNpeLocalPort } from './npe-local';
+
 // Set app name for macOS menu bar (development mode)
 // In production, this comes from electron-builder.json productName
 app.name = 'Humanizer';
@@ -54,6 +57,7 @@ const store = new Store({
 let mainWindow: BrowserWindow | null = null;
 let archiveServerProcess: ChildProcess | null = null;
 let archiveServerPort: number | null = null;
+let npeLocalPort: number | null = null;
 
 // ============================================================
 // WINDOW MANAGEMENT
@@ -198,6 +202,45 @@ async function stopArchiveServer() {
 }
 
 // ============================================================
+// NPE-LOCAL SERVER (AI Detection, Transformations)
+// ============================================================
+
+async function startNpeLocal(): Promise<number | null> {
+  const devPort = 3003;
+
+  // In development, check if external server is already running
+  if (!app.isPackaged) {
+    const externalRunning = await checkServerRunning(devPort);
+    if (externalRunning) {
+      console.log(`Using external npe-local server on port ${devPort}`);
+      npeLocalPort = devPort;
+      return devPort;
+    }
+  }
+
+  const port = app.isPackaged ? await findFreePort() : devPort;
+
+  console.log(`Starting embedded npe-local server on port ${port}...`);
+
+  try {
+    const serverUrl = await startNpeLocalServer({ port });
+    console.log('NPE-Local server ready:', serverUrl);
+    npeLocalPort = port;
+    return port;
+  } catch (err) {
+    console.error('Failed to start embedded npe-local server:', err);
+    return null;
+  }
+}
+
+async function stopNpeLocal() {
+  if (isNpeLocalServerRunning()) {
+    await stopNpeLocalServer();
+    npeLocalPort = null;
+  }
+}
+
+// ============================================================
 // IPC HANDLERS
 // ============================================================
 
@@ -272,6 +315,24 @@ function registerIPCHandlers() {
     await stopArchiveServer();
     const port = await startArchiveServer();
     return { success: !!port, port };
+  });
+
+  // NPE-Local (AI Detection, Transformations)
+  ipcMain.handle('npe:port', () => npeLocalPort);
+  ipcMain.handle('npe:status', async () => {
+    if (!npeLocalPort) {
+      return { running: false, port: null };
+    }
+    try {
+      const response = await fetch(`http://localhost:${npeLocalPort}/health`);
+      if (response.ok) {
+        const data = await response.json();
+        return { running: true, port: npeLocalPort, ...data };
+      }
+    } catch {
+      // Server not responding
+    }
+    return { running: false, port: npeLocalPort };
   });
 
   // Ollama
@@ -734,6 +795,9 @@ app.whenReady().then(async () => {
     await startArchiveServer();
   }
 
+  // Always start npe-local server for AI detection and transformations
+  await startNpeLocal();
+
   await createWindow();
 
   app.on('activate', async () => {
@@ -752,6 +816,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   console.log('Shutting down...');
   stopArchiveServer();
+  stopNpeLocal();
   closeChatService();
 });
 
