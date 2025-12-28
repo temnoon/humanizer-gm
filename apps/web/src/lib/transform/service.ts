@@ -20,6 +20,7 @@ import type {
   HumanizationIntensity,
 } from './types';
 import { getStoredToken } from '../auth';
+import { isElectron, getNpeLocalUrl, isNpeLocalAvailable } from '../platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -28,6 +29,10 @@ import { getStoredToken } from '../auth';
 // API base URLs
 const CLOUD_API_BASE = import.meta.env.VITE_API_URL || 'https://npe-api.tem-527.workers.dev';
 const OLLAMA_API_BASE = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434';
+
+// Cached npe-local URL
+let npeLocalUrl: string | null = null;
+let npeLocalChecked = false;
 
 // Request timeouts
 const DEFAULT_TIMEOUT = 120_000; // 2 minutes
@@ -40,6 +45,35 @@ const LONG_TIMEOUT = 300_000;    // 5 minutes for deep analysis
 let ollamaAvailable: boolean | null = null;
 let ollamaCheckTime = 0;
 const OLLAMA_CHECK_INTERVAL = 30_000; // Check every 30 seconds
+
+/**
+ * Get the NPE-Local URL if running in Electron
+ * Returns null if not in Electron or npe-local is not running
+ */
+async function getNpeLocalApiBase(): Promise<string | null> {
+  if (!isElectron) return null;
+
+  // Check once per session
+  if (!npeLocalChecked) {
+    npeLocalChecked = true;
+    const available = await isNpeLocalAvailable();
+    if (available) {
+      npeLocalUrl = await getNpeLocalUrl();
+    }
+  }
+
+  return npeLocalUrl;
+}
+
+/**
+ * Get the best API base URL
+ * Priority: npe-local (Electron) > cloud
+ */
+async function getTransformApiBase(): Promise<string> {
+  const npeBase = await getNpeLocalApiBase();
+  if (npeBase) return npeBase;
+  return CLOUD_API_BASE;
+}
 
 /**
  * Check if Ollama is available locally
@@ -96,13 +130,15 @@ interface FetchOptions {
   body?: unknown;
   timeout?: number;
   signal?: AbortSignal;
+  /** Force cloud API (bypasses npe-local) */
+  forceCloud?: boolean;
 }
 
 async function apiFetch<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<T> {
-  const { method = 'POST', body, timeout = DEFAULT_TIMEOUT, signal } = options;
+  const { method = 'POST', body, timeout = DEFAULT_TIMEOUT, signal, forceCloud = false } = options;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -112,18 +148,22 @@ async function apiFetch<T>(
     ? AbortSignal.any([signal, controller.signal])
     : controller.signal;
 
+  // Get the appropriate API base (npe-local or cloud)
+  const apiBase = forceCloud ? CLOUD_API_BASE : await getTransformApiBase();
+
   // Build headers with auth if available
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
+  // Only add auth token for cloud requests
   const token = getStoredToken();
-  if (token) {
+  if (token && apiBase === CLOUD_API_BASE) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
   try {
-    const response = await fetch(`${CLOUD_API_BASE}${endpoint}`, {
+    const response = await fetch(`${apiBase}${endpoint}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,

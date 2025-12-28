@@ -68,7 +68,43 @@ export interface ElectronAPI {
     disable: () => Promise<boolean>;
     status: () => Promise<{ installed: boolean; running: boolean }>;
   };
+  npe: {
+    port: () => Promise<number | null>;
+    status: () => Promise<NpeStatus>;
+  };
   cloudDrives: CloudDrivesAPI;
+}
+
+export interface NpeStatus {
+  running: boolean;
+  port: number | null;
+  service?: string;
+  version?: string;
+  ollama?: { available: boolean; url: string };
+}
+
+/**
+ * Get NPE-Local API base URL (when in Electron)
+ */
+export async function getNpeLocalUrl(): Promise<string | null> {
+  const api = getElectronAPI();
+  if (!api) return null;
+
+  const port = await api.npe.port();
+  if (!port) return null;
+
+  return `http://localhost:${port}`;
+}
+
+/**
+ * Check if NPE-Local is available
+ */
+export async function isNpeLocalAvailable(): Promise<boolean> {
+  const api = getElectronAPI();
+  if (!api) return false;
+
+  const status = await api.npe.status();
+  return status.running;
 }
 
 export interface CloudDrivesAPI {

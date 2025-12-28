@@ -31,6 +31,7 @@ export function createTransformationsRouter(): Router {
 
   /**
    * POST /transformations/humanize
+   * POST /transformations/computer-humanizer (alias for cloud API compatibility)
    * Humanize AI-generated text
    *
    * Request:
@@ -43,9 +44,9 @@ export function createTransformationsRouter(): Router {
    *   }
    * }
    */
-  router.post('/humanize', async (req: Request, res: Response) => {
+  const humanizeHandler = async (req: Request, res: Response) => {
     try {
-      const { text, options } = req.body;
+      const { text, intensity, voiceSamples, enableLLMPolish, model } = req.body;
 
       if (!text || typeof text !== 'string') {
         return res.status(400).json({ error: 'Text is required' });
@@ -65,22 +66,44 @@ export function createTransformationsRouter(): Router {
         });
       }
 
-      const result = await humanizeText(trimmedText, options || {});
+      const options = {
+        intensity: intensity || 'moderate',
+        voiceSamples,
+        enableLLMPolish,
+        model,
+      };
 
-      res.json(result);
+      const result = await humanizeText(trimmedText, options);
+
+      // Transform to cloud API response format
+      res.json({
+        transformation_id: `local-${Date.now()}`,
+        humanizedText: result.humanizedText,
+        model_used: result.modelUsed || 'local',
+        processing: {
+          totalTimeMs: result.processing?.totalDurationMs || 0,
+        },
+        baseline: result.baseline,
+        final: result.final,
+        improvement: result.improvement,
+      });
     } catch (error) {
       console.error('[Humanize] Error:', error);
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Humanization failed',
       });
     }
-  });
+  };
+
+  router.post('/humanize', humanizeHandler);
+  router.post('/computer-humanizer', humanizeHandler);
 
   /**
    * POST /transformations/analyze
+   * POST /transformations/computer-humanizer/analyze (alias for cloud API compatibility)
    * Analyze text for humanization potential
    */
-  router.post('/analyze', async (req: Request, res: Response) => {
+  const analyzeHandler = async (req: Request, res: Response) => {
     try {
       const { text } = req.body;
 
@@ -97,7 +120,10 @@ export function createTransformationsRouter(): Router {
         error: error instanceof Error ? error.message : 'Analysis failed',
       });
     }
-  });
+  };
+
+  router.post('/analyze', analyzeHandler);
+  router.post('/computer-humanizer/analyze', analyzeHandler);
 
   /**
    * POST /transformations/chat
@@ -173,6 +199,116 @@ export function createTransformationsRouter(): Router {
       console.error('[Models] Error:', error);
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Failed to list models',
+      });
+    }
+  });
+
+  /**
+   * POST /transformations/persona
+   * Transform text using a persona
+   */
+  router.post('/persona', async (req: Request, res: Response) => {
+    try {
+      const { text, persona, preserveLength, model } = req.body;
+
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'Text is required' });
+      }
+
+      if (!persona || typeof persona !== 'string') {
+        return res.status(400).json({ error: 'Persona is required' });
+      }
+
+      const trimmedText = text.trim();
+      if (trimmedText.length < 20) {
+        return res.status(400).json({ error: 'Text must be at least 20 characters' });
+      }
+
+      const provider = await createLLMProvider(model);
+      if (!(await provider.isAvailable())) {
+        return res.status(503).json({ error: 'LLM provider not available' });
+      }
+
+      // Build persona prompt
+      const systemPrompt = `You are a text transformation assistant. Transform the following text to match this persona: "${persona}".
+${preserveLength ? 'Maintain approximately the same length as the original.' : ''}
+Preserve the core meaning and information while adapting the voice and style.
+Return ONLY the transformed text, no explanations.`;
+
+      const response = await provider.call({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: trimmedText },
+        ],
+        max_tokens: Math.max(2000, trimmedText.length * 2),
+        temperature: 0.7,
+      });
+
+      res.json({
+        transformation_id: `local-persona-${Date.now()}`,
+        transformed_text: response.response,
+        model_used: response.model,
+        processing: { totalTimeMs: 0 },
+      });
+    } catch (error) {
+      console.error('[Persona] Error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Persona transformation failed',
+      });
+    }
+  });
+
+  /**
+   * POST /transformations/style
+   * Transform text using a style
+   */
+  router.post('/style', async (req: Request, res: Response) => {
+    try {
+      const { text, style, preserveLength, model } = req.body;
+
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'Text is required' });
+      }
+
+      if (!style || typeof style !== 'string') {
+        return res.status(400).json({ error: 'Style is required' });
+      }
+
+      const trimmedText = text.trim();
+      if (trimmedText.length < 20) {
+        return res.status(400).json({ error: 'Text must be at least 20 characters' });
+      }
+
+      const provider = await createLLMProvider(model);
+      if (!(await provider.isAvailable())) {
+        return res.status(503).json({ error: 'LLM provider not available' });
+      }
+
+      // Build style prompt
+      const systemPrompt = `You are a text transformation assistant. Transform the following text to match this style: "${style}".
+${preserveLength ? 'Maintain approximately the same length as the original.' : ''}
+Preserve the core meaning and information while adapting the writing style.
+Return ONLY the transformed text, no explanations.`;
+
+      const response = await provider.call({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: trimmedText },
+        ],
+        max_tokens: Math.max(2000, trimmedText.length * 2),
+        temperature: 0.7,
+      });
+
+      res.json({
+        transformation_id: `local-style-${Date.now()}`,
+        transformed_text: response.response,
+        model_used: response.model,
+        processing: { totalTimeMs: 0 },
+      });
+    } catch (error) {
+      console.error('[Style] Error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Style transformation failed',
       });
     }
   });

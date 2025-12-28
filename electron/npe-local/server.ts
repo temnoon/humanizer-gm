@@ -14,6 +14,7 @@ import { createTransformationsRouter } from './routes/transformations';
 import { createBooksRouter } from './routes/books';
 import { createSessionsRouter } from './routes/sessions';
 import { createQuantumRouter } from './routes/quantum';
+import { createConfigRouter } from './routes/config';
 import { setModelConfig, setAPIKeys, isOllamaAvailable, type APIKeyConfig } from './services/llm';
 import { initDatabase } from './services/database';
 
@@ -63,6 +64,7 @@ function createApp(): Express {
   expressApp.use('/books', createBooksRouter());
   expressApp.use('/sessions', createSessionsRouter());
   expressApp.use('/quantum-analysis', createQuantumRouter());
+  expressApp.use('/config', createConfigRouter());
 
   // Error handler
   expressApp.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

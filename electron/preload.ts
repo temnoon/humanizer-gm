@@ -58,6 +58,18 @@ export interface ElectronAPI {
     status: () => Promise<{ installed: boolean; running: boolean }>;
   };
 
+  // NPE-Local (AI Detection, Transformations)
+  npe: {
+    port: () => Promise<number | null>;
+    status: () => Promise<{
+      running: boolean;
+      port: number | null;
+      service?: string;
+      version?: string;
+      ollama?: { available: boolean; url: string };
+    }>;
+  };
+
   // Cloud drives (to be added)
   cloudDrives: {
     listDrives: () => Promise<CloudDrive[]>;
@@ -380,6 +392,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     enable: () => ipcRenderer.invoke('ollama:enable'),
     disable: () => ipcRenderer.invoke('ollama:disable'),
     status: () => ipcRenderer.invoke('ollama:status'),
+  },
+
+  // NPE-Local (AI Detection, Transformations)
+  npe: {
+    port: () => ipcRenderer.invoke('npe:port'),
+    status: () => ipcRenderer.invoke('npe:status'),
   },
 
   // Cloud drives - stubs for now, will be implemented

@@ -53,7 +53,7 @@ export function createQuantumRouter(): Router {
         initial_rho: {
           purity: session.initialRho.purity,
           entropy: session.initialRho.entropy,
-          eigenvalues: session.initialRho.eigenvalues,
+          top_eigenvalues: session.initialRho.eigenvalues,
         },
       });
     } catch (error) {
@@ -95,12 +95,12 @@ export function createQuantumRouter(): Router {
         rho_before: {
           purity: measurement.rhoBefore.purity,
           entropy: measurement.rhoBefore.entropy,
-          eigenvalues: measurement.rhoBefore.eigenvalues,
+          top_eigenvalues: measurement.rhoBefore.eigenvalues,
         },
         rho_after: {
           purity: measurement.rhoAfter.purity,
           entropy: measurement.rhoAfter.entropy,
-          eigenvalues: measurement.rhoAfter.eigenvalues,
+          top_eigenvalues: measurement.rhoAfter.eigenvalues,
         },
         done,
         next_sentence_index: done ? null : measurement.sentenceIndex + 1,
@@ -131,7 +131,7 @@ export function createQuantumRouter(): Router {
         current_rho: {
           purity: session.currentRho.purity,
           entropy: session.currentRho.entropy,
-          eigenvalues: session.currentRho.eigenvalues,
+          top_eigenvalues: session.currentRho.eigenvalues,
         },
         created_at: session.createdAt,
         updated_at: session.updatedAt,
@@ -161,7 +161,7 @@ export function createQuantumRouter(): Router {
         rho: {
           purity: m.rhoAfter.purity,
           entropy: m.rhoAfter.entropy,
-          eigenvalues: m.rhoAfter.eigenvalues,
+          top_eigenvalues: m.rhoAfter.eigenvalues,
         },
       }));
 

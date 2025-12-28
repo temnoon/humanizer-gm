@@ -84,9 +84,10 @@ export function createDetectionRouter(): Router {
 
   /**
    * POST /ai-detection/detect-quick
+   * POST /ai-detection/lite (alias for cloud API compatibility)
    * Quick detection for simple responses
    */
-  router.post('/detect-quick', async (req: Request, res: Response) => {
+  const quickHandler = async (req: Request, res: Response) => {
     try {
       const { text } = req.body;
 
@@ -110,7 +111,10 @@ export function createDetectionRouter(): Router {
         error: error instanceof Error ? error.message : 'Detection failed',
       });
     }
-  });
+  };
+
+  router.post('/detect-quick', quickHandler);
+  router.post('/lite', quickHandler);
 
   /**
    * POST /ai-detection/features
