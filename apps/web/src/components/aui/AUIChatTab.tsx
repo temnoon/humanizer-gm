@@ -8,7 +8,7 @@
  * - Settings quick access
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAUIChat, useAUIAnimation, useAUISettingsContext } from '../../lib/aui/AUIContext';
@@ -28,7 +28,17 @@ export function AUIChatTab() {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea
+  const adjustTextareaHeight = useCallback(() => {
+    const textarea = inputRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 44), 200);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, []);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -46,13 +56,23 @@ export function AUIChatTab() {
     if (!input.trim() || isLoading) return;
     sendMessage(input.trim());
     setInput('');
+    // Reset textarea height after sending
+    if (inputRef.current) {
+      inputRef.current.style.height = '44px';
+    }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    adjustTextareaHeight();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+    // Shift+Enter adds newline naturally
   };
 
   return (
@@ -228,15 +248,15 @@ export function AUIChatTab() {
 
       {/* Input */}
       <div className="aui-chat-tab__input-area">
-        <input
+        <textarea
           ref={inputRef}
-          type="text"
           className="aui-chat-tab__input"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          placeholder="Ask AUI anything..."
+          placeholder="Ask AUI anything... (Shift+Enter for new line)"
           disabled={isLoading}
+          rows={1}
         />
         <button
           className="aui-chat-tab__send"

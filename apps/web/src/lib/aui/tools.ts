@@ -130,27 +130,69 @@ export interface ParsedToolUse {
 
 /**
  * Parse USE_TOOL invocations from AUI response
+ * Handles nested JSON objects properly
  */
 export function parseToolUses(response: string): ParsedToolUse[] {
   const uses: ParsedToolUse[] = [];
 
-  // Pattern: USE_TOOL(name, {json params}) or USE_TOOL(name, {})
-  const pattern = /USE_TOOL\s*\(\s*(\w+)\s*,\s*(\{[^}]*\})\s*\)/g;
+  // Find all USE_TOOL occurrences and extract JSON with brace matching
+  const toolPattern = /USE_TOOL\s*\(\s*(\w+)\s*,\s*/g;
 
   let match;
-  while ((match = pattern.exec(response)) !== null) {
-    try {
-      const name = match[1];
-      const paramsStr = match[2];
-      const params = JSON.parse(paramsStr);
+  while ((match = toolPattern.exec(response)) !== null) {
+    const name = match[1];
+    const startIdx = match.index + match[0].length;
 
-      uses.push({
-        name,
-        params,
-        raw: match[0],
-      });
-    } catch (e) {
-      console.warn('Failed to parse tool use:', match[0], e);
+    // Find matching closing brace for JSON object
+    let braceCount = 0;
+    let inString = false;
+    let escape = false;
+    let jsonEnd = -1;
+
+    for (let i = startIdx; i < response.length; i++) {
+      const char = response[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (char === '\\' && inString) {
+        escape = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') braceCount++;
+        if (char === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            jsonEnd = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (jsonEnd > startIdx) {
+      const paramsStr = response.slice(startIdx, jsonEnd);
+      try {
+        const params = JSON.parse(paramsStr);
+        const raw = response.slice(match.index, jsonEnd + 1); // Include closing paren
+
+        uses.push({
+          name,
+          params,
+          raw,
+        });
+      } catch (e) {
+        console.warn('Failed to parse tool JSON:', paramsStr, e);
+      }
     }
   }
 
@@ -159,10 +201,19 @@ export function parseToolUses(response: string): ParsedToolUse[] {
 
 /**
  * Remove tool invocations from response for clean display
- * (Optional - you might want to keep them visible)
+ * Uses the same brace-matching logic as parseToolUses
  */
 export function cleanToolsFromResponse(response: string): string {
-  return response.replace(/USE_TOOL\s*\(\s*\w+\s*,\s*\{[^}]*\}\s*\)/g, '').trim();
+  const toolUses = parseToolUses(response);
+
+  // Remove each tool use from the response
+  let cleaned = response;
+  for (const use of toolUses) {
+    cleaned = cleaned.replace(use.raw, '');
+  }
+
+  // Clean up extra whitespace and newlines
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ═══════════════════════════════════════════════════════════════════

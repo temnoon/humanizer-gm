@@ -42,19 +42,12 @@ export class ChatStore {
   initialize(): void {
     if (this.initialized) return;
 
-    // Read and execute schema
+    // Read and execute schema as a single transaction
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
 
-    // Execute schema (split by ; and filter empty)
-    const statements = schema
-      .split(';')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith('--'));
-
-    for (const statement of statements) {
-      this.db.exec(statement);
-    }
+    // Execute the entire schema at once - better-sqlite3 handles multi-statement SQL
+    this.db.exec(schema);
 
     this.initialized = true;
   }

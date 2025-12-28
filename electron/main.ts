@@ -32,6 +32,9 @@ import { startArchiveServer as startEmbeddedArchiveServer, stopArchiveServer as 
 // Embedded NPE-Local Server (AI Detection, Transformations)
 import { startNpeLocalServer, stopNpeLocalServer, isNpeLocalServerRunning, getNpeLocalPort } from './npe-local';
 
+// Whisper (local speech-to-text)
+import { initWhisper, registerWhisperHandlers } from './whisper/whisper-manager';
+
 // Set app name for macOS menu bar (development mode)
 // In production, this comes from electron-builder.json productName
 app.name = 'Humanizer';
@@ -48,6 +51,8 @@ const store = new Store({
     archiveServerEnabled: false,
     archivePath: null,
     ollamaEnabled: false,
+    whisperEnabled: true,
+    whisperModel: 'ggml-base.en.bin',
     ollamaModel: 'llama3.2:3b',
     firstRunComplete: false,
   },
@@ -356,6 +361,16 @@ function registerIPCHandlers() {
       // Not running
     }
     return { installed: false, running: false };
+  });
+
+  // Shell - open URLs in external browser
+  ipcMain.handle('shell:open-external', async (_e, url: string) => {
+    // Only allow http/https URLs for security
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      await shell.openExternal(url);
+      return { success: true };
+    }
+    return { success: false, error: 'Invalid URL protocol' };
   });
 
   // Cloud drives - stubs
@@ -790,6 +805,17 @@ app.whenReady().then(async () => {
   registerLocalMediaProtocol();
 
   registerIPCHandlers();
+
+  // Initialize whisper for speech-to-text
+  if (store.get('whisperEnabled')) {
+    const whisperAvailable = await initWhisper();
+    if (whisperAvailable) {
+      registerWhisperHandlers();
+      console.log('Whisper speech-to-text initialized');
+    } else {
+      console.log('Whisper module not available - install @kutalia/whisper-node-addon');
+    }
+  }
 
   if (store.get('archiveServerEnabled')) {
     await startArchiveServer();

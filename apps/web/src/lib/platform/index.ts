@@ -68,11 +68,62 @@ export interface ElectronAPI {
     disable: () => Promise<boolean>;
     status: () => Promise<{ installed: boolean; running: boolean }>;
   };
+  whisper: {
+    status: () => Promise<WhisperStatus>;
+    modelsLocal: () => Promise<WhisperModel[]>;
+    modelsAvailable: () => Promise<Array<{ name: string; size: string; downloaded: boolean }>>;
+    downloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+    transcribe: (audioPath: string, modelName?: string) => Promise<TranscribeResult>;
+    onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void;
+    onTranscribeProgress: (callback: (progress: TranscribeProgress) => void) => () => void;
+  };
   npe: {
     port: () => Promise<number | null>;
     status: () => Promise<NpeStatus>;
   };
+  shell: {
+    openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
+  };
   cloudDrives: CloudDrivesAPI;
+}
+
+// Whisper types
+export interface WhisperStatus {
+  available: boolean;
+  modelLoaded: boolean;
+  currentModel: string | null;
+  modelsPath: string;
+  availableModels: string[];
+}
+
+export interface WhisperModel {
+  name: string;
+  size: string;
+  path: string;
+}
+
+export interface TranscribeResult {
+  success: boolean;
+  result?: {
+    text: string;
+    segments?: Array<{ start: number; end: number; text: string }>;
+    language?: string;
+    duration?: number;
+  };
+  error?: string;
+}
+
+export interface DownloadProgress {
+  model: string;
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
+export interface TranscribeProgress {
+  status: 'loading' | 'transcribing' | 'complete' | 'error';
+  progress: number;
+  message?: string;
 }
 
 export interface NpeStatus {

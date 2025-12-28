@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import {
   analyzeSIC,
   type SICAnalysis,
@@ -170,7 +170,7 @@ export function App() {
     <ElectronContainer>
       <AuthProvider>
         <LayoutProvider>
-          <BrowserRouter>
+          <HashRouter>
             <Routes>
               {/* Studio is the default */}
               <Route path="/" element={<Studio />} />
@@ -184,7 +184,7 @@ export function App() {
               {/* Legacy SIC analyzer */}
               <Route path="/analyze" element={<AnalyzePage />} />
             </Routes>
-          </BrowserRouter>
+          </HashRouter>
 
           {/* Global login prompt modal - shows when auth is required */}
           <LoginPromptModal />

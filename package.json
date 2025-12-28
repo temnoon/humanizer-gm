@@ -17,7 +17,7 @@
     "cli": "node apps/cli/dist/index.js",
     "electron:dev": "npm run build:electron && concurrently \"npm run dev --workspace=apps/web\" \"wait-on http://localhost:5174 && VITE_DEV_SERVER_URL=http://localhost:5174 electron .\"",
     "electron:build": "npm run build --workspace=apps/web && npm run build:electron && electron-builder",
-    "build:electron": "tsc --project electron/tsconfig.json"
+    "build:electron": "tsc --project electron/tsconfig.json && cp electron/chat/schema.sql dist-electron/chat/ && mkdir -p dist-electron/agents/state && cp electron/agents/state/schema.sql dist-electron/agents/state/"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
@@ -25,6 +25,7 @@
     "chromadb-default-embed": "^2.13.2",
     "cors": "^2.8.5",
     "date-fns": "^3.0.0",
+    "electron-store": "^8.2.0",
     "express": "^4.18.2",
     "hdbscan-ts": "^1.0.0",
     "image-size": "^1.0.2",
@@ -41,7 +42,6 @@
     "concurrently": "^9.0.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
-    "electron-store": "^8.2.0",
     "turbo": "^2.0.0",
     "typescript": "^5.3.0",
     "wait-on": "^8.0.0"

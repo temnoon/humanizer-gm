@@ -881,17 +881,19 @@
 
 .workspace {
   /* Width controlled by editor width setting */
-  --workspace-width-narrow: min(38rem, 95vw);
-  --workspace-width-medium: min(56rem, 95vw);
+  --workspace-width-narrow: min(50rem, 95vw);  /* ~800px for comfortable reading */
+  --workspace-width-medium: min(64rem, 95vw);
   --workspace-width-wide: 100%;
 
-  /* Default to narrow for reading mode */
+  /* Default to narrow for reading mode - centered on viewport */
   width: 100%;
   max-width: var(--workspace-width-narrow);
-  margin: 0 auto;
+  margin-left: auto;
+  margin-right: auto;
   min-height: calc(100vh - var(--space-3xl, 4rem) * 2);
   padding: 0 var(--space-medium);
   transition: max-width var(--duration-normal) var(--ease-out);
+  text-align: left; /* Keep text left-aligned within centered container */
 }
 
 /* Width variations based on theme setting */
@@ -4378,6 +4380,28 @@ button.media-viewer__related-thumb {
   font-size: 0.875rem;
 }
 
+/* Empty state styling */
+.archive-browser__empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--studio-text-secondary, #666);
+}
+
+.archive-browser__empty-text {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.archive-browser__empty-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  opacity: 0.8;
+}
+
+.archive-browser__empty-hint strong {
+  color: var(--studio-accent, #8b7355);
+}
+
 .archive-browser__retry {
   padding: 0.5rem 1rem;
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -4950,17 +4974,17 @@ button.media-viewer__related-thumb {
 .aui-chat-tab__messages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
 }
 
 .aui-chat-tab__message {
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-md);
   border-radius: var(--radius-md);
   font-size: 0.875rem;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .aui-chat-tab__message p {
@@ -5128,10 +5152,19 @@ button.media-viewer__related-thumb {
   font-size: 0.875rem;
   outline: none;
   transition: border-color 0.15s ease;
+  /* Textarea-specific styles */
+  min-height: 44px;
+  max-height: 200px;
+  resize: none;
+  overflow-y: auto;
+  font-family: inherit;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .aui-chat-tab__input:focus {
   border-color: var(--studio-accent);
+  box-shadow: 0 0 0 2px rgba(var(--studio-accent-rgb, 99, 102, 241), 0.1);
 }
 
 .aui-chat-tab__input::placeholder {
@@ -10137,11 +10170,13 @@ button.media-viewer__related-thumb {
 }
 
 .container-workspace__content--markdown {
-  max-width: 720px;
-  margin: 0 auto;
+  max-width: min(50rem, 95%);  /* ~800px centered for readability */
+  margin-left: auto;
+  margin-right: auto;
   line-height: 1.7;
   font-size: 0.9375rem;
   color: var(--studio-text, #333);
+  text-align: left;
 }
 
 .container-workspace__content--markdown h1 {
@@ -10191,10 +10226,14 @@ button.media-viewer__related-thumb {
 }
 
 .container-workspace__content--text {
+  max-width: min(50rem, 95%);  /* ~800px centered for readability */
+  margin-left: auto;
+  margin-right: auto;
   white-space: pre-wrap;
   font-family: inherit;
   line-height: 1.7;
   color: var(--studio-text, #333);
+  text-align: left;
 }
 
 /* Artifacts panel */
@@ -13134,6 +13173,18 @@ button.media-viewer__related-thumb {
   flex: 1;
   overflow: auto;
   min-height: 0;
+  /* Center content within pane */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-lg) var(--space-md);
+}
+
+/* Content container inside pane - max width for readability */
+.split-workspace__pane-content > * {
+  width: 100%;
+  max-width: min(50rem, 95%); /* ~800px */
+  text-align: left;
 }
 
 /* Split pane header */
@@ -13774,6 +13825,13 @@ button.media-viewer__related-thumb {
   opacity: 1;
 }
 
+/* WCAG 2.4.7: Visible focus indicator for keyboard navigation */
+.split-mode-toolbar:focus-visible {
+  opacity: 1;
+  outline: 3px solid var(--color-primary, #4a7c59);
+  outline-offset: 2px;
+}
+
 .split-mode-toolbar__section {
   display: flex;
   align-items: center;
@@ -13783,7 +13841,7 @@ button.media-viewer__related-thumb {
 .split-mode-toolbar__section-label {
   font-size: var(--text-size-small, 0.75rem);
   font-weight: var(--font-weight-medium, 500);
-  color: var(--color-text-tertiary, #999);
+  color: var(--color-text-secondary, #666);  /* WCAG AA: 4.5:1+ contrast */
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wide, 0.05em);
   margin-right: var(--space-small, 8px);
@@ -13815,6 +13873,7 @@ button.media-viewer__related-thumb {
   cursor: pointer;
   transition: all var(--duration-fast, 0.15s) var(--ease-out, ease-out);
   min-height: 44px; /* WCAG AA touch target minimum */
+  min-width: 44px;  /* WCAG AAA: Square touch targets */
   white-space: nowrap;
 }
 

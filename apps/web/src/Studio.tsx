@@ -51,7 +51,7 @@ import { useAuth } from './lib/auth';
 import { LoginPage } from './components/auth/LoginPage';
 import { BookProvider, useBook } from './lib/book';
 import { BookshelfProvider } from './lib/bookshelf';
-import { executeAllTools, AUI_BOOK_SYSTEM_PROMPT, AUIProvider, type AUIContext, type WorkspaceState } from './lib/aui';
+import { executeAllTools, AUI_BOOK_SYSTEM_PROMPT, AUIProvider, useAUI, type AUIContext, type WorkspaceState } from './lib/aui';
 import { ThemeProvider, useTheme } from './lib/theme/ThemeContext';
 import { ThemeSettingsModal } from './components/theme/ThemeSettingsModal';
 import { ArchiveTabs, type SelectedFacebookMedia, type SelectedFacebookContent, type ArchiveTabId, type SearchResult } from './components/archive';
@@ -472,6 +472,16 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
             </div>
           )}
 
+          {/* Empty state when no conversations */}
+          {groupedConversations.size === 0 && !loading && (
+            <div className="archive-browser__empty">
+              <p className="archive-browser__empty-text">No conversations found</p>
+              <p className="archive-browser__empty-hint">
+                Switch to the <strong>Import</strong> tab to add archives
+              </p>
+            </div>
+          )}
+
           {/* Grouped by month */}
           {Array.from(groupedConversations.entries()).map(([month, convs]) => (
             <div key={month} className="archive-browser__month">
@@ -641,8 +651,8 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
   const pipelines = getPipelines();
 
   // Highlight and split mode hooks for analysis integration
-  const { setData: setAnalysisData, setActive: setActiveHighlights } = useHighlights();
-  const { setMode: setSplitMode } = useSplitMode();
+  const { setData: setAnalysisData, setActive: setActiveHighlights, analysisData } = useHighlights();
+  const { mode: splitMode, setMode: setSplitMode } = useSplitMode();
 
   // Tool visibility state
   const [toolVisibility, setToolVisibility] = useState<Record<string, boolean>>(loadToolVisibility);
@@ -933,6 +943,20 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
       setAnalysisProgress(null);
     }
   }, []);
+
+  // Auto-trigger analysis when toolbar mode changes to 'analyze'
+  useEffect(() => {
+    // Only trigger when mode is 'analyze', there's content, we're not already analyzing,
+    // and we don't already have analysis data
+    if (
+      splitMode === 'analyze' &&
+      contentText.trim() &&
+      !isAnalyzing &&
+      !analysisData?.sentences?.length
+    ) {
+      handleSentenceAnalysis();
+    }
+  }, [splitMode, contentText, isAnalyzing, analysisData?.sentences?.length, handleSentenceAnalysis]);
 
   // Ensure active tab is visible
   useEffect(() => {
@@ -3145,6 +3169,12 @@ function StudioContent() {
       viewMode,
     };
   }, [activeContent, activeBuffer, selectedMedia, selectedFacebookContent, bookContentMode, showSocialGraph]);
+
+  // Sync workspace state with AUI context
+  const { setWorkspace } = useAUI();
+  useEffect(() => {
+    setWorkspace(workspaceState);
+  }, [workspaceState, setWorkspace]);
 
   // Handle Facebook content selection from archive panel
   const handleSelectFacebookContent = useCallback((content: SelectedFacebookContent) => {

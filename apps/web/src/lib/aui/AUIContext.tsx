@@ -25,7 +25,7 @@ import {
 
 import { auiAnimator, teachingToAnimation, type AnimatorState } from './animator';
 import { loadAUISettings, saveAUISettings, type AUISettings } from './settings';
-import { executeAllTools, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
+import { executeAllTools, cleanToolsFromResponse, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
 import { useLayout } from '../../components/layout/LayoutContext';
 import { useBookOptional } from '../book';
 import {
@@ -111,6 +111,8 @@ export interface AUIContextValue {
     payload: unknown,
     projectId?: string
   ) => Promise<{ taskId: string } | { error: string }>;
+  /** Update workspace state (called by StudioContent) */
+  setWorkspace: (workspace: AUIToolContext['workspace']) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -119,19 +121,53 @@ export interface AUIContextValue {
 
 const ARCHIVE_SERVER = 'http://localhost:3002';
 
-const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), a helpful assistant integrated into the Humanizer Studio.
+const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), an assistant integrated into the Humanizer Studio.
 
-You help users:
-- Navigate the Studio interface (Archive panel, Tools panel)
-- Search their archives (ChatGPT conversations, Facebook content)
-- Transform content (humanize, apply personas/styles)
-- Build their book (chapters, passages, gems)
-- Understand their data
+IMPORTANT: When the user requests an action, you MUST use USE_TOOL to execute it. Do NOT describe what you would do - actually do it.
 
-When you perform actions, use USE_TOOL(name, {params}) syntax.
-Your conversations are archived and become searchable content.
+AVAILABLE TOOLS:
 
-Be concise but helpful. Show users HOW to do things themselves.`;
+ARCHIVE & SEARCH:
+- search_archive({"query": "text", "limit": 10}) - Search all conversations
+- search_facebook({"query": "text", "type": "posts|comments|messages"}) - Search Facebook content
+- list_conversations({"limit": 20}) - List recent conversations
+- harvest_archive({"queries": ["query1", "query2"], "threadName": "name"}) - Collect passages by query
+
+BOOK & CHAPTERS:
+- create_chapter({"title": "Chapter Title"}) - Create a new chapter
+- update_chapter({"chapterId": "id", "content": "markdown"}) - Update chapter content
+- list_chapters({}) - List all chapters in active book
+- get_chapter({"chapterId": "id"}) - Get chapter content
+- add_passage({"content": "text", "conversationTitle": "source"}) - Add passage to book
+- generate_first_draft({"chapterId": "id", "arc": "description"}) - Generate chapter draft
+
+TEXT TOOLS:
+- detect_ai({"text": "content"}) - Check if text is AI-generated
+- humanize({"text": "content"}) - Transform to sound more human
+- analyze_text({"text": "content"}) - Sentence-level analysis
+- apply_persona({"text": "content", "personaId": "id"}) - Apply writing persona
+- apply_style({"text": "content", "styleId": "id"}) - Apply writing style
+
+PERSONAS & STYLES:
+- list_personas({}) - List available personas
+- list_styles({}) - List available styles
+- extract_persona({"text": "sample"}) - Extract persona from text
+- extract_style({"text": "sample"}) - Extract style from text
+
+WORKSPACE:
+- get_workspace({}) - Get current buffer content and state
+
+EXAMPLES:
+User: "Search for conversations about phenomenology"
+You: USE_TOOL(search_archive, {"query": "phenomenology", "limit": 10})
+
+User: "Analyze this text for AI"
+You: USE_TOOL(detect_ai, {"text": "[current buffer content]"})
+
+User: "Create a chapter called Introduction"
+You: USE_TOOL(create_chapter, {"title": "Introduction"})
+
+Be concise. Execute tools directly. Don't explain what you're going to do - just do it.`;
 
 // ═══════════════════════════════════════════════════════════════════
 // CONTEXT
@@ -157,7 +193,7 @@ interface AUIProviderProps {
   workspace?: AUIToolContext['workspace'];
 }
 
-export function AUIProvider({ children, workspace }: AUIProviderProps) {
+export function AUIProvider({ children, workspace: initialWorkspace }: AUIProviderProps) {
   // Dependencies
   const layout = useLayout();
   const bookContext = useBookOptional();
@@ -175,20 +211,23 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     getPassages: () => [],
   };
 
-  // State
+  // State - settings must be loaded first since createNewConversation uses it
+  const [settings, setSettings] = useState<AUISettings>(loadAUISettings);
   const [conversation, setConversation] = useState<AUIConversation>(() =>
-    createNewConversation()
+    createNewConversation(settings)
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [animationState, setAnimationState] = useState<AnimatorState>(
     auiAnimator.getState()
   );
-  const [settings, setSettings] = useState<AUISettings>(loadAUISettings);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [pendingProposals, setPendingProposals] = useState<AgentProposal[]>([]);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentBridgeConnected, setAgentBridgeConnected] = useState(false);
+
+  // Workspace state - can be set from StudioContent
+  const [workspaceState, setWorkspaceState] = useState<AUIToolContext['workspace']>(initialWorkspace);
 
   // Refs
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -215,7 +254,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
       addPassage: book.addPassage,
       updatePassage: book.updatePassage,
       getPassages: book.getPassages,
-      workspace,
+      workspace: workspaceState,
     };
 
     // Initialize bridge with context
@@ -277,10 +316,10 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     return () => {
       unsubscribe();
     };
-  }, [book, workspace, settings]);
+  }, [book, workspaceState, settings]);
 
   // Create a new conversation
-  function createNewConversation(): AUIConversation {
+  function createNewConversation(currentSettings: AUISettings): AUIConversation {
     return {
       id: `aui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       messages: [
@@ -293,7 +332,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
         },
       ],
       startedAt: new Date(),
-      tags: [settings.archive.chatTag],
+      tags: [currentSettings.archive.chatTag],
     };
   }
 
@@ -370,20 +409,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
           assistantContent = data.response || "I couldn't process that.";
         }
 
-        // Add assistant message
-        const assistantMessage: ChatMessage = {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: assistantContent,
-          timestamp: new Date(),
-        };
-
-        setConversation((prev) => ({
-          ...prev,
-          messages: [...prev.messages, assistantMessage],
-        }));
-
-        // Execute tools
+        // Execute tools FIRST (before displaying message)
         const toolContext: AUIToolContext = {
           activeProject: book.activeProject,
           updateChapter: book.updateChapter,
@@ -394,13 +420,32 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
           addPassage: book.addPassage,
           updatePassage: book.updatePassage,
           getPassages: book.getPassages,
-          workspace,
+          workspace: workspaceState,
         };
 
         const { results, hasTools } = await executeAllTools(
           assistantContent,
           toolContext
         );
+
+        // Clean tool syntax from response BEFORE displaying
+        const cleanedContent = cleanToolsFromResponse(assistantContent);
+
+        // Only add assistant message if there's content after cleaning
+        // (If the entire message was just a tool call, show tool results instead)
+        if (cleanedContent.trim()) {
+          const assistantMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: cleanedContent,
+            timestamp: new Date(),
+          };
+
+          setConversation((prev) => ({
+            ...prev,
+            messages: [...prev.messages, assistantMessage],
+          }));
+        }
 
         if (hasTools && results.length > 0) {
           // Add tool results message
@@ -457,7 +502,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
         abortControllerRef.current = null;
       }
     },
-    [conversation.messages, isLoading, book, workspace, settings.animation.enabled]
+    [conversation.messages, isLoading, book, workspaceState, settings.animation.enabled]
   );
 
   // Clear conversation
@@ -466,8 +511,8 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     if (settings.archive.archiveChats && conversation.messages.length > 1) {
       archiveConversationInternal(conversation).catch(() => {});
     }
-    setConversation(createNewConversation());
-  }, [conversation, settings.archive.archiveChats]);
+    setConversation(createNewConversation(settings));
+  }, [conversation, settings]);
 
   // Archive conversation
   const archiveConversation = useCallback(async () => {
@@ -633,6 +678,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     approveProposal,
     rejectProposal,
     requestAgentWork,
+    setWorkspace: setWorkspaceState,
   };
 
   return <AUIContext.Provider value={value}>{children}</AUIContext.Provider>;

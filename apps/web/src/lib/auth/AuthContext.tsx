@@ -22,7 +22,9 @@ import {
   getStoredToken,
   getOAuthLoginUrl,
   handleOAuthCallback,
+  openOAuthExternal,
 } from './api';
+import { isElectron } from '../platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONTEXT TYPE
@@ -176,7 +178,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // OAuth login
-  const loginWithOAuth = useCallback((provider: OAuthProvider) => {
+  const loginWithOAuth = useCallback(async (provider: OAuthProvider) => {
+    // In Electron, open OAuth in external browser
+    if (isElectron) {
+      const handled = await openOAuthExternal(provider);
+      if (handled) {
+        // Show message that user should complete login in browser
+        // and then copy the token from the web app
+        setError('Please complete login in your browser. After logging in at studio.humanizer.com, copy your auth token from Settings to use cloud features in the desktop app.');
+        return;
+      }
+    }
+    // Normal web flow
     window.location.href = getOAuthLoginUrl(provider);
   }, []);
 

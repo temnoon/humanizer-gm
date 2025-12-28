@@ -11,6 +11,7 @@ import type {
   RegisterRequest,
   OAuthProvider,
 } from './types';
+import { isElectron, getElectronAPI } from '../platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -149,9 +150,25 @@ export function logout(): void {
  * Get OAuth login URL for a provider
  */
 export function getOAuthLoginUrl(provider: OAuthProvider): string {
-  // Note: backend expects 'redirect' not 'redirect_uri'
-  const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
+  // In Electron, we can't use file:// as redirect, use the web app URL
+  const baseUrl = isElectron ? 'https://studio.humanizer.com' : window.location.origin;
+  const redirectUri = encodeURIComponent(`${baseUrl}/auth/callback`);
   return `${API_BASE}/auth/oauth/${provider}/login?redirect=${redirectUri}`;
+}
+
+/**
+ * Open OAuth in external browser (for Electron)
+ * Returns true if handled by Electron, false if should use normal flow
+ */
+export async function openOAuthExternal(provider: OAuthProvider): Promise<boolean> {
+  if (!isElectron) return false;
+
+  const api = getElectronAPI();
+  if (!api?.shell) return false;
+
+  const url = getOAuthLoginUrl(provider);
+  await api.shell.openExternal(url);
+  return true;
 }
 
 /**

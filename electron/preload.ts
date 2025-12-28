@@ -58,6 +58,17 @@ export interface ElectronAPI {
     status: () => Promise<{ installed: boolean; running: boolean }>;
   };
 
+  // Whisper (local speech-to-text)
+  whisper: {
+    status: () => Promise<WhisperStatus>;
+    modelsLocal: () => Promise<WhisperModel[]>;
+    modelsAvailable: () => Promise<Array<{ name: string; size: string; downloaded: boolean }>>;
+    downloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+    transcribe: (audioPath: string, modelName?: string) => Promise<TranscribeResult>;
+    onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void;
+    onTranscribeProgress: (callback: (progress: TranscribeProgress) => void) => () => void;
+  };
+
   // NPE-Local (AI Detection, Transformations)
   npe: {
     port: () => Promise<number | null>;
@@ -120,6 +131,45 @@ export interface GoogleDriveFile {
   modifiedTime?: string;
   thumbnailLink?: string;
   isFolder: boolean;
+}
+
+// Whisper (speech-to-text) types
+export interface WhisperStatus {
+  available: boolean;
+  modelLoaded: boolean;
+  currentModel: string | null;
+  modelsPath: string;
+  availableModels: string[];
+}
+
+export interface WhisperModel {
+  name: string;
+  size: string;
+  path: string;
+}
+
+export interface TranscribeResult {
+  success: boolean;
+  result?: {
+    text: string;
+    segments?: Array<{ start: number; end: number; text: string }>;
+    language?: string;
+    duration?: number;
+  };
+  error?: string;
+}
+
+export interface DownloadProgress {
+  model: string;
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
+export interface TranscribeProgress {
+  status: 'loading' | 'transcribing' | 'complete' | 'error';
+  progress: number;
+  message?: string;
 }
 
 // ============================================================
@@ -394,10 +444,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     status: () => ipcRenderer.invoke('ollama:status'),
   },
 
+  // Whisper (local speech-to-text)
+  whisper: {
+    status: () => ipcRenderer.invoke('whisper:status'),
+    modelsLocal: () => ipcRenderer.invoke('whisper:models:local'),
+    modelsAvailable: () => ipcRenderer.invoke('whisper:models:available'),
+    downloadModel: (modelName: string) => ipcRenderer.invoke('whisper:models:download', modelName),
+    transcribe: (audioPath: string, modelName?: string) =>
+      ipcRenderer.invoke('whisper:transcribe', audioPath, modelName),
+    onDownloadProgress: (callback: (progress: { model: string; percent: number; downloaded: number; total: number }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: { model: string; percent: number; downloaded: number; total: number }) => callback(progress);
+      ipcRenderer.on('whisper:download-progress', handler);
+      return () => ipcRenderer.removeListener('whisper:download-progress', handler);
+    },
+    onTranscribeProgress: (callback: (progress: { status: string; progress: number; message?: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: { status: string; progress: number; message?: string }) => callback(progress);
+      ipcRenderer.on('whisper:transcribe-progress', handler);
+      return () => ipcRenderer.removeListener('whisper:transcribe-progress', handler);
+    },
+  },
+
   // NPE-Local (AI Detection, Transformations)
   npe: {
     port: () => ipcRenderer.invoke('npe:port'),
     status: () => ipcRenderer.invoke('npe:status'),
+  },
+
+  // Shell - open URLs in external browser
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   },
 
   // Cloud drives - stubs for now, will be implemented
