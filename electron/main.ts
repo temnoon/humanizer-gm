@@ -818,9 +818,9 @@ app.whenReady().then(async () => {
   }
 
   // Always start archive server for local archive access
-  // Store value controls whether UI shows archive features, but server always runs
-  await startArchiveServer();
+  // Set flag BEFORE calling startArchiveServer since it checks this
   store.set('archiveServerEnabled', true);
+  await startArchiveServer();
 
   // Always start npe-local server for AI detection and transformations
   await startNpeLocal();
