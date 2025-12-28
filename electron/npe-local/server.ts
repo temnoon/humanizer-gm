@@ -11,7 +11,11 @@ import { Server } from 'http';
 
 import { createDetectionRouter } from './routes/detection';
 import { createTransformationsRouter } from './routes/transformations';
+import { createBooksRouter } from './routes/books';
+import { createSessionsRouter } from './routes/sessions';
+import { createQuantumRouter } from './routes/quantum';
 import { setModelConfig, setAPIKeys, isOllamaAvailable, type APIKeyConfig } from './services/llm';
+import { initDatabase } from './services/database';
 
 let app: Express | null = null;
 let server: Server | null = null;
@@ -50,9 +54,15 @@ function createApp(): Express {
     });
   });
 
+  // Initialize database
+  initDatabase();
+
   // Routes
   expressApp.use('/ai-detection', createDetectionRouter());
   expressApp.use('/transformations', createTransformationsRouter());
+  expressApp.use('/books', createBooksRouter());
+  expressApp.use('/sessions', createSessionsRouter());
+  expressApp.use('/quantum-analysis', createQuantumRouter());
 
   // Error handler
   expressApp.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

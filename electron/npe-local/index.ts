@@ -2,7 +2,7 @@
  * NPE-Local Module
  *
  * Embedded server for local NPE API operations.
- * Provides AI detection, humanization, and LLM chat endpoints.
+ * Provides AI detection, humanization, books, sessions, and quantum analysis.
  *
  * Usage in Electron main:
  *   import { startNpeLocalServer, stopNpeLocalServer } from './npe-local';
@@ -26,3 +26,12 @@ export {
 export * from './services/llm';
 export * from './services/detection';
 export { humanizeText, analyzeForHumanization } from './services/transformation/humanizer';
+
+// Phase 3B services
+export * from './services/books';
+export * from './services/sessions';
+export * from './services/quantum';
+export { initDatabase, getDatabase, closeDatabase } from './services/database';
+
+// Phase 3C cloud bridge
+export * from './services/cloud-bridge';
