@@ -15,6 +15,10 @@ import { handleOAuthCallback } from './lib/auth/api';
 import { LoginPromptModal } from './components/auth/LoginPromptModal';
 import { LayoutProvider } from './components/layout';
 import { ElectronContainer } from './components/layout/WindowTitleBar';
+import { initPlatformConfig } from './lib/platform';
+
+// Initialize platform configuration early (fetches archive server port)
+initPlatformConfig().catch(console.warn);
 
 // ═══════════════════════════════════════════════════════════════════
 // LEGACY SIC ANALYZER (kept at /analyze)

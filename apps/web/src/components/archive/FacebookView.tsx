@@ -10,14 +10,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from './types';
+import { getArchiveServerUrl, getArchiveServerUrlSync, isElectron } from '../../lib/platform';
 
-const ARCHIVE_SERVER = 'http://localhost:3002';
 const ITEMS_PER_PAGE = 50;
 
 /**
  * Normalize file path to a URL for media serving
  * - In Electron: Uses local-media:// protocol for direct file access
- * - In browser: Uses HTTP archive server with URL encoding
+ * - In browser: Uses HTTP archive server with URL encoding (dynamic port)
  */
 function normalizeMediaPath(filePath: string): string {
   if (!filePath) return filePath;
@@ -26,11 +26,16 @@ function normalizeMediaPath(filePath: string): string {
     return filePath;
   }
   // In Electron, use the local-media:// protocol for direct file serving
-  if (typeof window !== 'undefined' && (window as unknown as { isElectron?: boolean }).isElectron) {
+  if (isElectron) {
     return `local-media://serve${filePath}`;
   }
-  // In browser, use archive server with URL encoding
-  return `${ARCHIVE_SERVER}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
+  // In browser, use archive server with URL encoding (dynamic port)
+  const archiveServer = getArchiveServerUrlSync();
+  if (!archiveServer) {
+    console.warn('Archive server URL not initialized');
+    return filePath;
+  }
+  return `${archiveServer}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -181,7 +186,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
   const loadPeriods = async () => {
     try {
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/periods`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/periods`);
       if (res.ok) {
         const data = await res.json();
         setPeriods(data.periods || []);
@@ -193,7 +199,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
   const loadMediaStats = async () => {
     try {
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media-stats`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/media-stats`);
       if (res.ok) {
         const data = await res.json();
         setMediaStats(data);
@@ -224,7 +231,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
         params.append('period', selectedPeriod);
       }
 
-      const res = await fetch(`${ARCHIVE_SERVER}/api/content/items?${params}`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/content/items?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
@@ -283,7 +291,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
         params.append('period', selectedPeriod);
       }
 
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media-gallery?${params}`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/media-gallery?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
@@ -310,7 +319,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
     setMediaContext(null);
 
     try {
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media/${mediaId}/context`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/media/${mediaId}/context`);
       if (res.ok) {
         const data = await res.json();
         // Transform API response to expected format
@@ -467,7 +477,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       let relatedMedia: Array<{ id: string; file_path: string; media_type: 'image' | 'video'; created_at?: number }> = [];
       let linkedContent: Array<{ id: string; type: 'post' | 'comment'; title?: string; text?: string; created_at: number; author_name?: string }> = [];
       try {
-        const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media/${item.id}/context`);
+        const archiveServer = await getArchiveServerUrl();
+        const res = await fetch(`${archiveServer}/api/facebook/media/${item.id}/context`);
         if (res.ok) {
           const data = await res.json();
           // Get related media (already sorted by created_at ASC in API)
@@ -538,7 +549,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
           // Fetch media details if we have refs
           if (refs.length > 0) {
             try {
-              const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/content/${item.id}/media`);
+              const archiveServer = await getArchiveServerUrl();
+              const res = await fetch(`${archiveServer}/api/facebook/content/${item.id}/media`);
               if (res.ok) {
                 const data = await res.json();
                 mediaItems = (data.media || []).map((m: { id: string; file_path: string; media_type: string }) => ({

@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { getArchiveServerUrl } from '../../lib/platform';
 
 interface ImportType {
   id: string;
@@ -65,8 +66,6 @@ const IMPORT_TYPES: ImportType[] = [
   { id: 'paste', icon: '📋', label: 'Paste', description: 'Paste text or JSON' },
 ];
 
-const ARCHIVE_SERVER = 'http://localhost:3002';
-
 export function ImportView() {
   const [dragActive, setDragActive] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -92,7 +91,8 @@ export function ImportView() {
 
   const fetchCurrentArchive = async () => {
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/archives/current`);
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/archives/current`);
       if (response.ok) {
         const data = await response.json();
         setCurrentArchive({
@@ -131,7 +131,8 @@ export function ImportView() {
   const fetchAvailableArchives = async () => {
     setLoadingArchives(true);
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/archives`);
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/archives`);
       if (response.ok) {
         const data = await response.json();
         // Merge with persisted archives
@@ -161,7 +162,8 @@ export function ImportView() {
 
     setSwitchingArchive(true);
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/archives/switch`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/archives/switch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ archiveName: archive.name }),
@@ -209,7 +211,8 @@ export function ImportView() {
   // Poll for job status
   const pollJobStatus = useCallback(async (jobId: string) => {
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/archive/status/${jobId}`);
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/archive/status/${jobId}`);
       if (!response.ok) throw new Error('Failed to check status');
 
       const job: ImportJob = await response.json();
@@ -298,7 +301,8 @@ export function ImportView() {
       const formData = new FormData();
       formData.append('archive', file);
 
-      const uploadResponse = await fetch(`${ARCHIVE_SERVER}/api/import/archive/upload`, {
+      const archiveServer = await getArchiveServerUrl();
+      const uploadResponse = await fetch(`${archiveServer}/api/import/archive/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -312,7 +316,7 @@ export function ImportView() {
       setImportStatus(`Uploaded ${filename}. Starting parse...`);
 
       // Start parsing
-      const parseResponse = await fetch(`${ARCHIVE_SERVER}/api/import/archive/parse`, {
+      const parseResponse = await fetch(`${archiveServer}/api/import/archive/parse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId }),
@@ -345,7 +349,8 @@ export function ImportView() {
     setImportStatus('Applying import...');
 
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/archive/apply/${currentJob.id}`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/archive/apply/${currentJob.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -398,7 +403,8 @@ export function ImportView() {
     setImportStatus('Scanning folder...');
 
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/archive/folder`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/archive/folder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folderPath }),
@@ -453,7 +459,8 @@ export function ImportView() {
         };
       }
 
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/conversation`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/conversation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversation: conversationData }),

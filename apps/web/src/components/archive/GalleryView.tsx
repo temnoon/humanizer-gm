@@ -12,8 +12,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueue } from '../../lib/queue';
 import type { SelectedFacebookMedia } from './types';
-
-const ARCHIVE_API = import.meta.env.VITE_ARCHIVE_API_URL || 'http://localhost:3002';
+import { getArchiveServerUrl, getArchiveServerUrlSync, isElectron } from '../../lib/platform';
 
 // Debounce utility
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,11 +74,12 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
     setError(null);
 
     try {
+      const archiveApi = await getArchiveServerUrl();
       // OpenAI uses /api/gallery with offset pagination
       // Facebook uses /api/facebook/media with page pagination
       const endpoint = source === 'openai'
-        ? `${ARCHIVE_API}/api/gallery?offset=${pageNum * 50}&limit=50`
-        : `${ARCHIVE_API}/api/facebook/media?page=${pageNum}&limit=50`;
+        ? `${archiveApi}/api/gallery?offset=${pageNum * 50}&limit=50`
+        : `${archiveApi}/api/facebook/media?page=${pageNum}&limit=50`;
 
       const response = await fetch(endpoint);
 
@@ -93,11 +93,17 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
       // Normalize the image data to match GalleryImage interface
       const newImages: GalleryImage[] = rawImages.map((img: Record<string, unknown>, index: number) => {
         const rawUrl = img.url as string;
-        // For Facebook, URLs are raw file paths - convert to serve-media endpoint
+        // For Facebook, URLs are raw file paths - convert to serve-media endpoint or local-media://
         // For OpenAI, URLs are already proper HTTP URLs
-        const normalizedUrl = source === 'facebook' && rawUrl && !rawUrl.startsWith('http')
-          ? `${ARCHIVE_API}/api/facebook/serve-media?path=${encodeURIComponent(rawUrl)}`
-          : rawUrl;
+        let normalizedUrl = rawUrl;
+        if (source === 'facebook' && rawUrl && !rawUrl.startsWith('http')) {
+          if (isElectron) {
+            normalizedUrl = `local-media://serve${rawUrl}`;
+          } else {
+            const syncUrl = getArchiveServerUrlSync();
+            normalizedUrl = syncUrl ? `${syncUrl}/api/facebook/serve-media?path=${encodeURIComponent(rawUrl)}` : rawUrl;
+          }
+        }
 
         return {
           id: (img.id as string) || `${source}-${pageNum}-${index}`,
@@ -210,7 +216,8 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
       }
       setIsSearching(true);
       try {
-        const res = await fetch(`${ARCHIVE_API}/api/images/search?q=${encodeURIComponent(query)}`);
+        const archiveApi = await getArchiveServerUrl();
+        const res = await fetch(`${archiveApi}/api/images/search?q=${encodeURIComponent(query)}`);
         if (!res.ok) {
           throw new Error('Search failed');
         }

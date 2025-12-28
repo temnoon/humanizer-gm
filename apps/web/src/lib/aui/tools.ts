@@ -45,9 +45,9 @@ import {
 
 // Import agent bridge
 import { getAgentBridge } from './agent-bridge';
+import { getArchiveServerUrl } from '../platform';
 
-// Archive server for API calls
-const ARCHIVE_SERVER = 'http://localhost:3002';
+// NPE API base URL
 const NPE_API_BASE = import.meta.env.VITE_API_URL || 'https://npe-api.tem-527.workers.dev';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -770,7 +770,8 @@ async function executeSearchArchive(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/embeddings/search/messages`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit }),
@@ -779,7 +780,7 @@ async function executeSearchArchive(
     if (!response.ok) {
       // Fallback to text search if embeddings not available
       const fallbackResponse = await fetch(
-        `${ARCHIVE_SERVER}/api/conversations?search=${encodeURIComponent(query)}&limit=${limit}`
+        `${archiveServer}/api/conversations?search=${encodeURIComponent(query)}&limit=${limit}`
       );
 
       if (fallbackResponse.ok) {
@@ -856,6 +857,7 @@ async function executeSearchFacebook(
   }
 
   try {
+    const archiveServer = await getArchiveServerUrl();
     const searchParams = new URLSearchParams({
       source: 'facebook',
       limit: String(limit),
@@ -866,7 +868,7 @@ async function executeSearchFacebook(
     }
 
     const response = await fetch(
-      `${ARCHIVE_SERVER}/api/content/items?${searchParams}`
+      `${archiveServer}/api/content/items?${searchParams}`
     );
 
     if (!response.ok) {
@@ -1142,7 +1144,8 @@ async function executeDescribeImage(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/describe`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/describe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: targetPath }),
@@ -1192,7 +1195,8 @@ async function executeSearchImages(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/search`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, mode, limit, source }),
@@ -1243,7 +1247,8 @@ async function executeClassifyImage(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/classify`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/classify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: targetPath }),
@@ -1292,7 +1297,8 @@ async function executeFindSimilarImages(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/similar`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/similar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: targetPath, limit }),
@@ -1336,7 +1342,8 @@ async function executeClusterImages(
   };
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/cluster`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/cluster`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ method, source }),
@@ -1396,7 +1403,8 @@ async function executeAddImagePassage(
 
   try {
     // Get image description from vision API
-    const descResponse = await fetch(`${ARCHIVE_SERVER}/api/vision/describe`, {
+    const archiveServer = await getArchiveServerUrl();
+    const descResponse = await fetch(`${archiveServer}/api/vision/describe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: ws.selectedMedia.file_path }),
@@ -2546,12 +2554,13 @@ async function executeListConversations(
 
   try {
     // Build query params
+    const archiveServer = await getArchiveServerUrl();
     const queryParams = new URLSearchParams();
     queryParams.set('limit', String(limit));
     if (search) queryParams.set('search', search);
     if (hasImages !== undefined) queryParams.set('hasImages', String(hasImages));
 
-    const response = await fetch(`${ARCHIVE_SERVER}/api/conversations?${queryParams}`);
+    const response = await fetch(`${archiveServer}/api/conversations?${queryParams}`);
 
     if (!response.ok) {
       return { success: false, error: 'Failed to fetch conversations' };
@@ -2627,7 +2636,8 @@ async function executeHarvestArchive(
 
   try {
     // First, search the archive
-    const response = await fetch(`${ARCHIVE_SERVER}/api/embeddings/search/messages`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit: limit * 2 }), // Get more, filter by similarity

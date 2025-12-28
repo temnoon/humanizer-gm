@@ -1,7 +1,8 @@
 /**
  * Archive Service
  *
- * Client for the archive-server API (port 3002)
+ * Client for the archive-server API.
+ * Port is dynamically determined from Electron IPC or environment.
  * Includes container normalization for unified workspace display.
  */
 
@@ -19,9 +20,14 @@ import {
 } from '@humanizer/core';
 
 import { preprocessContentSync, needsPreprocessing } from '../content';
+import { getArchiveServerUrl } from '../platform';
 
-// Default to localhost:3002 for development
-const ARCHIVE_API_BASE = import.meta.env.VITE_ARCHIVE_API_URL || 'http://localhost:3002';
+/**
+ * Get the archive API base URL (async, cached after first call)
+ */
+async function getApiBase(): Promise<string> {
+  return getArchiveServerUrl();
+}
 
 /**
  * Fetch conversations from the archive
@@ -45,7 +51,8 @@ export async function fetchConversations(options?: {
   if (options?.hasAudio !== undefined) params.set('hasAudio', String(options.hasAudio));
   if (options?.minMessages !== undefined) params.set('minMessages', String(options.minMessages));
 
-  const url = `${ARCHIVE_API_BASE}/api/conversations?${params}`;
+  const apiBase = await getApiBase();
+  const url = `${apiBase}/api/conversations?${params}`;
   const response = await fetch(url);
 
   if (!response.ok) {
@@ -75,13 +82,39 @@ interface ConversationResponse {
  * Archive-server pre-flattens the tree structure into a linear array
  */
 export async function fetchConversation(folder: string): Promise<ConversationResponse> {
-  const response = await fetch(`${ARCHIVE_API_BASE}/api/conversations/${encodeURIComponent(folder)}`);
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/api/conversations/${encodeURIComponent(folder)}`);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch conversation: ${response.statusText}`);
   }
 
   return response.json();
+}
+
+/**
+ * Extract text content from message content parts
+ */
+function extractTextContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'content' in part) {
+          return (part as { content: string }).content;
+        }
+        if (part && typeof part === 'object' && 'text' in part) {
+          return (part as { text: string }).text;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  return '';
 }
 
 /**
@@ -92,7 +125,7 @@ export function getMessages(conv: ConversationResponse, limit = 50): FlatMessage
   return conv.messages.slice(0, limit).map((msg, index) => ({
     id: msg.id,
     role: msg.role,
-    content: msg.content || '',
+    content: extractTextContent(msg.content),
     created_at: msg.created_at,
     has_media: false, // TODO: detect media in content
     media_urls: [],
@@ -148,7 +181,8 @@ export function groupConversationsByMonth(
  */
 export async function checkArchiveHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${ARCHIVE_API_BASE}/api/archives/current`, {
+    const apiBase = await getApiBase();
+    const response = await fetch(`${apiBase}/api/archives/current`, {
       method: 'GET',
       signal: AbortSignal.timeout(3000),
     });
@@ -167,7 +201,8 @@ export async function getCurrentArchive(): Promise<{
   conversationCount: number;
 } | null> {
   try {
-    const response = await fetch(`${ARCHIVE_API_BASE}/api/archives/current`);
+    const apiBase = await getApiBase();
+    const response = await fetch(`${apiBase}/api/archives/current`);
     if (!response.ok) return null;
     return response.json();
   } catch {

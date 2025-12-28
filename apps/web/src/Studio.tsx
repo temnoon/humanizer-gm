@@ -66,6 +66,7 @@ import {
   facebookMediaToContainer,
   facebookContentToContainer,
 } from './lib/archive';
+import { getArchiveServerUrlSync, initPlatformConfig, isElectron } from './lib/platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // HOVER PANEL
@@ -1650,8 +1651,6 @@ interface WorkspaceProps {
   onUpdateMedia?: (media: SelectedFacebookMedia) => void;
 }
 
-const ARCHIVE_SERVER = 'http://localhost:3002';
-
 type WorkspaceViewMode = 'read' | 'edit';
 
 function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearContent, onUpdateMedia }: WorkspaceProps) {
@@ -1811,12 +1810,17 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
       return filePath;
     }
     // In Electron, use the custom protocol for direct file serving
-    if (typeof window !== 'undefined' && (window as unknown as { isElectron?: boolean }).isElectron) {
+    if (isElectron) {
       // URL format: local-media://serve/<absolute-path>
       return `local-media://serve${filePath}`;
     }
-    // In browser, use archive server with URL encoding (more efficient than base64)
-    return `${ARCHIVE_SERVER}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
+    // In browser, use archive server with URL encoding (dynamic port from platform config)
+    const archiveServer = getArchiveServerUrlSync();
+    if (!archiveServer) {
+      console.warn('Archive server URL not initialized, media may not load');
+      return filePath; // Return raw path as fallback
+    }
+    return `${archiveServer}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
   };
 
   const formatMediaDate = (ts: number) => {

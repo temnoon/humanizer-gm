@@ -23,6 +23,7 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force';
+import { getArchiveServerUrl } from '../../lib/platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -58,12 +59,6 @@ interface RelationshipStats {
   avgWeight: number;
   byType: Array<{ relationship_type: string; count: number; avg_weight: number }>;
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════════
-
-const ARCHIVE_SERVER = 'http://localhost:3002';
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -105,9 +100,10 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
     setError(null);
 
     try {
+      const archiveServer = await getArchiveServerUrl();
       const [connectionsRes, statsRes] = await Promise.all([
-        fetch(`${ARCHIVE_SERVER}/api/facebook/graph/top-connections?limit=${maxNodes}`),
-        fetch(`${ARCHIVE_SERVER}/api/facebook/graph/relationships/stats`),
+        fetch(`${archiveServer}/api/facebook/graph/top-connections?limit=${maxNodes}`),
+        fetch(`${archiveServer}/api/facebook/graph/relationships/stats`),
       ]);
 
       if (!connectionsRes.ok) throw new Error('Failed to fetch connections');

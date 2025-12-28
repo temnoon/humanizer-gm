@@ -28,6 +28,7 @@ import { loadAUISettings, saveAUISettings, type AUISettings } from './settings';
 import { executeAllTools, cleanToolsFromResponse, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
 import { useLayout } from '../../components/layout/LayoutContext';
 import { useBookOptional } from '../book';
+import { getArchiveServerUrl } from '../platform';
 import {
   getAgentBridge,
   type AgentProposal,
@@ -118,8 +119,6 @@ export interface AUIContextValue {
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
-
-const ARCHIVE_SERVER = 'http://localhost:3002';
 
 const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), an assistant integrated into the Humanizer Studio.
 
@@ -541,7 +540,8 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
         `AUI Chat: ${conv.messages.find((m) => m.role === 'user')?.content.slice(0, 50) || 'Conversation'}`;
 
       // Send to archive server
-      await fetch(`${ARCHIVE_SERVER}/api/aui/archive`, {
+      const archiveServer = await getArchiveServerUrl();
+      await fetch(`${archiveServer}/api/aui/archive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

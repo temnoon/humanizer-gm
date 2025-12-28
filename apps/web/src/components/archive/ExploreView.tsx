@@ -3,6 +3,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { getArchiveServerUrl } from '../../lib/platform';
 
 export interface SearchResult {
   id: string;
@@ -43,7 +44,8 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
     setHasSearched(true);
 
     try {
-      const response = await fetch('http://localhost:3002/api/embeddings/search/messages', {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
