@@ -14,6 +14,18 @@ import type { SelectedFacebookMedia, SelectedFacebookContent } from './types';
 const ARCHIVE_SERVER = 'http://localhost:3002';
 const ITEMS_PER_PAGE = 50;
 
+/**
+ * Normalize file path to HTTP URL for serve-media endpoint
+ * Uses URL encoding (not base64) for efficiency
+ */
+function normalizeMediaPath(filePath: string): string {
+  if (!filePath) return filePath;
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    return filePath;
+  }
+  return `${ARCHIVE_SERVER}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════
@@ -413,9 +425,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
     if (typeof window !== 'undefined' && (window as unknown as { isElectron?: boolean }).isElectron) {
       return `local-media://serve${item.file_path}`;
     }
-    // In browser, use archive server with base64 encoding
-    const encoded = btoa(item.file_path);
-    return `${ARCHIVE_SERVER}/api/facebook/image?path=${encoded}`;
+    // In browser, use serve-media with URL encoding (more efficient than base64)
+    return normalizeMediaPath(item.file_path);
   };
 
   const formatDate = (ts: number) => {
@@ -453,10 +464,11 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
         if (res.ok) {
           const data = await res.json();
           // Get related media (already sorted by created_at ASC in API)
+          // Normalize paths to HTTP URLs
           if (data.relatedMedia && data.relatedMedia.length > 0) {
             relatedMedia = data.relatedMedia.map((m: { id: string; file_path: string; media_type: string; created_at?: number }) => ({
               id: m.id,
-              file_path: m.file_path,
+              file_path: normalizeMediaPath(m.file_path),
               media_type: m.media_type as 'image' | 'video',
               created_at: m.created_at,
             }));
@@ -481,7 +493,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       if (relatedMedia.length === 0) {
         relatedMedia = [{
           id: item.id,
-          file_path: item.file_path,
+          file_path: normalizeMediaPath(item.file_path),
           media_type: item.media_type as 'image' | 'video',
           created_at: item.created_at,
         }];
@@ -489,7 +501,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
       onSelectMedia({
         id: item.id,
-        file_path: item.file_path,
+        file_path: normalizeMediaPath(item.file_path),
         filename: item.filename,
         media_type: item.media_type as 'image' | 'video',
         file_size: item.file_size,
@@ -524,7 +536,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                 const data = await res.json();
                 mediaItems = (data.media || []).map((m: { id: string; file_path: string; media_type: string }) => ({
                   id: m.id,
-                  file_path: m.file_path,
+                  file_path: normalizeMediaPath(m.file_path),
                   media_type: m.media_type as 'image' | 'video',
                 }));
               }

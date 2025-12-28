@@ -1810,14 +1810,13 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
     if (filePath.startsWith('local-media://')) {
       return filePath;
     }
-    // In Electron, use the custom protocol for direct file serving (no base64 encoding needed)
+    // In Electron, use the custom protocol for direct file serving
     if (typeof window !== 'undefined' && (window as unknown as { isElectron?: boolean }).isElectron) {
       // URL format: local-media://serve/<absolute-path>
       return `local-media://serve${filePath}`;
     }
-    // In browser, use archive server with base64 encoding
-    const encoded = btoa(filePath);
-    return `${ARCHIVE_SERVER}/api/facebook/image?path=${encoded}`;
+    // In browser, use archive server with URL encoding (more efficient than base64)
+    return `${ARCHIVE_SERVER}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
   };
 
   const formatMediaDate = (ts: number) => {
@@ -1951,7 +1950,7 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
                   <div key={item.id} className="content-viewer__media-thumb">
                     {item.media_type === 'image' ? (
                       <img
-                        src={`${ARCHIVE_SERVER}/api/facebook/image?path=${btoa(item.file_path)}`}
+                        src={getMediaUrl(item.file_path)}
                         alt="Attached media"
                         loading="lazy"
                       />
