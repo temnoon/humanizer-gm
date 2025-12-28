@@ -15,14 +15,21 @@ const ARCHIVE_SERVER = 'http://localhost:3002';
 const ITEMS_PER_PAGE = 50;
 
 /**
- * Normalize file path to HTTP URL for serve-media endpoint
- * Uses URL encoding (not base64) for efficiency
+ * Normalize file path to a URL for media serving
+ * - In Electron: Uses local-media:// protocol for direct file access
+ * - In browser: Uses HTTP archive server with URL encoding
  */
 function normalizeMediaPath(filePath: string): string {
   if (!filePath) return filePath;
-  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+  // Already a URL, return as-is
+  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('local-media://')) {
     return filePath;
   }
+  // In Electron, use the local-media:// protocol for direct file serving
+  if (typeof window !== 'undefined' && (window as unknown as { isElectron?: boolean }).isElectron) {
+    return `local-media://serve${filePath}`;
+  }
+  // In browser, use archive server with URL encoding
   return `${ARCHIVE_SERVER}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
 }
 

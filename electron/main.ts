@@ -48,7 +48,7 @@ const store = new Store({
   name: 'humanizer-desktop',
   defaults: {
     windowBounds: { width: 1400, height: 900, x: undefined, y: undefined },
-    archiveServerEnabled: false,
+    archiveServerEnabled: true,  // Auto-start for seamless local archives
     archivePath: null,
     ollamaEnabled: false,
     whisperEnabled: true,
@@ -817,9 +817,10 @@ app.whenReady().then(async () => {
     }
   }
 
-  if (store.get('archiveServerEnabled')) {
-    await startArchiveServer();
-  }
+  // Always start archive server for local archive access
+  // Store value controls whether UI shows archive features, but server always runs
+  await startArchiveServer();
+  store.set('archiveServerEnabled', true);
 
   // Always start npe-local server for AI detection and transformations
   await startNpeLocal();
