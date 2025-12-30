@@ -46,12 +46,53 @@ interface ParsedConversation {
 }
 
 /**
+ * Extract assetPointerMap from conversation.html
+ * This maps file-service://file-XXX pointers to actual filenames
+ */
+async function extractAssetPointerMap(folderPath: string): Promise<Record<string, string>> {
+  try {
+    const htmlPath = path.join(folderPath, 'conversation.html');
+    const html = await fs.readFile(htmlPath, 'utf-8');
+
+    // Extract assetPointerMap = {...} from HTML
+    const match = html.match(/assetPointerMap\s*=\s*(\{[^}]+\})/);
+    if (match) {
+      // Parse the JSON (handle unicode escapes)
+      return JSON.parse(match[1]);
+    }
+  } catch {
+    // HTML file doesn't exist or couldn't parse
+  }
+  return {};
+}
+
+/**
+ * Load media_manifest.json which maps display names to actual filenames
+ */
+async function loadMediaManifest(folderPath: string): Promise<Record<string, string>> {
+  try {
+    const manifestPath = path.join(folderPath, 'media_manifest.json');
+    const data = await fs.readFile(manifestPath, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    // No manifest file
+  }
+  return {};
+}
+
+/**
  * Parse a conversation.json file into a structured format
  */
 async function parseConversation(folderPath: string): Promise<ParsedConversation> {
   const jsonPath = path.join(folderPath, 'conversation.json');
   const data = await fs.readFile(jsonPath, 'utf-8');
   const raw = JSON.parse(data);
+
+  // Get asset pointer map for resolving image URLs
+  const assetPointerMap = await extractAssetPointerMap(folderPath);
+  // Get media manifest for resolving attachment display names to actual filenames
+  const mediaManifest = await loadMediaManifest(folderPath);
+  const folderName = path.basename(folderPath);
 
   const messages: ParsedMessage[] = [];
 
@@ -84,16 +125,30 @@ async function parseConversation(folderPath: string): Promise<ParsedConversation
                 parts.push({ type: 'text', content: part });
               }
             } else if (part?.content_type === 'image_asset_pointer') {
+              // Resolve asset pointer to actual filename using the map
+              const assetPointer = part.asset_pointer as string;
+              const filename = assetPointerMap[assetPointer];
+              const url = filename
+                ? `/api/conversations/${folderName}/media/${encodeURIComponent(filename)}`
+                : assetPointer; // Fallback to raw pointer if not found
               parts.push({
                 type: 'image',
-                asset_pointer: part.asset_pointer,
-                url: part.asset_pointer, // Will be resolved by frontend
+                asset_pointer: assetPointer,
+                url,
+                filename,
               });
             } else if (part?.content_type === 'audio_asset_pointer') {
+              // Resolve asset pointer to actual filename using the map
+              const assetPointer = part.asset_pointer as string;
+              const filename = assetPointerMap[assetPointer];
+              const url = filename
+                ? `/api/conversations/${folderName}/media/${encodeURIComponent(filename)}`
+                : assetPointer;
               parts.push({
                 type: 'audio',
-                asset_pointer: part.asset_pointer,
-                url: part.asset_pointer,
+                asset_pointer: assetPointer,
+                url,
+                filename,
               });
             } else if (part?.content_type === 'code') {
               parts.push({
@@ -112,24 +167,26 @@ async function parseConversation(folderPath: string): Promise<ParsedConversation
           // Handle attachments
           if (msg.metadata?.attachments) {
             for (const att of msg.metadata.attachments) {
-              const filename = att.filename || att.name;
-              if (/\.(jpg|jpeg|png|gif|webp)$/i.test(filename)) {
+              const displayName = att.filename || att.name;
+              // Use media manifest to get actual filename, or fall back to display name
+              const actualFilename = mediaManifest[displayName] || displayName;
+              if (/\.(jpg|jpeg|png|gif|webp)$/i.test(displayName)) {
                 parts.push({
                   type: 'image',
-                  filename,
-                  url: `/api/conversations/${path.basename(folderPath)}/media/${filename}`,
+                  filename: displayName,
+                  url: `/api/conversations/${folderName}/media/${encodeURIComponent(actualFilename)}`,
                 });
-              } else if (/\.(wav|mp3|m4a|ogg)$/i.test(filename)) {
+              } else if (/\.(wav|mp3|m4a|ogg)$/i.test(displayName)) {
                 parts.push({
                   type: 'audio',
-                  filename,
-                  url: `/api/conversations/${path.basename(folderPath)}/media/${filename}`,
+                  filename: displayName,
+                  url: `/api/conversations/${folderName}/media/${encodeURIComponent(actualFilename)}`,
                 });
               } else {
                 parts.push({
                   type: 'file',
-                  filename,
-                  url: `/api/conversations/${path.basename(folderPath)}/media/${filename}`,
+                  filename: displayName,
+                  url: `/api/conversations/${folderName}/media/${encodeURIComponent(actualFilename)}`,
                 });
               }
             }
@@ -252,16 +309,37 @@ export function createConversationsRouter(): Router {
       // Parse and return
       const conversation = await parseConversation(folderPath);
 
-      // Get media files in folder
-      const files = await fs.readdir(folderPath);
-      const mediaFiles = files.filter(f =>
-        /\.(jpg|jpeg|png|gif|webp|wav|mp3|m4a|ogg)$/i.test(f)
-      );
+      // Get media files from /media/ subfolder
+      const mediaPath = path.join(folderPath, 'media');
+      let mediaFiles: string[] = [];
+      try {
+        const files = await fs.readdir(mediaPath);
+        mediaFiles = files.filter(f =>
+          /\.(jpg|jpeg|png|gif|webp|wav|mp3|m4a|ogg)$/i.test(f)
+        );
+      } catch {
+        // No media folder, check root folder for backwards compatibility
+        const files = await fs.readdir(folderPath);
+        mediaFiles = files.filter(f =>
+          /\.(jpg|jpeg|png|gif|webp|wav|mp3|m4a|ogg)$/i.test(f)
+        );
+      }
+
+      // Load media manifest if it exists
+      let mediaManifest: Record<string, string> = {};
+      try {
+        const manifestPath = path.join(folderPath, 'media_manifest.json');
+        const manifestData = await fs.readFile(manifestPath, 'utf-8');
+        mediaManifest = JSON.parse(manifestData);
+      } catch {
+        // No manifest, will use filenames directly
+      }
 
       res.json({
         ...conversation,
         folder,
         mediaFiles,
+        mediaManifest,
       });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
@@ -273,7 +351,12 @@ export function createConversationsRouter(): Router {
     try {
       const { folder, filename } = req.params;
       const archiveRoot = getArchiveRoot();
-      const filePath = path.join(archiveRoot, folder, filename);
+
+      // First try /media/ subfolder, then fall back to root folder
+      let filePath = path.join(archiveRoot, folder, 'media', filename);
+      if (!existsSync(filePath)) {
+        filePath = path.join(archiveRoot, folder, filename);
+      }
 
       // Security check - prevent path traversal
       const resolved = path.resolve(filePath);

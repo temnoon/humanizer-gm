@@ -21,3 +21,15 @@ export { ReviewerAgent, getReviewerAgent } from './reviewer';
 
 // Project Manager - Project lifecycle
 export { ProjectManagerAgent, getProjectManagerAgent } from './project-manager';
+
+// Explorer - Format discovery and import intelligence
+export { ExplorerAgent, getExplorerAgent } from './explorer';
+export type {
+  StructureInsight,
+  DetectedPattern,
+  FormatHypothesis,
+  ProbeSample,
+  UserQuery,
+  LearnedFormat,
+  DiscoverySession,
+} from './explorer';

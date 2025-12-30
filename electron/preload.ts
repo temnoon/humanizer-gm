@@ -475,6 +475,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   },
 
+  // Auth - OAuth handling
+  auth: {
+    // Get OAuth callback port (for development localhost server)
+    getCallbackPort: () => ipcRenderer.invoke('auth:callback-port'),
+    // Listen for OAuth callback from deep link or localhost server
+    onOAuthCallback: (callback: (data: { token: string; isNewUser: boolean }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { token: string; isNewUser: boolean }) => callback(data);
+      ipcRenderer.on('auth:oauth-callback', handler);
+      return () => ipcRenderer.removeListener('auth:oauth-callback', handler);
+    },
+  },
+
   // Cloud drives - stubs for now, will be implemented
   cloudDrives: {
     listDrives: () => ipcRenderer.invoke('cloud:list-drives'),

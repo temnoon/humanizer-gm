@@ -136,7 +136,8 @@ export function parseToolUses(response: string): ParsedToolUse[] {
   const uses: ParsedToolUse[] = [];
 
   // Find all USE_TOOL occurrences and extract JSON with brace matching
-  const toolPattern = /USE_TOOL\s*\(\s*(\w+)\s*,\s*/g;
+  // Accept "USE_TOOL" or "USE TOOL" (LLMs sometimes use space instead of underscore)
+  const toolPattern = /USE[_\s]TOOL\s*\(\s*(\w+)\s*,\s*/gi;
 
   let match;
   while ((match = toolPattern.exec(response)) !== null) {

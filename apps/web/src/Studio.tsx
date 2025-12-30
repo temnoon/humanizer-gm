@@ -246,7 +246,7 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
       // Check if archive server is available
       const healthy = await checkArchiveHealth();
       if (!healthy) {
-        setError('Archive server not available. Start with: npx tsx archive-server.js');
+        setError('Archive server not available. The embedded server may still be starting...');
         setLoading(false);
         return;
       }
@@ -303,7 +303,8 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
     try {
       const fullConv = await fetchConversation(conv.folder);
       // Limit to first 20 messages for quick loading
-      const messages = getMessages(fullConv, 20);
+      const archiveServer = getArchiveServerUrlSync() || '';
+      const messages = getMessages(fullConv, 20, archiveServer);
       setExpandedMessages(messages);
     } catch (err) {
       console.error('Failed to load messages:', err);
@@ -1777,7 +1778,8 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
     setNavLoading(true);
     try {
       const conv = await fetchConversation(source.conversationFolder);
-      const messages = getMessages(conv, conv.messages.length); // Get all messages
+      const archiveServer = getArchiveServerUrlSync() || '';
+      const messages = getMessages(conv, conv.messages.length, archiveServer); // Get all messages
       const targetMsg = messages[targetIndex];
 
       if (targetMsg) {
@@ -3302,7 +3304,8 @@ function StudioContent() {
     try {
       // Fetch the full conversation
       const conv = await fetchConversation(result.conversationFolder);
-      const messages = getMessages(conv, conv.messages.length);
+      const archiveServer = getArchiveServerUrlSync() || '';
+      const messages = getMessages(conv, conv.messages.length, archiveServer);
 
       // Find the specific message if we have a messageId
       const messageId = result.metadata?.messageId;

@@ -11,6 +11,7 @@ import { FacebookView } from './FacebookView';
 import { ExploreView, type SearchResult } from './ExploreView';
 import { FilesView } from './FilesView';
 import { AUIChatTab } from '../aui/AUIChatTab';
+import { QueueTab } from '../queue';
 import type { ArchiveTabId, SelectedFacebookMedia, SelectedFacebookContent } from './types';
 import type { BookProject } from './book-project/types';
 import type { BookContent } from '../workspace/BookContentView';
@@ -69,6 +70,8 @@ export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectConten
         return <ExploreView onSelectResult={onSelectSearchResult} />;
       case 'files':
         return <FilesView />;
+      case 'queue':
+        return <QueueTab />;
       default:
         return renderConversations();
     }

@@ -9,7 +9,7 @@
 
 import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net } from 'electron';
 import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import { createServer } from 'net';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
@@ -60,7 +60,6 @@ const store = new Store({
 
 // Keep references to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
-let archiveServerProcess: ChildProcess | null = null;
 let archiveServerPort: number | null = null;
 let npeLocalPort: number | null = null;
 
@@ -198,12 +197,6 @@ async function stopArchiveServer() {
     await stopEmbeddedArchiveServer();
     archiveServerPort = null;
   }
-  // Legacy cleanup for spawned process
-  if (archiveServerProcess) {
-    archiveServerProcess.kill();
-    archiveServerProcess = null;
-    archiveServerPort = null;
-  }
 }
 
 // ============================================================
@@ -324,6 +317,9 @@ function registerIPCHandlers() {
 
   // NPE-Local (AI Detection, Transformations)
   ipcMain.handle('npe:port', () => npeLocalPort);
+
+  // OAuth callback port (for development mode localhost server)
+  ipcMain.handle('auth:callback-port', () => oauthCallbackPort);
   ipcMain.handle('npe:status', async () => {
     if (!npeLocalPort) {
       return { running: false, port: null };
@@ -795,7 +791,154 @@ function registerLocalMediaProtocol() {
 }
 
 // ============================================================
-// APP LIFECYCLE
+// OAUTH CALLBACK SERVER (Development Mode)
+// ============================================================
+
+import * as http from 'http';
+
+let oauthCallbackServer: http.Server | null = null;
+let oauthCallbackPort: number | null = null;
+
+/**
+ * Start a local HTTP server to receive OAuth callbacks in development mode.
+ * In production, the custom protocol (humanizer://) works correctly.
+ */
+async function startOAuthCallbackServer(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url || '/', `http://localhost`);
+
+      if (url.pathname === '/auth/callback') {
+        const token = url.searchParams.get('token');
+        const isNewUser = url.searchParams.get('isNewUser') === 'true';
+
+        if (token && mainWindow) {
+          console.log('[OAuth] Token received via localhost callback');
+          mainWindow.webContents.send('auth:oauth-callback', { token, isNewUser });
+
+          // Focus the app window
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+
+          // Send success page to browser
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`
+            <!DOCTYPE html>
+            <html>
+            <head><title>Login Successful</title></head>
+            <body style="font-family: system-ui; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #1a1918; color: #fff;">
+              <div style="text-align: center;">
+                <h1 style="color: #4a90d9;">Login Successful!</h1>
+                <p>You can close this tab and return to Humanizer.</p>
+                <script>setTimeout(() => window.close(), 2000);</script>
+              </div>
+            </body>
+            </html>
+          `);
+        } else {
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end('<h1>Login failed</h1><p>No token received or app window not ready.</p>');
+        }
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+    });
+
+    // Find a free port
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (addr && typeof addr === 'object') {
+        oauthCallbackPort = addr.port;
+        oauthCallbackServer = server;
+        console.log(`[OAuth] Callback server listening on http://127.0.0.1:${oauthCallbackPort}`);
+        resolve(addr.port);
+      } else {
+        reject(new Error('Failed to get server address'));
+      }
+    });
+
+    server.on('error', reject);
+  });
+}
+
+function stopOAuthCallbackServer() {
+  if (oauthCallbackServer) {
+    oauthCallbackServer.close();
+    oauthCallbackServer = null;
+    oauthCallbackPort = null;
+  }
+}
+
+// ============================================================
+// APP LIFECYCLE - SINGLE INSTANCE LOCK
+// ============================================================
+
+// Store deep link URL to process after window is ready
+let pendingDeepLinkUrl: string | null = null;
+
+// Helper to handle deep link URL (OAuth callback - for production)
+function handleDeepLinkUrl(url: string) {
+  console.log('[OAuth] Processing deep link:', url);
+
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol === 'humanizer:' && parsedUrl.host === 'auth' && parsedUrl.pathname === '/callback') {
+      const token = parsedUrl.searchParams.get('token');
+      const isNewUser = parsedUrl.searchParams.get('isNewUser') === 'true';
+
+      if (token && mainWindow) {
+        console.log('[OAuth] Token received, sending to renderer');
+        mainWindow.webContents.send('auth:oauth-callback', { token, isNewUser });
+        // Focus the app window
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      } else if (token && !mainWindow) {
+        // Window not ready yet, store for later
+        pendingDeepLinkUrl = url;
+        console.log('[OAuth] Window not ready, storing URL for later');
+      } else if (!token) {
+        console.error('[OAuth] No token in callback URL');
+      }
+    }
+  } catch (err) {
+    console.error('[OAuth] Failed to parse deep link:', err);
+  }
+}
+
+// Request single instance lock - ensures only one instance runs
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  console.log('Another instance is running, quitting...');
+  app.quit();
+} else {
+  // Handle second instance (receives deep link URL on Windows/Linux)
+  app.on('second-instance', (_event, commandLine, _workingDirectory) => {
+    console.log('[OAuth] Second instance detected');
+    const deepLinkUrl = commandLine.find(arg => arg.startsWith('humanizer://'));
+    if (deepLinkUrl) {
+      handleDeepLinkUrl(deepLinkUrl);
+    }
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  // Register custom protocol (works in production, fallback in development)
+  if (!app.isPackaged) {
+    // Development: rely on localhost callback server instead
+    console.log('[OAuth] Development mode - will use localhost callback server');
+  } else {
+    // Production: register custom protocol
+    app.setAsDefaultProtocolClient('humanizer');
+    console.log('[OAuth] Production mode - registered humanizer:// protocol');
+  }
+}
+
+// ============================================================
+// APP LIFECYCLE - READY
 // ============================================================
 
 app.whenReady().then(async () => {
@@ -805,6 +948,15 @@ app.whenReady().then(async () => {
   registerLocalMediaProtocol();
 
   registerIPCHandlers();
+
+  // Start OAuth callback server in development mode
+  if (!app.isPackaged) {
+    try {
+      await startOAuthCallbackServer();
+    } catch (err) {
+      console.error('[OAuth] Failed to start callback server:', err);
+    }
+  }
 
   // Initialize whisper for speech-to-text
   if (store.get('whisperEnabled')) {
@@ -827,11 +979,24 @@ app.whenReady().then(async () => {
 
   await createWindow();
 
+  // Process any pending deep link URL that arrived before window was ready
+  if (pendingDeepLinkUrl) {
+    console.log('[OAuth] Processing pending deep link URL');
+    handleDeepLinkUrl(pendingDeepLinkUrl);
+    pendingDeepLinkUrl = null;
+  }
+
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
     }
   });
+});
+
+// Handle OAuth deep link callback (macOS - when app is already running)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLinkUrl(url);
 });
 
 app.on('window-all-closed', () => {

@@ -398,3 +398,170 @@ export const DEFAULT_PYRAMID_CONFIG: PyramidBuildConfig = {
   embeddingModel: 'all-MiniLM-L6-v2',
   summaryModel: 'claude-3-haiku-20240307',
 };
+
+// =============================================================================
+// Xanadu Types (Bidirectional Links & Content-Addressable Media)
+// =============================================================================
+
+/**
+ * Link types for Xanadu-style bidirectional relationships
+ */
+export type LinkType =
+  | 'parent'       // Structural parent-child
+  | 'child'        // Inverse of parent
+  | 'reference'    // Explicit citation
+  | 'transclusion' // Content embedding
+  | 'similar'      // Semantic similarity
+  | 'follows'      // Temporal sequence
+  | 'responds_to'  // Reply/response
+  | 'version_of';  // Version relationship
+
+export type LinkCreator = 'import' | 'user' | 'semantic' | 'aui';
+
+/**
+ * Xanadu-style bidirectional link between content URIs
+ */
+export interface XanaduLink {
+  id: string;
+
+  // Endpoints (URIs like content://openai/conv/123, media://sha256hash)
+  sourceUri: string;
+  targetUri: string;
+
+  // Link metadata
+  linkType: LinkType;
+  linkStrength: number;  // 0.0-1.0 for similarity/relevance
+
+  // Span information (for precise text-to-text links)
+  sourceStart: number | null;
+  sourceEnd: number | null;
+  targetStart: number | null;
+  targetEnd: number | null;
+
+  // Metadata
+  label: string | null;
+  createdAt: number;
+  createdBy: LinkCreator;
+  metadata: Record<string, unknown> | null;
+}
+
+/**
+ * Content-addressable media item (stored by SHA-256 hash)
+ */
+export interface MediaItem {
+  id: string;
+
+  // Content addressing - hash is canonical identifier
+  contentHash: string;
+  filePath: string;  // Relative path: media/{hash[0:2]}/{hash[2:4]}/{hash}.ext
+  originalFilename: string | null;
+
+  // File metadata
+  mimeType: string | null;
+  fileSize: number | null;
+
+  // Media-specific dimensions
+  width: number | null;
+  height: number | null;
+  duration: number | null;  // For audio/video in seconds
+
+  // AI analysis results
+  visionDescription: string | null;
+  transcript: string | null;
+
+  // Timestamps
+  takenAt: number | null;  // Original capture time
+  importedAt: number;
+}
+
+/**
+ * Reference type for how media is linked to content
+ */
+export type MediaReferenceType = 'attachment' | 'embed' | 'generated' | 'upload';
+
+/**
+ * Links content to media, preserving original pointer info
+ */
+export interface MediaReference {
+  id: string;
+  contentId: string;   // References content_items.id
+  mediaHash: string;   // References media_items.content_hash
+
+  // Position in content
+  position: number | null;
+  charOffset: number | null;
+
+  // Reference type and original pointer
+  referenceType: MediaReferenceType;
+  originalPointer: string | null;  // Original: sediment://, file-service://, etc.
+
+  // Caption/alt text
+  caption: string | null;
+  altText: string | null;
+
+  createdAt: number;
+}
+
+/**
+ * Import job status for the universal import pipeline
+ */
+export type ImportJobStatus =
+  | 'pending'
+  | 'extracting'
+  | 'parsing'
+  | 'indexing'
+  | 'embedding'
+  | 'completed'
+  | 'failed';
+
+/**
+ * Source type for imports
+ */
+export type ImportSourceType =
+  | 'openai'
+  | 'gemini'
+  | 'claude'
+  | 'facebook'
+  | 'txt'
+  | 'md'
+  | 'docx'
+  | 'pdf'
+  | 'odt'
+  | 'zip'
+  | 'url'
+  | 'conversation'
+  | 'folder';
+
+/**
+ * Import job with enhanced progress tracking
+ */
+export interface ImportJob {
+  id: string;
+  status: ImportJobStatus;
+
+  // Source information
+  sourceType: ImportSourceType;
+  sourcePath: string | null;
+  sourceName: string | null;
+
+  // Progress tracking
+  progress: number;  // 0.0 - 1.0
+  currentPhase: string | null;
+  currentItem: string | null;
+
+  // Statistics
+  unitsTotal: number;
+  unitsProcessed: number;
+  mediaTotal: number;
+  mediaProcessed: number;
+  linksCreated: number;
+  errorsCount: number;
+
+  // Timing
+  createdAt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+
+  // Error tracking
+  errorLog: string[];  // Array of error messages
+}

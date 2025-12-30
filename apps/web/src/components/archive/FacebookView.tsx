@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from './types';
-import { getArchiveServerUrl, getArchiveServerUrlSync, isElectron } from '../../lib/platform';
+import { getArchiveServerUrl, isElectron } from '../../lib/platform';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -18,8 +18,10 @@ const ITEMS_PER_PAGE = 50;
  * Normalize file path to a URL for media serving
  * - In Electron: Uses local-media:// protocol for direct file access
  * - In browser: Uses HTTP archive server with URL encoding (dynamic port)
+ * @param filePath The raw file path
+ * @param archiveServerUrl The archive server base URL (required for browser mode)
  */
-function normalizeMediaPath(filePath: string): string {
+function normalizeMediaPath(filePath: string, archiveServerUrl: string | null): string {
   if (!filePath) return filePath;
   // Already a URL, return as-is
   if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('local-media://')) {
@@ -30,12 +32,11 @@ function normalizeMediaPath(filePath: string): string {
     return `local-media://serve${filePath}`;
   }
   // In browser, use archive server with URL encoding (dynamic port)
-  const archiveServer = getArchiveServerUrlSync();
-  if (!archiveServer) {
-    console.warn('Archive server URL not initialized');
+  if (!archiveServerUrl) {
+    console.warn('Archive server URL not available');
     return filePath;
   }
-  return `${archiveServer}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
+  return `${archiveServerUrl}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -163,6 +164,9 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
   // Error state
   const [error, setError] = useState<string | null>(null);
 
+  // Archive server URL (initialized on mount)
+  const [archiveServerUrl, setArchiveServerUrl] = useState<string | null>(null);
+
   // Refs
   const feedObserverRef = useRef<HTMLDivElement>(null);
   const mediaObserverRef = useRef<HTMLDivElement>(null);
@@ -171,8 +175,9 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
   // DATA LOADING
   // ═══════════════════════════════════════════════════════════════════
 
-  // Load periods on mount
+  // Initialize archive server URL on mount
   useEffect(() => {
+    getArchiveServerUrl().then(setArchiveServerUrl);
     loadPeriods();
     loadMediaStats();
   }, []);
@@ -443,7 +448,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       return `local-media://serve${item.file_path}`;
     }
     // In browser, use serve-media with URL encoding (more efficient than base64)
-    return normalizeMediaPath(item.file_path);
+    return normalizeMediaPath(item.file_path, archiveServerUrl);
   };
 
   const formatDate = (ts: number) => {
@@ -486,7 +491,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
           if (data.relatedMedia && data.relatedMedia.length > 0) {
             relatedMedia = data.relatedMedia.map((m: { id: string; file_path: string; media_type: string; created_at?: number }) => ({
               id: m.id,
-              file_path: normalizeMediaPath(m.file_path),
+              file_path: normalizeMediaPath(m.file_path, archiveServerUrl),
               media_type: m.media_type as 'image' | 'video',
               created_at: m.created_at,
             }));
@@ -511,7 +516,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       if (relatedMedia.length === 0) {
         relatedMedia = [{
           id: item.id,
-          file_path: normalizeMediaPath(item.file_path),
+          file_path: normalizeMediaPath(item.file_path, archiveServerUrl),
           media_type: item.media_type as 'image' | 'video',
           created_at: item.created_at,
         }];
@@ -519,7 +524,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
       onSelectMedia({
         id: item.id,
-        file_path: normalizeMediaPath(item.file_path),
+        file_path: normalizeMediaPath(item.file_path, archiveServerUrl),
         filename: item.filename,
         media_type: item.media_type as 'image' | 'video',
         file_size: item.file_size,
@@ -555,7 +560,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                 const data = await res.json();
                 mediaItems = (data.media || []).map((m: { id: string; file_path: string; media_type: string }) => ({
                   id: m.id,
-                  file_path: normalizeMediaPath(m.file_path),
+                  file_path: normalizeMediaPath(m.file_path, archiveServerUrl),
                   media_type: m.media_type as 'image' | 'video',
                 }));
               }

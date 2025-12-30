@@ -25,7 +25,13 @@ import type {
   CreateJobResult,
   JobQueryOptions,
   ImageAnalysisResult,
+  PdfExtractionResult,
+  AudioTranscriptionResult,
+  HumanizationResult,
 } from './types';
+import { extractPdf } from './handlers/pdf';
+import { transcribeAudio } from './handlers/audio';
+import { humanizeText } from './handlers/humanize';
 import {
   VisionProviderFactory,
   initVisionProviders,
@@ -448,6 +454,23 @@ export class QueueManager {
           case 'image-embedding':
             data = await this.generateEmbedding(file.path);
             break;
+          case 'extract':
+            data = await extractPdf(file.path, job.spec.options);
+            break;
+          case 'transform':
+            data = await humanizeText(file.path, {
+              intensity: (job.spec.options?.intensity as 'light' | 'moderate' | 'aggressive') || 'moderate',
+              model: job.spec.options?.model as string | undefined,
+              voiceSamples: job.spec.options?.voiceSamples as string[] | undefined,
+            });
+            break;
+          case 'summarize':
+            // Audio transcription (repurposing summarize for now, could add dedicated type)
+            data = await transcribeAudio(file.path, {
+              model: job.spec.options?.model as string | undefined,
+              language: job.spec.options?.language as string | undefined,
+            });
+            break;
           default:
             throw new Error(`Unsupported job type: ${job.spec.type}`);
         }
@@ -570,7 +593,7 @@ export class QueueManager {
     if (successfulResults.length === 0) return;
 
     try {
-      const response = await fetch(`${ARCHIVE_API}/api/images/analysis/batch`, {
+      const response = await fetch(`${ARCHIVE_API}/api/gallery/analysis/batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

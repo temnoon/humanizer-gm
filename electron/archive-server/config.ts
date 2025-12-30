@@ -29,11 +29,12 @@ export interface ServerConfig {
 const HUMANIZER_DIR = path.join(os.homedir(), '.humanizer');
 const ARCHIVE_CONFIG_FILE = path.join(HUMANIZER_DIR, 'archive-config.json');
 const SESSION_STORAGE_DIR = path.join(HUMANIZER_DIR, 'sessions');
-const ARCHIVE_UPLOADS_DIR = '/tmp/archive-uploads';
+const ARCHIVE_UPLOADS_DIR = path.join(os.tmpdir(), 'archive-uploads');
 
 // Default archive settings (can be overridden by env or runtime)
-const DEFAULT_ARCHIVES_BASE = '/Users/tem/openai-export-parser';
-const DEFAULT_ARCHIVE_NAME = 'output_v13_final';
+// First check environment, then fall back to ~/.humanizer/archives
+const DEFAULT_ARCHIVES_BASE = process.env.HUMANIZER_ARCHIVES_BASE || path.join(HUMANIZER_DIR, 'archives');
+const DEFAULT_ARCHIVE_NAME = process.env.HUMANIZER_DEFAULT_ARCHIVE || 'default';
 
 // Runtime state
 let currentConfig: ServerConfig | null = null;
@@ -42,7 +43,7 @@ let currentConfig: ServerConfig | null = null;
  * Initialize configuration from environment and persisted settings
  */
 export async function initConfig(): Promise<ServerConfig> {
-  // Check for Electron/custom archive path
+  // Check for Electron/custom archive path (full path to specific archive)
   const customPath = process.env.ARCHIVE_PATH;
   const isCustomPath = !!customPath;
 
@@ -54,18 +55,43 @@ export async function initConfig(): Promise<ServerConfig> {
     archiveName = path.basename(customPath);
     console.log(`[archive-server] Custom archive mode: ${archivePath}`);
   } else {
-    // Load from persisted config or use default
+    // Load from persisted config or use defaults
     const persisted = await loadPersistedConfig();
+
+    // Determine base path: env var > persisted > default
+    const basePath = process.env.HUMANIZER_ARCHIVES_BASE ||
+                     persisted?.archiveBasePath ||
+                     DEFAULT_ARCHIVES_BASE;
+
     archiveName = persisted?.currentArchive || DEFAULT_ARCHIVE_NAME;
-    archivePath = path.join(DEFAULT_ARCHIVES_BASE, archiveName);
+    archivePath = path.join(basePath, archiveName);
 
     // Verify path exists
     try {
       await fs.access(archivePath);
+      console.log(`[archive-server] Using archive: ${archivePath}`);
     } catch {
-      console.warn(`[archive-server] Archive "${archiveName}" not found, using default`);
-      archiveName = DEFAULT_ARCHIVE_NAME;
-      archivePath = path.join(DEFAULT_ARCHIVES_BASE, archiveName);
+      console.warn(`[archive-server] Archive "${archivePath}" not found`);
+      // Try to find any archive in the base path
+      try {
+        const entries = await fs.readdir(basePath, { withFileTypes: true });
+        const archives = entries.filter(e => e.isDirectory() && !e.name.startsWith('.'));
+        if (archives.length > 0) {
+          archiveName = archives[0].name;
+          archivePath = path.join(basePath, archiveName);
+          console.log(`[archive-server] Auto-selected archive: ${archivePath}`);
+        } else {
+          // Create empty default archive
+          archivePath = path.join(basePath, DEFAULT_ARCHIVE_NAME);
+          await fs.mkdir(archivePath, { recursive: true });
+          console.log(`[archive-server] Created empty archive: ${archivePath}`);
+        }
+      } catch (err) {
+        // Base path doesn't exist, create it with empty archive
+        archivePath = path.join(basePath, DEFAULT_ARCHIVE_NAME);
+        await fs.mkdir(archivePath, { recursive: true });
+        console.log(`[archive-server] Created archives directory: ${archivePath}`);
+      }
     }
   }
 
@@ -135,6 +161,7 @@ export function getArchiveRoot(): string {
 
 interface PersistedConfig {
   currentArchive?: string;
+  archiveBasePath?: string;
   lastSwitched?: string;
 }
 

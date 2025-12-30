@@ -9,10 +9,22 @@
  * - Search by AI-generated descriptions
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQueue } from '../../lib/queue';
 import type { SelectedFacebookMedia } from './types';
-import { getArchiveServerUrl, getArchiveServerUrlSync, isElectron } from '../../lib/platform';
+import { getArchiveServerUrl, isElectron } from '../../lib/platform';
+
+interface ImageAnalysis {
+  id: string;
+  description: string | null;
+  categories: string[];
+  objects: string[];
+  scene: string | null;
+  mood: string | null;
+  model_used: string | null;
+  confidence: number | null;
+  analyzed_at: number;
+}
 
 // Debounce utility
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,6 +74,11 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
   const [searchResults, setSearchResults] = useState<GalleryImage[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Lightbox state
+  const [imageAnalysis, setImageAnalysis] = useState<ImageAnalysis | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const lightboxRef = useRef<HTMLDivElement>(null);
+
   // Queue integration
   const { isAvailable: queueAvailable, createJob, activeJobs } = useQueue();
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
@@ -92,17 +109,20 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
 
       // Normalize the image data to match GalleryImage interface
       const newImages: GalleryImage[] = rawImages.map((img: Record<string, unknown>, index: number) => {
-        const rawUrl = img.url as string;
+        const rawUrl = (img.url || img.file_path) as string;
         // For Facebook, URLs are raw file paths - convert to serve-media endpoint or local-media://
-        // For OpenAI, URLs are already proper HTTP URLs
+        // For OpenAI, URLs are already proper HTTP URLs (or relative /api/ paths)
         let normalizedUrl = rawUrl;
-        if (source === 'facebook' && rawUrl && !rawUrl.startsWith('http')) {
+        if (source === 'facebook' && rawUrl && !rawUrl.startsWith('http') && !rawUrl.startsWith('/api/')) {
           if (isElectron) {
             normalizedUrl = `local-media://serve${rawUrl}`;
           } else {
-            const syncUrl = getArchiveServerUrlSync();
-            normalizedUrl = syncUrl ? `${syncUrl}/api/facebook/serve-media?path=${encodeURIComponent(rawUrl)}` : rawUrl;
+            // Use archiveApi which is already available from the async call above
+            normalizedUrl = `${archiveApi}/api/facebook/serve-media?path=${encodeURIComponent(rawUrl)}`;
           }
+        } else if (source === 'openai' && rawUrl && rawUrl.startsWith('/api/')) {
+          // OpenAI gallery returns relative /api/ URLs - prepend server base
+          normalizedUrl = `${archiveApi}${rawUrl}`;
         }
 
         return {
@@ -140,7 +160,82 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
     loadImages(nextPage, true);
   };
 
-  const closeLightbox = () => setSelectedImage(null);
+  const closeLightbox = () => {
+    setSelectedImage(null);
+    setImageAnalysis(null);
+  };
+
+  // Determine which images to display (must be before navigateLightbox)
+  const displayImages = searchQuery.trim() ? searchResults : images;
+
+  // Navigate to adjacent image in lightbox
+  const navigateLightbox = useCallback((direction: 'prev' | 'next') => {
+    if (!selectedImage) return;
+    const currentIndex = displayImages.findIndex(img => img.id === selectedImage.id);
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'prev'
+      ? Math.max(0, currentIndex - 1)
+      : Math.min(displayImages.length - 1, currentIndex + 1);
+
+    if (newIndex !== currentIndex) {
+      setSelectedImage(displayImages[newIndex]);
+      setImageAnalysis(null); // Clear analysis for new image
+    }
+  }, [selectedImage, displayImages]);
+
+  // Keyboard navigation for lightbox
+  useEffect(() => {
+    if (!selectedImage) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'Escape':
+          closeLightbox();
+          break;
+        case 'ArrowLeft':
+          navigateLightbox('prev');
+          break;
+        case 'ArrowRight':
+          navigateLightbox('next');
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Focus the lightbox for screen readers
+    lightboxRef.current?.focus();
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedImage, navigateLightbox]);
+
+  // Fetch analysis for selected image
+  useEffect(() => {
+    if (!selectedImage?.file_path) return;
+
+    const fetchAnalysis = async () => {
+      setLoadingAnalysis(true);
+      try {
+        const archiveApi = await getArchiveServerUrl();
+        const res = await fetch(
+          `${archiveApi}/api/gallery/analysis/by-path?path=${encodeURIComponent(selectedImage.file_path!)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.data) {
+            setImageAnalysis(data.data);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch image analysis:', err);
+      } finally {
+        setLoadingAnalysis(false);
+      }
+    };
+
+    fetchAnalysis();
+  }, [selectedImage?.file_path]);
 
   // Handle image selection - open in main workspace if callback provided
   const handleImageClick = (image: GalleryImage) => {
@@ -241,9 +336,6 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
       }
     }, 300),
   []);
-
-  // Determine which images to display
-  const displayImages = searchQuery.trim() ? searchResults : images;
 
   // Calculate grid columns based on thumbnail size
   const gridColumns = Math.max(2, Math.floor(320 / (thumbnailSize + 4)));
@@ -381,24 +473,120 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
         </div>
       )}
 
-      {/* Lightbox */}
+      {/* Lightbox - Enhanced with ARIA and description panel */}
       {selectedImage && (
-        <div className="gallery-view__lightbox" onClick={closeLightbox}>
-          <button className="gallery-view__lightbox-close" onClick={closeLightbox}>
+        <div
+          ref={lightboxRef}
+          className="gallery-view__lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="lightbox-title"
+          tabIndex={-1}
+          onClick={closeLightbox}
+        >
+          {/* Close button */}
+          <button
+            className="gallery-view__lightbox-close"
+            onClick={closeLightbox}
+            aria-label="Close lightbox (Escape)"
+          >
             ✕
           </button>
-          <img
-            src={selectedImage.url}
-            alt={selectedImage.filename}
-            onClick={(e) => e.stopPropagation()}
-          />
-          <div className="gallery-view__lightbox-info">
-            <p>{selectedImage.filename}</p>
-            {selectedImage.createdAt && (
-              <p className="gallery-view__lightbox-date">
-                {new Date(selectedImage.createdAt).toLocaleDateString()}
-              </p>
-            )}
+
+          {/* Navigation buttons */}
+          <button
+            className="gallery-view__lightbox-nav gallery-view__lightbox-nav--prev"
+            onClick={(e) => { e.stopPropagation(); navigateLightbox('prev'); }}
+            aria-label="Previous image (Left arrow)"
+            disabled={displayImages.findIndex(img => img.id === selectedImage.id) === 0}
+          >
+            ‹
+          </button>
+          <button
+            className="gallery-view__lightbox-nav gallery-view__lightbox-nav--next"
+            onClick={(e) => { e.stopPropagation(); navigateLightbox('next'); }}
+            aria-label="Next image (Right arrow)"
+            disabled={displayImages.findIndex(img => img.id === selectedImage.id) === displayImages.length - 1}
+          >
+            ›
+          </button>
+
+          {/* Main content area */}
+          <div className="gallery-view__lightbox-content" onClick={(e) => e.stopPropagation()}>
+            {/* Image */}
+            <img
+              src={selectedImage.url}
+              alt={imageAnalysis?.description || selectedImage.filename}
+              className="gallery-view__lightbox-image"
+            />
+
+            {/* Info panel */}
+            <div className="gallery-view__lightbox-info">
+              {/* Header: filename and date */}
+              <div className="gallery-view__lightbox-header">
+                <h3 id="lightbox-title" className="gallery-view__lightbox-title">
+                  {selectedImage.filename}
+                </h3>
+                {selectedImage.createdAt && (
+                  <span className="gallery-view__lightbox-date">
+                    {new Date(selectedImage.createdAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+
+              {/* Description */}
+              {loadingAnalysis ? (
+                <p className="gallery-view__lightbox-loading">Loading analysis...</p>
+              ) : imageAnalysis?.description ? (
+                <div className="gallery-view__lightbox-description">
+                  <p>{imageAnalysis.description}</p>
+                </div>
+              ) : (
+                <p className="gallery-view__lightbox-no-analysis">
+                  No AI analysis available
+                </p>
+              )}
+
+              {/* Tags/Categories */}
+              {imageAnalysis?.categories && imageAnalysis.categories.length > 0 && (
+                <div className="gallery-view__lightbox-tags">
+                  {imageAnalysis.categories.map(cat => (
+                    <span key={cat} className="gallery-view__lightbox-tag">
+                      {cat}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Objects */}
+              {imageAnalysis?.objects && imageAnalysis.objects.length > 0 && (
+                <div className="gallery-view__lightbox-objects">
+                  <span className="gallery-view__lightbox-label">Objects: </span>
+                  {imageAnalysis.objects.join(', ')}
+                </div>
+              )}
+
+              {/* Scene and Mood */}
+              {(imageAnalysis?.scene || imageAnalysis?.mood) && (
+                <div className="gallery-view__lightbox-meta">
+                  {imageAnalysis.scene && (
+                    <span className="gallery-view__lightbox-meta-item">
+                      <span className="gallery-view__lightbox-label">Scene:</span> {imageAnalysis.scene}
+                    </span>
+                  )}
+                  {imageAnalysis.mood && (
+                    <span className="gallery-view__lightbox-meta-item">
+                      <span className="gallery-view__lightbox-label">Mood:</span> {imageAnalysis.mood}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Keyboard hint */}
+              <div className="gallery-view__lightbox-hint" aria-hidden="true">
+                ← → to navigate • Esc to close
+              </div>
+            </div>
           </div>
         </div>
       )}

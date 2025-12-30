@@ -17,6 +17,8 @@ import { createConversationsRouter } from './routes/conversations';
 import { createEmbeddingsRouter } from './routes/embeddings';
 import { createFacebookRouter } from './routes/facebook';
 import { createContentRouter } from './routes/content';
+import { createGalleryRouter } from './routes/gallery';
+import { createImportRouter } from './routes/import';
 
 // Service registry for cleanup on archive switch
 import { resetServices } from './services/registry';
@@ -91,6 +93,8 @@ function createApp(): Express {
   app.use('/api/embeddings', createEmbeddingsRouter());
   app.use('/api/facebook', createFacebookRouter());
   app.use('/api/content', createContentRouter());
+  app.use('/api/gallery', createGalleryRouter());
+  app.use('/api/import', createImportRouter());
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

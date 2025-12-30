@@ -111,7 +111,7 @@ export interface QueueFileResult {
   /** Whether processing succeeded */
   success: boolean;
   /** Result data (type depends on job type) */
-  data?: ImageAnalysisResult | SummarizationResult | unknown;
+  data?: ImageAnalysisResult | SummarizationResult | PdfExtractionResult | AudioTranscriptionResult | HumanizationResult | unknown;
   /** Error message if failed */
   error?: string;
   /** Processing time for this file */
@@ -177,6 +177,57 @@ export interface SummarizationResult {
   originalWordCount: number;
   /** Word count of summary */
   summaryWordCount: number;
+}
+
+export interface PdfExtractionResult {
+  /** Extracted text content */
+  text: string;
+  /** Number of pages */
+  pageCount: number;
+  /** PDF metadata */
+  metadata?: {
+    title?: string;
+    author?: string;
+    subject?: string;
+    creator?: string;
+    creationDate?: string;
+  };
+  /** Word count */
+  wordCount: number;
+}
+
+export interface AudioTranscriptionResult {
+  /** Transcribed text */
+  text: string;
+  /** Segments with timestamps */
+  segments?: Array<{
+    start: number;
+    end: number;
+    text: string;
+  }>;
+  /** Detected language */
+  language?: string;
+  /** Audio duration in seconds */
+  duration?: number;
+  /** Model used */
+  model: string;
+}
+
+export interface HumanizationResult {
+  /** Original text */
+  original: string;
+  /** Humanized text */
+  humanized: string;
+  /** Model used */
+  model: string;
+  /** Processing time in ms */
+  processingTimeMs?: number;
+  /** Improvement metrics */
+  improvement?: {
+    baseline?: number;
+    final?: number;
+    delta?: number;
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════

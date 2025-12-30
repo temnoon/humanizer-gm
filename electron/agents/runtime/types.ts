@@ -24,7 +24,8 @@ export type HouseType =
   | 'stylist'          // Writing style management
   | 'architect'        // Structure and patterns
   | 'security'         // Auth and privacy
-  | 'accessibility';   // A11y compliance
+  | 'accessibility'    // A11y compliance
+  | 'explorer';        // Format discovery and import intelligence
 
 /**
  * Agent status in the council

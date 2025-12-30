@@ -26,7 +26,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 6;  // Bumped for image vision/analysis tables
+const SCHEMA_VERSION = 7;  // Bumped for Xanadu links and content-addressable media
 const EMBEDDING_DIM = 384;  // all-MiniLM-L6-v2
 
 export class EmbeddingDatabase {
@@ -510,7 +510,110 @@ export class EmbeddingDatabase {
       CREATE INDEX IF NOT EXISTS idx_fb_rel_type ON fb_relationships(relationship_type);
       CREATE INDEX IF NOT EXISTS idx_fb_rel_context ON fb_relationships(context_type, context_id);
       CREATE INDEX IF NOT EXISTS idx_fb_rel_time ON fb_relationships(timestamp DESC);
+
+      -- ========================================================================
+      -- Xanadu-Style Links (Bidirectional) - v7
+      -- ========================================================================
+      CREATE TABLE IF NOT EXISTS links (
+        id TEXT PRIMARY KEY,
+        source_uri TEXT NOT NULL,
+        target_uri TEXT NOT NULL,
+        link_type TEXT NOT NULL,
+        link_strength REAL DEFAULT 1.0,
+        source_start INTEGER,
+        source_end INTEGER,
+        target_start INTEGER,
+        target_end INTEGER,
+        label TEXT,
+        created_at REAL NOT NULL,
+        created_by TEXT,
+        metadata TEXT
+      );
+
+      -- ========================================================================
+      -- Content-Addressable Media Storage - v7
+      -- ========================================================================
+      CREATE TABLE IF NOT EXISTS media_items (
+        id TEXT PRIMARY KEY,
+        content_hash TEXT UNIQUE NOT NULL,
+        file_path TEXT NOT NULL,
+        original_filename TEXT,
+        mime_type TEXT,
+        file_size INTEGER,
+        width INTEGER,
+        height INTEGER,
+        duration REAL,
+        vision_description TEXT,
+        transcript TEXT,
+        taken_at REAL,
+        imported_at REAL NOT NULL,
+        embedding BLOB,
+        embedding_model TEXT
+      );
+
+      -- ========================================================================
+      -- Media References - v7
+      -- ========================================================================
+      CREATE TABLE IF NOT EXISTS media_references (
+        id TEXT PRIMARY KEY,
+        content_id TEXT NOT NULL,
+        media_hash TEXT NOT NULL,
+        position INTEGER,
+        char_offset INTEGER,
+        reference_type TEXT NOT NULL,
+        original_pointer TEXT,
+        caption TEXT,
+        alt_text TEXT,
+        created_at REAL NOT NULL,
+        FOREIGN KEY (content_id) REFERENCES content_items(id) ON DELETE CASCADE
+      );
+
+      -- ========================================================================
+      -- Import Jobs - v7
+      -- ========================================================================
+      CREATE TABLE IF NOT EXISTS import_jobs (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'pending',
+        source_type TEXT NOT NULL,
+        source_path TEXT,
+        source_name TEXT,
+        progress REAL DEFAULT 0,
+        current_phase TEXT,
+        current_item TEXT,
+        units_total INTEGER DEFAULT 0,
+        units_processed INTEGER DEFAULT 0,
+        media_total INTEGER DEFAULT 0,
+        media_processed INTEGER DEFAULT 0,
+        links_created INTEGER DEFAULT 0,
+        errors_count INTEGER DEFAULT 0,
+        created_at REAL NOT NULL,
+        started_at REAL,
+        completed_at REAL,
+        error_log TEXT
+      );
+
+      -- Xanadu/v7 Indexes
+      CREATE INDEX IF NOT EXISTS idx_links_source_uri ON links(source_uri);
+      CREATE INDEX IF NOT EXISTS idx_links_target_uri ON links(target_uri);
+      CREATE INDEX IF NOT EXISTS idx_links_type ON links(link_type);
+      CREATE INDEX IF NOT EXISTS idx_links_created ON links(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_media_items_hash ON media_items(content_hash);
+      CREATE INDEX IF NOT EXISTS idx_media_items_imported ON media_items(imported_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_media_items_mime ON media_items(mime_type);
+      CREATE INDEX IF NOT EXISTS idx_media_refs_content ON media_references(content_id);
+      CREATE INDEX IF NOT EXISTS idx_media_refs_hash ON media_references(media_hash);
+      CREATE INDEX IF NOT EXISTS idx_media_refs_pointer ON media_references(original_pointer);
+      CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status);
+      CREATE INDEX IF NOT EXISTS idx_import_jobs_created ON import_jobs(created_at DESC);
     `);
+
+    // Add uri column to content_items if not exists (v7)
+    try {
+      this.db.exec('ALTER TABLE content_items ADD COLUMN uri TEXT');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_content_items_uri ON content_items(uri)');
+    } catch {
+      // Column already exists, ignore
+    }
 
     // Create vec0 virtual tables for vector search (if extension loaded)
     if (this.vecLoaded) {
@@ -616,6 +719,16 @@ export class EmbeddingDatabase {
         id TEXT PRIMARY KEY,
         thread_id TEXT,
         embedding float[${EMBEDDING_DIM}]
+      );
+    `);
+
+    // Media embeddings for visual/audio similarity (v7)
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS vec_media_items USING vec0(
+        id TEXT PRIMARY KEY,
+        content_hash TEXT,
+        mime_type TEXT,
+        embedding float[512]
       );
     `);
   }
@@ -1105,6 +1218,178 @@ export class EmbeddingDatabase {
             id TEXT PRIMARY KEY,
             image_analysis_id TEXT,
             source TEXT,
+            embedding float[512]
+          );
+        `);
+      }
+    }
+
+    // Migration from version 6 to 7: add Xanadu links and content-addressable media
+    if (fromVersion < 7) {
+      this.db.exec(`
+        -- ========================================================================
+        -- Xanadu-Style Links (Bidirectional)
+        -- ========================================================================
+
+        -- Universal bidirectional links between any content URIs
+        CREATE TABLE IF NOT EXISTS links (
+          id TEXT PRIMARY KEY,
+
+          -- Endpoints (URIs like content://openai/conv/123, media://sha256hash)
+          source_uri TEXT NOT NULL,
+          target_uri TEXT NOT NULL,
+
+          -- Link metadata
+          link_type TEXT NOT NULL,          -- 'parent', 'child', 'reference', 'transclusion', 'similar', 'responds_to'
+          link_strength REAL DEFAULT 1.0,   -- 0.0-1.0 for similarity/relevance
+
+          -- Span information (for precise text-to-text links)
+          source_start INTEGER,             -- Character offset in source
+          source_end INTEGER,
+          target_start INTEGER,             -- Character offset in target
+          target_end INTEGER,
+
+          -- Metadata
+          label TEXT,                       -- Human-readable link description
+          created_at REAL NOT NULL,
+          created_by TEXT,                  -- 'import', 'user', 'semantic', 'aui'
+          metadata TEXT                     -- JSON for additional data
+        );
+
+        -- ========================================================================
+        -- Content-Addressable Media Storage
+        -- ========================================================================
+
+        -- Media items stored by content hash (SHA-256)
+        CREATE TABLE IF NOT EXISTS media_items (
+          id TEXT PRIMARY KEY,
+
+          -- Content addressing - hash is canonical identifier
+          content_hash TEXT UNIQUE NOT NULL,
+          file_path TEXT NOT NULL,          -- Relative path: media/{hash[0:2]}/{hash[2:4]}/{hash}.ext
+          original_filename TEXT,
+
+          -- File metadata
+          mime_type TEXT,
+          file_size INTEGER,
+
+          -- Media-specific dimensions
+          width INTEGER,
+          height INTEGER,
+          duration REAL,                    -- For audio/video in seconds
+
+          -- AI analysis results
+          vision_description TEXT,          -- AI-generated description
+          transcript TEXT,                  -- For audio/video
+
+          -- Timestamps
+          taken_at REAL,                    -- Original capture time (from EXIF, etc.)
+          imported_at REAL NOT NULL,
+
+          -- Embedding for visual/audio similarity
+          embedding BLOB,
+          embedding_model TEXT
+        );
+
+        -- ========================================================================
+        -- Media References (Links content to media via hash)
+        -- ========================================================================
+
+        -- Links content_items to media_items, preserving original pointer info
+        CREATE TABLE IF NOT EXISTS media_references (
+          id TEXT PRIMARY KEY,
+          content_id TEXT NOT NULL,         -- References content_items.id
+          media_hash TEXT NOT NULL,         -- References media_items.content_hash
+
+          -- Position in content
+          position INTEGER,                 -- Order of media in content
+          char_offset INTEGER,              -- Character position of reference
+
+          -- Reference type and original pointer
+          reference_type TEXT NOT NULL,     -- 'attachment', 'embed', 'generated', 'upload'
+          original_pointer TEXT,            -- Original: sediment://, file-service://, etc.
+
+          -- Caption/alt text
+          caption TEXT,
+          alt_text TEXT,
+
+          created_at REAL NOT NULL,
+
+          FOREIGN KEY (content_id) REFERENCES content_items(id) ON DELETE CASCADE
+        );
+
+        -- ========================================================================
+        -- Import Jobs (Enhanced tracking)
+        -- ========================================================================
+
+        -- Extended import job tracking with progress phases
+        CREATE TABLE IF NOT EXISTS import_jobs (
+          id TEXT PRIMARY KEY,
+
+          status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'extracting', 'parsing', 'indexing', 'embedding', 'completed', 'failed'
+
+          -- Source information
+          source_type TEXT NOT NULL,        -- 'openai', 'claude', 'facebook', 'txt', 'md', 'docx', 'pdf', 'zip'
+          source_path TEXT,
+          source_name TEXT,
+
+          -- Progress tracking
+          progress REAL DEFAULT 0,          -- 0.0 - 1.0
+          current_phase TEXT,
+          current_item TEXT,
+
+          -- Statistics
+          units_total INTEGER DEFAULT 0,
+          units_processed INTEGER DEFAULT 0,
+          media_total INTEGER DEFAULT 0,
+          media_processed INTEGER DEFAULT 0,
+          links_created INTEGER DEFAULT 0,
+          errors_count INTEGER DEFAULT 0,
+
+          -- Timing
+          created_at REAL NOT NULL,
+          started_at REAL,
+          completed_at REAL,
+
+          -- Error tracking
+          error_log TEXT                    -- JSON array of errors
+        );
+
+        -- Add URI column to content_items for Xanadu addressing
+        -- Note: Column may already exist from earlier migrations
+
+        -- ========================================================================
+        -- Indexes for Xanadu Tables
+        -- ========================================================================
+
+        -- Link indexes for bidirectional traversal
+        CREATE INDEX IF NOT EXISTS idx_links_source_uri ON links(source_uri);
+        CREATE INDEX IF NOT EXISTS idx_links_target_uri ON links(target_uri);
+        CREATE INDEX IF NOT EXISTS idx_links_type ON links(link_type);
+        CREATE INDEX IF NOT EXISTS idx_links_created ON links(created_at DESC);
+
+        -- Media item indexes (may not exist if migrating from older schema)
+
+        -- Media reference indexes
+        CREATE INDEX IF NOT EXISTS idx_media_refs_content ON media_references(content_id);
+        CREATE INDEX IF NOT EXISTS idx_media_refs_hash ON media_references(media_hash);
+        CREATE INDEX IF NOT EXISTS idx_media_refs_pointer ON media_references(original_pointer);
+
+        -- Import job indexes
+        CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status);
+        CREATE INDEX IF NOT EXISTS idx_import_jobs_created ON import_jobs(created_at DESC);
+
+        -- Content items URI index
+        CREATE INDEX IF NOT EXISTS idx_content_items_uri ON content_items(uri);
+      `);
+
+      // Add vector table for media embeddings if vec extension is loaded
+      if (this.vecLoaded) {
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_media_items USING vec0(
+            id TEXT PRIMARY KEY,
+            content_hash TEXT,
+            mime_type TEXT,
             embedding float[512]
           );
         `);
@@ -3028,6 +3313,47 @@ export class EmbeddingDatabase {
   }
 
   /**
+   * Get image analysis by ID
+   */
+  getImageAnalysisById(id: string): {
+    id: string;
+    file_path: string;
+    file_hash: string | null;
+    source: string;
+    description: string | null;
+    categories: string[];
+    objects: string[];
+    scene: string | null;
+    mood: string | null;
+    model_used: string | null;
+    confidence: number | null;
+    processing_time_ms: number | null;
+    analyzed_at: number;
+  } | null {
+    const row = this.db.prepare(`
+      SELECT * FROM image_analysis WHERE id = ?
+    `).get(id) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      file_path: row.file_path,
+      file_hash: row.file_hash,
+      source: row.source,
+      description: row.description,
+      categories: row.categories ? JSON.parse(row.categories) : [],
+      objects: row.objects ? JSON.parse(row.objects) : [],
+      scene: row.scene,
+      mood: row.mood,
+      model_used: row.model_used,
+      confidence: row.confidence,
+      processing_time_ms: row.processing_time_ms,
+      analyzed_at: row.analyzed_at,
+    };
+  }
+
+  /**
    * Full-text search on image descriptions
    */
   searchImagesFTS(query: string, options?: {
@@ -3206,12 +3532,12 @@ export class EmbeddingDatabase {
    */
   getImageAnalysisStats(): {
     total: number;
-    analyzed: number;
     bySource: Record<string, number>;
     byScene: Record<string, number>;
+    byMood: Record<string, number>;
   } {
-    const total = (this.db.prepare('SELECT COUNT(*) as count FROM media_files WHERE type IN ("photo", "image")').get() as { count: number }).count;
-    const analyzed = (this.db.prepare('SELECT COUNT(*) as count FROM image_analysis').get() as { count: number }).count;
+    // Count all analyzed images
+    const total = (this.db.prepare('SELECT COUNT(*) as count FROM image_analysis').get() as { count: number }).count;
 
     const bySourceRows = this.db.prepare(`
       SELECT source, COUNT(*) as count FROM image_analysis GROUP BY source
@@ -3231,7 +3557,16 @@ export class EmbeddingDatabase {
       byScene[row.scene] = row.count;
     }
 
-    return { total, analyzed, bySource, byScene };
+    const byMoodRows = this.db.prepare(`
+      SELECT mood, COUNT(*) as count FROM image_analysis WHERE mood IS NOT NULL GROUP BY mood
+    `).all() as Array<{ mood: string; count: number }>;
+
+    const byMood: Record<string, number> = {};
+    for (const row of byMoodRows) {
+      byMood[row.mood] = row.count;
+    }
+
+    return { total, bySource, byScene, byMood };
   }
 
   /**
@@ -3349,6 +3684,410 @@ export class EmbeddingDatabase {
       DELETE FROM image_cluster_members;
       DELETE FROM image_clusters;
     `);
+  }
+
+  // ===========================================================================
+  // Xanadu Links (Bidirectional)
+  // ===========================================================================
+
+  /**
+   * Insert a new link
+   */
+  insertLink(link: {
+    id: string;
+    sourceUri: string;
+    targetUri: string;
+    linkType: string;
+    linkStrength?: number;
+    sourceStart?: number;
+    sourceEnd?: number;
+    targetStart?: number;
+    targetEnd?: number;
+    label?: string;
+    createdBy: string;
+    metadata?: Record<string, unknown>;
+  }): void {
+    this.db.prepare(`
+      INSERT INTO links (id, source_uri, target_uri, link_type, link_strength,
+        source_start, source_end, target_start, target_end,
+        label, created_at, created_by, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      link.id,
+      link.sourceUri,
+      link.targetUri,
+      link.linkType,
+      link.linkStrength ?? 1.0,
+      link.sourceStart ?? null,
+      link.sourceEnd ?? null,
+      link.targetStart ?? null,
+      link.targetEnd ?? null,
+      link.label ?? null,
+      Date.now(),
+      link.createdBy,
+      link.metadata ? JSON.stringify(link.metadata) : null
+    );
+  }
+
+  /**
+   * Get links by source URI
+   */
+  getLinksBySource(sourceUri: string): Array<{
+    id: string;
+    sourceUri: string;
+    targetUri: string;
+    linkType: string;
+    linkStrength: number;
+    label: string | null;
+    createdBy: string;
+  }> {
+    return this.db.prepare(`
+      SELECT id, source_uri, target_uri, link_type, link_strength, label, created_by
+      FROM links WHERE source_uri = ?
+    `).all(sourceUri) as any[];
+  }
+
+  /**
+   * Get links by target URI (reverse traversal)
+   */
+  getLinksByTarget(targetUri: string): Array<{
+    id: string;
+    sourceUri: string;
+    targetUri: string;
+    linkType: string;
+    linkStrength: number;
+    label: string | null;
+    createdBy: string;
+  }> {
+    return this.db.prepare(`
+      SELECT id, source_uri, target_uri, link_type, link_strength, label, created_by
+      FROM links WHERE target_uri = ?
+    `).all(targetUri) as any[];
+  }
+
+  /**
+   * Get all links for a URI (bidirectional)
+   */
+  getLinksBidirectional(uri: string): Array<{
+    id: string;
+    sourceUri: string;
+    targetUri: string;
+    linkType: string;
+    linkStrength: number;
+    direction: 'outgoing' | 'incoming';
+  }> {
+    const outgoing = this.db.prepare(`
+      SELECT id, source_uri, target_uri, link_type, link_strength, 'outgoing' as direction
+      FROM links WHERE source_uri = ?
+    `).all(uri) as any[];
+
+    const incoming = this.db.prepare(`
+      SELECT id, source_uri, target_uri, link_type, link_strength, 'incoming' as direction
+      FROM links WHERE target_uri = ?
+    `).all(uri) as any[];
+
+    return [...outgoing, ...incoming];
+  }
+
+  /**
+   * Delete a link by ID
+   */
+  deleteLink(id: string): void {
+    this.db.prepare('DELETE FROM links WHERE id = ?').run(id);
+  }
+
+  // ===========================================================================
+  // Content-Addressable Media Items
+  // ===========================================================================
+
+  /**
+   * Insert a media item (or return existing if hash exists)
+   */
+  upsertMediaItem(item: {
+    id: string;
+    contentHash: string;
+    filePath: string;
+    originalFilename?: string;
+    mimeType?: string;
+    fileSize?: number;
+    width?: number;
+    height?: number;
+    duration?: number;
+    takenAt?: number;
+  }): { id: string; contentHash: string; isNew: boolean } {
+    // Check if hash already exists
+    const existing = this.db.prepare(
+      'SELECT id, content_hash FROM media_items WHERE content_hash = ?'
+    ).get(item.contentHash) as { id: string; content_hash: string } | undefined;
+
+    if (existing) {
+      return { id: existing.id, contentHash: existing.content_hash, isNew: false };
+    }
+
+    this.db.prepare(`
+      INSERT INTO media_items (id, content_hash, file_path, original_filename,
+        mime_type, file_size, width, height, duration, taken_at, imported_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      item.id,
+      item.contentHash,
+      item.filePath,
+      item.originalFilename ?? null,
+      item.mimeType ?? null,
+      item.fileSize ?? null,
+      item.width ?? null,
+      item.height ?? null,
+      item.duration ?? null,
+      item.takenAt ?? null,
+      Date.now()
+    );
+
+    return { id: item.id, contentHash: item.contentHash, isNew: true };
+  }
+
+  /**
+   * Get media item by content hash
+   */
+  getMediaByHash(contentHash: string): {
+    id: string;
+    contentHash: string;
+    filePath: string;
+    originalFilename: string | null;
+    mimeType: string | null;
+    fileSize: number | null;
+  } | null {
+    return this.db.prepare(`
+      SELECT id, content_hash as contentHash, file_path as filePath,
+             original_filename as originalFilename, mime_type as mimeType,
+             file_size as fileSize
+      FROM media_items WHERE content_hash = ?
+    `).get(contentHash) as any || null;
+  }
+
+  /**
+   * Get media item by ID
+   */
+  getMediaById(id: string): {
+    id: string;
+    contentHash: string;
+    filePath: string;
+    originalFilename: string | null;
+    mimeType: string | null;
+    fileSize: number | null;
+    width: number | null;
+    height: number | null;
+  } | null {
+    return this.db.prepare(`
+      SELECT id, content_hash as contentHash, file_path as filePath,
+             original_filename as originalFilename, mime_type as mimeType,
+             file_size as fileSize, width, height
+      FROM media_items WHERE id = ?
+    `).get(id) as any || null;
+  }
+
+  /**
+   * Update media item vision description
+   */
+  updateMediaVision(contentHash: string, description: string): void {
+    this.db.prepare(`
+      UPDATE media_items SET vision_description = ? WHERE content_hash = ?
+    `).run(description, contentHash);
+  }
+
+  // ===========================================================================
+  // Media References (Content to Media links)
+  // ===========================================================================
+
+  /**
+   * Insert a media reference
+   */
+  insertMediaReference(ref: {
+    id: string;
+    contentId: string;
+    mediaHash: string;
+    position?: number;
+    charOffset?: number;
+    referenceType: string;
+    originalPointer?: string;
+    caption?: string;
+    altText?: string;
+  }): void {
+    this.db.prepare(`
+      INSERT INTO media_references (id, content_id, media_hash, position, char_offset,
+        reference_type, original_pointer, caption, alt_text, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      ref.id,
+      ref.contentId,
+      ref.mediaHash,
+      ref.position ?? null,
+      ref.charOffset ?? null,
+      ref.referenceType,
+      ref.originalPointer ?? null,
+      ref.caption ?? null,
+      ref.altText ?? null,
+      Date.now()
+    );
+  }
+
+  /**
+   * Get media references for a content item
+   */
+  getMediaRefsForContent(contentId: string): Array<{
+    id: string;
+    mediaHash: string;
+    filePath: string;
+    position: number | null;
+    referenceType: string;
+    originalPointer: string | null;
+  }> {
+    return this.db.prepare(`
+      SELECT mr.id, mr.media_hash as mediaHash, mi.file_path as filePath,
+             mr.position, mr.reference_type as referenceType,
+             mr.original_pointer as originalPointer
+      FROM media_references mr
+      JOIN media_items mi ON mi.content_hash = mr.media_hash
+      WHERE mr.content_id = ?
+      ORDER BY mr.position ASC
+    `).all(contentId) as any[];
+  }
+
+  /**
+   * Resolve an original pointer to a media hash
+   */
+  resolveMediaPointer(originalPointer: string): string | null {
+    const result = this.db.prepare(`
+      SELECT media_hash FROM media_references WHERE original_pointer = ? LIMIT 1
+    `).get(originalPointer) as { media_hash: string } | undefined;
+    return result?.media_hash ?? null;
+  }
+
+  // ===========================================================================
+  // Import Jobs
+  // ===========================================================================
+
+  /**
+   * Create a new import job
+   */
+  createImportJob(job: {
+    id: string;
+    sourceType: string;
+    sourcePath?: string;
+    sourceName?: string;
+  }): void {
+    this.db.prepare(`
+      INSERT INTO import_jobs (id, status, source_type, source_path, source_name, created_at)
+      VALUES (?, 'pending', ?, ?, ?, ?)
+    `).run(job.id, job.sourceType, job.sourcePath ?? null, job.sourceName ?? null, Date.now());
+  }
+
+  /**
+   * Update import job status and progress
+   */
+  updateImportJob(id: string, updates: {
+    status?: string;
+    progress?: number;
+    currentPhase?: string;
+    currentItem?: string;
+    unitsTotal?: number;
+    unitsProcessed?: number;
+    mediaTotal?: number;
+    mediaProcessed?: number;
+    linksCreated?: number;
+    errorsCount?: number;
+    startedAt?: number;
+    completedAt?: number;
+    errorLog?: string[];
+  }): void {
+    const fields: string[] = [];
+    const values: (string | number | null)[] = [];
+
+    if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+    if (updates.progress !== undefined) { fields.push('progress = ?'); values.push(updates.progress); }
+    if (updates.currentPhase !== undefined) { fields.push('current_phase = ?'); values.push(updates.currentPhase); }
+    if (updates.currentItem !== undefined) { fields.push('current_item = ?'); values.push(updates.currentItem); }
+    if (updates.unitsTotal !== undefined) { fields.push('units_total = ?'); values.push(updates.unitsTotal); }
+    if (updates.unitsProcessed !== undefined) { fields.push('units_processed = ?'); values.push(updates.unitsProcessed); }
+    if (updates.mediaTotal !== undefined) { fields.push('media_total = ?'); values.push(updates.mediaTotal); }
+    if (updates.mediaProcessed !== undefined) { fields.push('media_processed = ?'); values.push(updates.mediaProcessed); }
+    if (updates.linksCreated !== undefined) { fields.push('links_created = ?'); values.push(updates.linksCreated); }
+    if (updates.errorsCount !== undefined) { fields.push('errors_count = ?'); values.push(updates.errorsCount); }
+    if (updates.startedAt !== undefined) { fields.push('started_at = ?'); values.push(updates.startedAt); }
+    if (updates.completedAt !== undefined) { fields.push('completed_at = ?'); values.push(updates.completedAt); }
+    if (updates.errorLog !== undefined) { fields.push('error_log = ?'); values.push(JSON.stringify(updates.errorLog)); }
+
+    if (fields.length === 0) return;
+
+    values.push(id);
+    this.db.prepare(`UPDATE import_jobs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  }
+
+  /**
+   * Get import job by ID
+   */
+  getImportJob(id: string): {
+    id: string;
+    status: string;
+    sourceType: string;
+    sourcePath: string | null;
+    sourceName: string | null;
+    progress: number;
+    currentPhase: string | null;
+    currentItem: string | null;
+    unitsTotal: number;
+    unitsProcessed: number;
+    mediaTotal: number;
+    mediaProcessed: number;
+    linksCreated: number;
+    errorsCount: number;
+    createdAt: number;
+    startedAt: number | null;
+    completedAt: number | null;
+    errorLog: string[];
+  } | null {
+    const row = this.db.prepare(`
+      SELECT id, status, source_type as sourceType, source_path as sourcePath,
+             source_name as sourceName, progress, current_phase as currentPhase,
+             current_item as currentItem, units_total as unitsTotal,
+             units_processed as unitsProcessed, media_total as mediaTotal,
+             media_processed as mediaProcessed, links_created as linksCreated,
+             errors_count as errorsCount, created_at as createdAt,
+             started_at as startedAt, completed_at as completedAt, error_log as errorLog
+      FROM import_jobs WHERE id = ?
+    `).get(id) as any;
+
+    if (!row) return null;
+
+    return {
+      ...row,
+      errorLog: row.errorLog ? JSON.parse(row.errorLog) : [],
+    };
+  }
+
+  /**
+   * Get recent import jobs
+   */
+  getRecentImportJobs(limit = 10): Array<{
+    id: string;
+    status: string;
+    sourceType: string;
+    sourceName: string | null;
+    progress: number;
+    unitsProcessed: number;
+    mediaProcessed: number;
+    errorsCount: number;
+    createdAt: number;
+    completedAt: number | null;
+  }> {
+    return this.db.prepare(`
+      SELECT id, status, source_type as sourceType, source_name as sourceName,
+             progress, units_processed as unitsProcessed, media_processed as mediaProcessed,
+             errors_count as errorsCount, created_at as createdAt,
+             completed_at as completedAt
+      FROM import_jobs
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(limit) as any[];
   }
 
   // ===========================================================================

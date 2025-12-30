@@ -10,7 +10,8 @@ export type ArchiveTabId =
   | 'facebook'
   | 'explore'
   | 'files'
-  | 'aui';
+  | 'aui'
+  | 'queue';
 
 /**
  * Selected Facebook Media - for display in main workspace
@@ -69,6 +70,7 @@ export const ARCHIVE_TABS: ArchiveTabDefinition[] = [
   { id: 'facebook', icon: '👤', label: 'Social', description: 'Facebook archive' },
   { id: 'explore', icon: '🔍', label: 'Explore', description: 'Semantic search' },
   { id: 'files', icon: '📁', label: 'Files', description: 'Local folder browser' },
+  { id: 'queue', icon: '⚙️', label: 'Queue', description: 'Batch processing jobs' },
 ];
 
 /**

@@ -62,6 +62,16 @@ export async function fetchConversations(options?: {
   return response.json();
 }
 
+// Message part types from archive-server
+interface MessagePart {
+  type: 'text' | 'image' | 'audio' | 'file' | 'code' | 'execution_output';
+  content?: string;
+  url?: string;
+  filename?: string;
+  language?: string;
+  asset_pointer?: string;
+}
+
 // API response for single conversation (archive-server pre-flattens messages)
 interface ConversationResponse {
   id: string;
@@ -70,7 +80,7 @@ interface ConversationResponse {
   messages: Array<{
     id: string;
     role: 'user' | 'assistant' | 'system' | 'tool';
-    content: string;
+    content: string | MessagePart[];  // Can be string (legacy) or array of parts
     created_at: number;
   }>;
   created_at: number;
@@ -94,20 +104,37 @@ export async function fetchConversation(folder: string): Promise<ConversationRes
 
 /**
  * Extract text content from message content parts
+ * Includes markdown image references for media parts
  */
-function extractTextContent(content: unknown): string {
+function extractTextContent(content: string | MessagePart[], archiveServerUrl?: string): string {
   if (typeof content === 'string') {
     return content;
   }
   if (Array.isArray(content)) {
     return content
       .map(part => {
-        if (typeof part === 'string') return part;
-        if (part && typeof part === 'object' && 'content' in part) {
-          return (part as { content: string }).content;
+        if (part.type === 'text') {
+          return part.content || '';
         }
-        if (part && typeof part === 'object' && 'text' in part) {
-          return (part as { text: string }).text;
+        if (part.type === 'code') {
+          return `\`\`\`${part.language || ''}\n${part.content || ''}\n\`\`\``;
+        }
+        if (part.type === 'execution_output') {
+          return `Output:\n\`\`\`\n${part.content || ''}\n\`\`\``;
+        }
+        if (part.type === 'image' && part.url) {
+          // Generate markdown image with full URL
+          const fullUrl = part.url.startsWith('/api/')
+            ? `${archiveServerUrl || ''}${part.url}`
+            : part.url;
+          const alt = part.filename || 'Image';
+          return `![${alt}](${fullUrl})`;
+        }
+        if (part.type === 'audio' && part.url) {
+          const fullUrl = part.url.startsWith('/api/')
+            ? `${archiveServerUrl || ''}${part.url}`
+            : part.url;
+          return `🔊 [Audio: ${part.filename || 'audio'}](${fullUrl})`;
         }
         return '';
       })
@@ -118,17 +145,41 @@ function extractTextContent(content: unknown): string {
 }
 
 /**
+ * Extract media URLs from message content parts
+ */
+function extractMediaUrls(content: string | MessagePart[]): string[] {
+  if (typeof content === 'string' || !Array.isArray(content)) {
+    return [];
+  }
+  return content
+    .filter(part => (part.type === 'image' || part.type === 'audio') && part.url)
+    .map(part => part.url!)
+    .filter(Boolean);
+}
+
+/**
+ * Check if content has media
+ */
+function contentHasMedia(content: string | MessagePart[]): boolean {
+  if (typeof content === 'string' || !Array.isArray(content)) {
+    return false;
+  }
+  return content.some(part => part.type === 'image' || part.type === 'audio' || part.type === 'file');
+}
+
+/**
  * Convert API response to FlatMessage array
  * The archive-server already flattens messages, so this is a simple mapping
+ * @param archiveServerUrl - Base URL for constructing full image URLs
  */
-export function getMessages(conv: ConversationResponse, limit = 50): FlatMessage[] {
+export function getMessages(conv: ConversationResponse, limit = 50, archiveServerUrl?: string): FlatMessage[] {
   return conv.messages.slice(0, limit).map((msg, index) => ({
     id: msg.id,
     role: msg.role,
-    content: extractTextContent(msg.content),
+    content: extractTextContent(msg.content, archiveServerUrl),
     created_at: msg.created_at,
-    has_media: false, // TODO: detect media in content
-    media_urls: [],
+    has_media: contentHasMedia(msg.content),
+    media_urls: extractMediaUrls(msg.content),
     index,
   }));
 }
@@ -262,7 +313,9 @@ export function conversationToContainer(
       messages: conv.messages.map(msg => ({
         id: msg.id,
         role: msg.role,
-        content: msg.content,
+        content: typeof msg.content === 'string'
+          ? msg.content
+          : msg.content.map(part => part.content || '').join('\n'),
         timestamp: msg.created_at * 1000,
       })),
       artifacts,
