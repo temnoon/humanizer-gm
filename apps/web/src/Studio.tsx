@@ -327,6 +327,15 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
     onClose();
   };
 
+  // Handle Gutenberg text selection
+  const handleSelectGutenbergText = (text: string, title: string) => {
+    importText(text, title, {
+      type: 'gutenberg',
+      path: ['gutenberg', title],
+    });
+    onClose();
+  };
+
   const handleImportFullConversation = (conv: ArchiveConversation) => {
     const allContent = expandedMessages
       .map(m => `**[${m.role.toUpperCase()}]**\n\n${m.content}`)
@@ -558,6 +567,7 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
       onOpenGraph={onOpenGraph}
       onSelectBookContent={onSelectBookContent}
       onSelectSearchResult={onSelectSearchResult}
+      onSelectGutenbergText={handleSelectGutenbergText}
       controlledTab={navigateToTab}
       onTabChange={onTabChange}
     />

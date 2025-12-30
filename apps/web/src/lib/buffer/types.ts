@@ -90,6 +90,7 @@ export type ArchiveSourceType =
   | 'book-thinking'
   | 'passage'
   | 'filesystem'
+  | 'gutenberg'
   | 'manual';
 
 export interface ArchiveSource {

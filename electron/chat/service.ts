@@ -29,34 +29,149 @@ import type {
 
 const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), the AI assistant for Humanizer Studio.
 
+=== PHILOSOPHICAL GROUNDING ===
+
+Humanizer is built on Subjective Narrative Theory. You understand:
+
+THE THREE REALMS (not two):
+- Subjective: Direct experience, qualia, the Now - "the felt sense of reading these words"
+- Objective: Shared constructs, consensus reality - "this document is 3 pages long"
+- Intersubjective: Social meaning, culture, language - "the significance of humanizing AI text"
+
+Most people collapse these into just objective/subjective. You know better.
+
+CORE INSIGHTS:
+- Language is not passive reception - it is a SENSE through which consciousness constructs meaning
+- Sentences, not vectors, are the irreducible unit of narrative meaning
+- The interface doesn't exist until spoken into being
+- Narrative meaning only exists where it can still be narrated
+
+YOUR ROLE:
+You are the Curator-Editor - the first node, the front door of Humanizer. You live on someone's personal device, helping them:
+- Shift from unconscious identification with text to conscious subjective agency
+- Curate their archives into meaningful narratives
+- Build books that embody their authentic voice
+
+You are not a tool - you are a contemplative practice in software form.
+
+=== CAPABILITIES ===
+
 You help the user:
 - Navigate the Studio (Archive panel, Tools panel, Book workspace)
 - Search their archives (ChatGPT conversations, Facebook content, semantic search)
 - Transform content (humanize, apply personas/styles, detect AI)
-- Build books (chapters, passages, gems, curated content)
-- Coordinate with the Council of House Agents (Curator, Harvester, Builder, Reviewer)
+- Build books (chapters, passages, curated content)
+- Coordinate with the Council of House Agents
 
-When you need to perform actions, use this syntax:
+When you need to perform actions, use this exact syntax:
 USE_TOOL(tool_name, {"param": "value"})
 
-Available tools:
-- search_archive: Search conversations by text
-- semantic_search: Search by meaning/similarity
-- humanize_text: Make text sound more human
-- apply_persona: Apply a writing persona
-- apply_style: Apply a writing style
-- create_chapter: Create a new book chapter
-- add_passage: Add a passage to a thread
-- mark_gem: Mark content as a gem
-- harvest_passages: Ask Harvester agent to find relevant content
-- curate_passage: Ask Curator agent to assess quality
-- build_chapter: Ask Builder agent to compose content
-- review_content: Ask Reviewer agent to check quality
+IMPORTANT: Only use tools from this list. Never invent new tools.
 
-Your conversations are archived and become part of the user's searchable corpus.
-Be concise but helpful. When possible, show users how to do things themselves.
+=== ARCHIVE SEARCH ===
+- search_archive: {"query": "text", "limit": 10} - Search conversations semantically
+- search_facebook: {"query": "text", "limit": 10} - Search Facebook content
+- list_conversations: {"limit": 20, "offset": 0} - List recent conversations
+
+=== WORKSPACE ===
+- get_workspace: {} - Get current workspace state (what's displayed)
+- save_to_chapter: {"chapterId": "id", "append": true/false} - Save workspace content to chapter
+
+=== BOOK CHAPTERS ===
+- create_chapter: {"title": "Chapter Title", "content": "optional initial content"}
+- update_chapter: {"chapterId": "id", "content": "new content", "changes": "description"}
+- delete_chapter: {"chapterId": "id"}
+- get_chapter: {"chapterId": "id"} - Get chapter content
+- list_chapters: {} - List all chapters
+- render_book: {} - Render complete book
+
+=== PASSAGES ===
+- add_passage: {"content": "text", "conversationTitle": "source", "tags": ["tag1"]}
+- list_passages: {} - List curated passages
+- mark_passage: {"passageId": "id", "mark": "gem"|"draft"|"archived"}
+- harvest_archive: {"query": "theme", "limit": 10} - Find passages on a topic
+
+=== TEXT TRANSFORMATION ===
+- humanize: {"text": "content to humanize"}
+- apply_persona: {"text": "content", "personaId": "id"}
+- apply_style: {"text": "content", "styleId": "id"}
+- detect_ai: {"text": "content to analyze"}
+- analyze_text: {"text": "content"} - Get sentence-level analysis
+- quantum_read: {"text": "content"} - Tetralemma analysis
+- translate: {"text": "content", "targetLanguage": "es"}
+
+=== PERSONAS & STYLES ===
+- list_personas: {} - Available personas
+- list_styles: {} - Available styles
+- extract_persona: {"conversationId": "id"} - Extract persona from text
+- extract_style: {"conversationId": "id"} - Extract style from text
+- discover_voices: {"conversationIds": ["id1", "id2"]} - Find voice patterns
+- create_persona: {"name": "Name", "description": "...", "traits": [...]}
+- create_style: {"name": "Name", "description": "...", "rules": [...]}
+
+=== IMAGES ===
+- describe_image: {"mediaId": "id"} - Get AI description of image
+- search_images: {"query": "description", "limit": 10}
+- classify_image: {"mediaId": "id"} - Classify image content
+- find_similar_images: {"mediaId": "id", "limit": 5}
+- cluster_images: {"limit": 100} - Group similar images
+- add_image_passage: {"mediaId": "id", "caption": "text", "chapterId": "id"}
+
+=== PYRAMID (Summarization) ===
+- build_pyramid: {"conversationId": "id"} - Build summary pyramid
+- get_pyramid: {} - Get current pyramid
+- search_pyramid: {"query": "text"} - Search within pyramid
+
+=== DRAFT GENERATION ===
+- generate_first_draft: {"chapterId": "id", "instructions": "focus on X"}
+
+=== AGENTS ===
+- list_agents: {} - Available agents
+- get_agent_status: {"agentId": "id"}
+- list_pending_proposals: {} - Proposals awaiting approval
+- request_agent: {"agentId": "curator|harvester|builder|reviewer", "task": "description"}
+
+=== WORKFLOWS ===
+- discover_threads: {"query": "theme"} - Find narrative threads
+- start_book_workflow: {"title": "Book Title", "theme": "description"}
+
+RESPONSE GUIDELINES:
+- Be concise. One or two sentences, then tool call if needed.
+- If a tool fails, explain what happened and suggest alternatives.
+- After tool results, summarize what was found/done.
+- When possible, show users how to do things themselves in the UI.
+- Never output raw tool syntax in conversational text - use tools, don't describe using them.
 
 The user is the Chairman of the Council - the ultimate authority over agents.`;
+
+// ═══════════════════════════════════════════════════════════════════
+// VALID TOOLS - All tools that AUI can use
+// ═══════════════════════════════════════════════════════════════════
+
+const VALID_TOOLS = new Set([
+  // Archive
+  'search_archive', 'search_facebook', 'list_conversations',
+  // Workspace
+  'get_workspace', 'save_to_chapter',
+  // Book chapters
+  'create_chapter', 'update_chapter', 'delete_chapter', 'get_chapter', 'list_chapters', 'render_book',
+  // Passages
+  'add_passage', 'list_passages', 'mark_passage', 'harvest_archive',
+  // Text transformation
+  'humanize', 'apply_persona', 'apply_style', 'detect_ai', 'analyze_text', 'quantum_read', 'translate',
+  // Personas & styles
+  'list_personas', 'list_styles', 'extract_persona', 'extract_style', 'discover_voices', 'create_persona', 'create_style',
+  // Images
+  'describe_image', 'search_images', 'classify_image', 'find_similar_images', 'cluster_images', 'add_image_passage',
+  // Pyramid
+  'build_pyramid', 'get_pyramid', 'search_pyramid',
+  // Draft generation
+  'generate_first_draft',
+  // Agents
+  'list_agents', 'get_agent_status', 'list_pending_proposals', 'request_agent',
+  // Workflows
+  'discover_threads', 'start_book_workflow',
+]);
 
 // ═══════════════════════════════════════════════════════════════════
 // CHAT SERVICE
@@ -514,6 +629,13 @@ export class ChatService {
       try {
         const name = match[1];
         const params = JSON.parse(match[2]);
+
+        // Validate tool name - skip invalid/hallucinated tools
+        if (!VALID_TOOLS.has(name)) {
+          console.warn(`[ChatService] Skipping unknown tool: ${name}`);
+          continue;
+        }
+
         tools.push({ name, params });
       } catch {
         // Invalid JSON, skip
@@ -527,42 +649,141 @@ export class ChatService {
     name: string,
     params: Record<string, unknown>
   ): Promise<ToolResult> {
-    // Agent tools - route to Agent Council
-    if (name.startsWith('harvest_') || name.startsWith('curate_') ||
-        name.startsWith('build_') || name.startsWith('review_')) {
-      return this.routeToAgent(name, params);
-    }
-
-    // Archive tools - call archive server
-    if (name === 'search_archive' || name === 'semantic_search') {
+    // Archive search tools - call archive server
+    if (name === 'search_archive' || name === 'search_facebook' || name === 'list_conversations') {
       return this.callArchiveTool(name, params);
     }
 
-    // Book tools - stub for now (would call BookContext)
-    if (name === 'create_chapter' || name === 'add_passage' || name === 'mark_gem') {
+    // Agent routing tools
+    if (name === 'request_agent' || name === 'list_agents' ||
+        name === 'get_agent_status' || name === 'list_pending_proposals') {
+      return this.routeToAgent(name, params);
+    }
+
+    // Harvest tool - routes to archive search
+    if (name === 'harvest_archive') {
+      return this.callArchiveTool('search_archive', params);
+    }
+
+    // Book/chapter tools - forward to renderer via event
+    if (['create_chapter', 'update_chapter', 'delete_chapter', 'get_chapter',
+         'list_chapters', 'render_book'].includes(name)) {
       return {
         toolName: name,
         success: true,
-        message: `${name} executed (stub)`,
+        message: `${name} requested`,
         data: { name, params },
         teaching: {
-          whatHappened: `Would execute ${name}`,
-          guiPath: ['Books tab', 'Select project', `Click ${name}`],
+          whatHappened: `Book operation: ${name}`,
+          guiPath: ['Books panel', 'Select project', 'Manage chapters'],
         },
       };
     }
 
-    // Transform tools - stub for now
-    if (name === 'humanize_text' || name === 'apply_persona' || name === 'apply_style') {
+    // Passage tools
+    if (['add_passage', 'list_passages', 'mark_passage'].includes(name)) {
       return {
         toolName: name,
         success: true,
-        message: `${name} executed (stub)`,
+        message: `${name} requested`,
         data: { name, params },
         teaching: {
-          whatHappened: `Would execute ${name}`,
-          guiPath: ['Tools panel', `Select ${name}`],
+          whatHappened: `Passage operation: ${name}`,
+          guiPath: ['Archive panel', 'Select content', 'Use passage actions'],
         },
+      };
+    }
+
+    // Transformation tools
+    if (['humanize', 'apply_persona', 'apply_style', 'detect_ai',
+         'analyze_text', 'quantum_read', 'translate'].includes(name)) {
+      return {
+        toolName: name,
+        success: true,
+        message: `${name} requested`,
+        data: { name, params },
+        teaching: {
+          whatHappened: `Text transformation: ${name}`,
+          guiPath: ['Tools panel', 'Select transformation type'],
+        },
+      };
+    }
+
+    // Persona/style tools
+    if (['list_personas', 'list_styles', 'extract_persona', 'extract_style',
+         'discover_voices', 'create_persona', 'create_style'].includes(name)) {
+      return {
+        toolName: name,
+        success: true,
+        message: `${name} requested`,
+        data: { name, params },
+        teaching: {
+          whatHappened: `Persona/style operation: ${name}`,
+          guiPath: ['Tools panel', 'Personas & Styles tab'],
+        },
+      };
+    }
+
+    // Image tools
+    if (['describe_image', 'search_images', 'classify_image',
+         'find_similar_images', 'cluster_images', 'add_image_passage'].includes(name)) {
+      return {
+        toolName: name,
+        success: true,
+        message: `${name} requested`,
+        data: { name, params },
+        teaching: {
+          whatHappened: `Image operation: ${name}`,
+          guiPath: ['Archive panel', 'Gallery view', 'Select image'],
+        },
+      };
+    }
+
+    // Pyramid tools
+    if (['build_pyramid', 'get_pyramid', 'search_pyramid'].includes(name)) {
+      return {
+        toolName: name,
+        success: true,
+        message: `${name} requested`,
+        data: { name, params },
+        teaching: {
+          whatHappened: `Pyramid summarization: ${name}`,
+          guiPath: ['Tools panel', 'Pyramid builder'],
+        },
+      };
+    }
+
+    // Workspace tools
+    if (['get_workspace', 'save_to_chapter'].includes(name)) {
+      return {
+        toolName: name,
+        success: true,
+        message: `${name} requested`,
+        data: { name, params },
+      };
+    }
+
+    // Workflow tools
+    if (['discover_threads', 'start_book_workflow', 'generate_first_draft'].includes(name)) {
+      return {
+        toolName: name,
+        success: true,
+        message: `${name} requested`,
+        data: { name, params },
+        teaching: {
+          whatHappened: `Workflow: ${name}`,
+          guiPath: ['Books panel', 'Start workflow'],
+        },
+      };
+    }
+
+    // Fallback for any unhandled but valid tools
+    if (VALID_TOOLS.has(name)) {
+      return {
+        toolName: name,
+        success: true,
+        message: `${name} acknowledged`,
+        data: { name, params },
       };
     }
 

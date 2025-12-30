@@ -7,6 +7,7 @@ export type ArchiveTabId =
   | 'gallery'
   | 'import'
   | 'books'
+  | 'gutenberg'
   | 'facebook'
   | 'explore'
   | 'files'
@@ -67,6 +68,7 @@ export const ARCHIVE_TABS: ArchiveTabDefinition[] = [
   { id: 'gallery', icon: '🖼️', label: 'Gallery', description: 'Images and audio files' },
   { id: 'import', icon: '📥', label: 'Import', description: 'Import archives' },
   { id: 'books', icon: '📚', label: 'Books', description: 'Book projects' },
+  { id: 'gutenberg', icon: '📖', label: 'Gutenberg', description: 'Public domain books' },
   { id: 'facebook', icon: '👤', label: 'Social', description: 'Facebook archive' },
   { id: 'explore', icon: '🔍', label: 'Explore', description: 'Semantic search' },
   { id: 'files', icon: '📁', label: 'Files', description: 'Local folder browser' },

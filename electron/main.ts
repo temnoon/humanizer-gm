@@ -53,7 +53,7 @@ const store = new Store({
     ollamaEnabled: false,
     whisperEnabled: true,
     whisperModel: 'ggml-base.en.bin',
-    ollamaModel: 'llama3.2:3b',
+    ollamaModel: 'qwen3:14b',  // Larger model for better tool-following
     firstRunComplete: false,
   },
 });

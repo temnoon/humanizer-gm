@@ -32,3 +32,14 @@ export {
   facebookContentToContainer,
   textToContainer,
 } from './service';
+
+// Archive health hook
+export {
+  useArchiveHealth,
+  needsEmbeddings,
+  isOllamaAvailable,
+  type ArchiveHealth,
+  type ArchiveHealthStats,
+  type ArchiveHealthServices,
+  type IndexingProgress,
+} from './useArchiveHealth';

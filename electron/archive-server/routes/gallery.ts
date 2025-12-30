@@ -341,6 +341,131 @@ export function createGalleryRouter(): Router {
   });
 
   /**
+   * Analyze a batch of images using vision model
+   * POST body: { images: string[], limit?: number }
+   * images can be full paths or relative to archive root
+   */
+  router.post('/analyze', async (req: Request, res: Response) => {
+    try {
+      // Dynamic import to avoid loading vision code on startup
+      const VisualModel = await import('../services/vision/VisualModelService.js');
+
+      // Check if vision model is available
+      const visionModel = await VisualModel.getAvailableVisionModel();
+      if (!visionModel) {
+        res.status(503).json({
+          error: 'No vision model available',
+          hint: 'Install qwen3-vl:8b or llava via: ollama pull qwen3-vl:8b'
+        });
+        return;
+      }
+
+      const { images, limit = 10 } = req.body;
+      const archiveRoot = getArchiveRoot();
+
+      // If no images specified, get unanalyzed images from gallery
+      let imagesToAnalyze: string[] = [];
+      if (!images || images.length === 0) {
+        // Get all images from gallery
+        const allConversations = await getConversationsFromIndex(archiveRoot);
+        const conversationsWithImages = allConversations.filter(c => c.has_images);
+
+        const db = getEmbeddingDatabase();
+
+        for (const conv of conversationsWithImages) {
+          if (imagesToAnalyze.length >= limit) break;
+
+          try {
+            const folderPath = path.join(archiveRoot, conv.folder);
+            const mediaPath = path.join(folderPath, 'media');
+            let mediaFiles: string[] = [];
+
+            try {
+              const files = await fs.readdir(mediaPath);
+              mediaFiles = files.filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
+            } catch {
+              continue;
+            }
+
+            for (const file of mediaFiles) {
+              if (imagesToAnalyze.length >= limit) break;
+              const fullPath = path.join(mediaPath, file);
+              // Skip if already analyzed
+              const existing = db.getImageAnalysisByPath(fullPath);
+              if (!existing) {
+                imagesToAnalyze.push(fullPath);
+              }
+            }
+          } catch {
+            continue;
+          }
+        }
+      } else {
+        // Resolve provided paths
+        imagesToAnalyze = images.slice(0, limit).map((img: string) => {
+          if (path.isAbsolute(img)) return img;
+          return path.join(archiveRoot, img);
+        });
+      }
+
+      if (imagesToAnalyze.length === 0) {
+        res.json({ success: true, analyzed: 0, message: 'No unanalyzed images found' });
+        return;
+      }
+
+      // Analyze images
+      const db = getEmbeddingDatabase();
+      const results: Array<{ path: string; success: boolean; error?: string }> = [];
+
+      for (const imagePath of imagesToAnalyze) {
+        try {
+          // Security check
+          if (!isPathSafe(imagePath, archiveRoot)) {
+            results.push({ path: imagePath, success: false, error: 'Path not allowed' });
+            continue;
+          }
+
+          console.log(`[gallery] Analyzing: ${path.basename(imagePath)}`);
+          const analysis = await VisualModel.analyzeImage(imagePath);
+
+          // Store in database
+          db.upsertImageAnalysis({
+            id: crypto.randomUUID(),
+            file_path: imagePath,
+            source: 'chatgpt',
+            description: analysis.description,
+            categories: analysis.categories,
+            objects: analysis.objects,
+            scene: analysis.scene,
+            mood: analysis.mood,
+            model_used: analysis.model,
+            confidence: analysis.confidence,
+            processing_time_ms: analysis.processingTimeMs,
+          });
+
+          results.push({ path: imagePath, success: true });
+        } catch (err) {
+          console.warn(`[gallery] Failed to analyze ${imagePath}:`, (err as Error).message);
+          results.push({ path: imagePath, success: false, error: (err as Error).message });
+        }
+      }
+
+      const successful = results.filter(r => r.success).length;
+      res.json({
+        success: true,
+        analyzed: successful,
+        failed: results.length - successful,
+        total: imagesToAnalyze.length,
+        model: visionModel,
+        results,
+      });
+    } catch (err) {
+      console.error('[gallery] Analyze error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
    * Get analysis for a specific image by ID
    * Security: Validates UUID format
    * Note: This parameterized route MUST come after all specific routes

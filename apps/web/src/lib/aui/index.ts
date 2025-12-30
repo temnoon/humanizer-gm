@@ -6,7 +6,9 @@
  * Features:
  * - Tool execution (36 tools for search, transform, book-building)
  * - "Show Don't Tell" animation system
+ * - GUI Bridge for tool-to-archive communication
  * - Settings persistence
+ * - Curator Persona with persistent memory
  * - Chat archiving (conversations become searchable content)
  */
 
@@ -66,6 +68,55 @@ export {
   type AUIState,
   type AUIContextValue,
 } from './AUIContext';
+
+// GUI Bridge - Tool results to Archive pane - ADDED Dec 30, 2025
+export {
+  GUI_ACTION_EVENT,
+  type GUIAction,
+  type GUIActionType,
+  type GUIActionTarget,
+  type SearchResultsPayload,
+  type FilterPayload,
+  type NavigatePayload,
+  type GUIActionHandler,
+  dispatchGUIAction,
+  dispatchSearchResults,
+  dispatchOpenPanel,
+  dispatchNavigate,
+  subscribeToGUIActions,
+  subscribeToActionType,
+  subscribeToTarget,
+  useGUIAction,
+  useSearchResultsAction,
+} from './gui-bridge';
+
+// Curator Persona - Persistent AI identity - ADDED Dec 30, 2025
+export {
+  loadCuratorPersona,
+  saveCuratorPersona,
+  resetCuratorPersona,
+  addBestPractice,
+  updatePreference,
+  recordSignificantMoment,
+  recordInteraction,
+  addCanonicPassage,
+  removeCanonicPassage,
+  addWorldviewPassage,
+  removeWorldviewPassage,
+  updateEmbeddingAnchors,
+  updateWorldviewDomains,
+  updateSystemPrompt,
+  updateCoreStances,
+  updateAppearance,
+  setCuratorActive,
+  consolidateMemory,
+  getBestPracticesFor,
+  getPreference,
+  getMomentsByTag,
+  hasCanonicIdentity,
+  hasWorldview,
+  useCuratorPersona,
+} from './persona-store';
 
 // Re-export PinnedContent for convenience
 export type { PinnedContent } from '../buffer/pins';

@@ -47,6 +47,9 @@ import {
 import { getAgentBridge } from './agent-bridge';
 import { getArchiveServerUrl } from '../platform';
 
+// Import GUI Bridge for "Show Don't Tell" - dispatch results to Archive pane
+import { dispatchSearchResults, dispatchOpenPanel } from './gui-bridge';
+
 // NPE API base URL
 const NPE_API_BASE = import.meta.env.VITE_API_URL || 'https://npe-api.tem-527.workers.dev';
 
@@ -137,7 +140,8 @@ export function parseToolUses(response: string): ParsedToolUse[] {
 
   // Find all USE_TOOL occurrences and extract JSON with brace matching
   // Accept "USE_TOOL" or "USE TOOL" (LLMs sometimes use space instead of underscore)
-  const toolPattern = /USE[_\s]TOOL\s*\(\s*(\w+)\s*,\s*/gi;
+  // Comma between tool name and JSON is optional (LLMs sometimes omit it)
+  const toolPattern = /USE[_\s]TOOL\s*\(\s*(\w+)\s*,?\s*/gi;
 
   let match;
   while ((match = toolPattern.exec(response)) !== null) {
@@ -263,6 +267,12 @@ export async function executeTool(
 
     case 'search_facebook':
       return executeSearchFacebook(params);
+
+    case 'check_archive_health':
+      return executeCheckArchiveHealth();
+
+    case 'build_embeddings':
+      return executeBuildEmbeddings(params);
 
     case 'list_conversations':
       return executeListConversations(params);
@@ -786,17 +796,30 @@ async function executeSearchArchive(
 
       if (fallbackResponse.ok) {
         const data = await fallbackResponse.json();
+        const textResults = (data.conversations || []).slice(0, limit).map((c: { id: string; title: string; folder: string; message_count: number; created_at: number }) => ({
+          id: c.id,
+          conversationId: c.id,
+          title: c.title,
+          folder: c.folder,
+          messageCount: c.message_count,
+          created: c.created_at,
+        }));
+
+        // GUI Bridge: Dispatch text search results
+        dispatchSearchResults({
+          results: textResults,
+          query: query,
+          searchType: 'text',
+          total: textResults.length,
+        }, 'search_archive');
+
+        dispatchOpenPanel('archives', 'explore');
+
         return {
           success: true,
           message: `Found ${data.conversations?.length || 0} conversations (text search)`,
           data: {
-            results: (data.conversations || []).slice(0, limit).map((c: { id: string; title: string; folder: string; message_count: number; created_at: number }) => ({
-              id: c.id,
-              title: c.title,
-              folder: c.folder,
-              messageCount: c.message_count,
-              created: c.created_at,
-            })),
+            results: textResults,
             searchType: 'text',
           },
         };
@@ -808,18 +831,30 @@ async function executeSearchArchive(
     const data = await response.json();
 
     const resultCount = data.results?.length || 0;
+    const mappedResults = (data.results || []).map((r: { message_id: string; conversation_id: string; content: string; similarity: number; role: string }) => ({
+      messageId: r.message_id,
+      conversationId: r.conversation_id,
+      content: r.content?.slice(0, 200),
+      similarity: r.similarity,
+      role: r.role,
+    }));
+
+    // GUI Bridge: Dispatch results to Archive pane (Show Don't Tell)
+    dispatchSearchResults({
+      results: mappedResults,
+      query: query,
+      searchType: 'semantic',
+      total: resultCount,
+    }, 'search_archive');
+
+    // Also open the Archive panel to Explore tab
+    dispatchOpenPanel('archives', 'explore');
 
     return {
       success: true,
       message: `Found ${resultCount} messages (semantic search)`,
       data: {
-        results: (data.results || []).map((r: { message_id: string; conversation_id: string; content: string; similarity: number; role: string }) => ({
-          messageId: r.message_id,
-          conversationId: r.conversation_id,
-          content: r.content?.slice(0, 200),
-          similarity: r.similarity,
-          role: r.role,
-        })),
+        results: mappedResults,
         searchType: 'semantic',
       },
       teaching: {
@@ -837,6 +872,138 @@ async function executeSearchArchive(
     return {
       success: false,
       error: e instanceof Error ? e.message : 'Archive search failed',
+    };
+  }
+}
+
+/**
+ * Check archive health and readiness
+ */
+async function executeCheckArchiveHealth(): Promise<AUIToolResult> {
+  try {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/embeddings/health`);
+
+    if (!response.ok) {
+      return { success: false, error: 'Health check failed' };
+    }
+
+    const health = await response.json();
+
+    // Format the health status for the user
+    const statusParts: string[] = [];
+
+    if (health.ready) {
+      statusParts.push('Archive is ready for semantic search.');
+    } else {
+      statusParts.push('Archive needs setup.');
+    }
+
+    statusParts.push(`${health.stats.conversations} conversations, ${health.stats.messages} embeddings.`);
+
+    if (health.issues.length > 0) {
+      statusParts.push(`Issues: ${health.issues.join('; ')}`);
+    }
+
+    if (health.services.indexing) {
+      const progress = health.indexingProgress;
+      statusParts.push(`Currently indexing: ${progress.phase} (${progress.progress}%)`);
+    }
+
+    return {
+      success: true,
+      message: statusParts.join(' '),
+      data: health,
+      teaching: {
+        whatHappened: 'Checked archive health status',
+        guiPath: [
+          'Open the Archive panel (left side)',
+          'Click the "Explore" tab',
+          'Setup status shown if embeddings are missing',
+        ],
+        why: 'The health check shows if embeddings need to be built for semantic search to work.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Health check failed',
+    };
+  }
+}
+
+/**
+ * Build embeddings for the archive
+ */
+async function executeBuildEmbeddings(
+  params: Record<string, unknown>
+): Promise<AUIToolResult> {
+  const { includeParagraphs = false } = params as { includeParagraphs?: boolean };
+
+  try {
+    const archiveServer = await getArchiveServerUrl();
+
+    // First check if Ollama is available
+    const healthResponse = await fetch(`${archiveServer}/api/embeddings/health`);
+    if (healthResponse.ok) {
+      const health = await healthResponse.json();
+      if (!health.services.ollama) {
+        return {
+          success: false,
+          error: 'Ollama is not running. Start it with: ollama serve',
+          teaching: {
+            whatHappened: 'Embedding build cannot start without Ollama',
+            guiPath: [
+              'Open Terminal',
+              'Run: ollama serve',
+              'Then try building embeddings again',
+            ],
+            why: 'Ollama provides the local embedding model (nomic-embed-text) required for semantic search.',
+          },
+        };
+      }
+
+      if (health.services.indexing) {
+        return {
+          success: false,
+          error: 'Embedding build is already in progress',
+          data: health.indexingProgress,
+        };
+      }
+    }
+
+    // Start the build
+    const response = await fetch(`${archiveServer}/api/embeddings/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ includeParagraphs }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      return { success: false, error: data.error || 'Build failed to start' };
+    }
+
+    // Open the Explore tab to show progress
+    dispatchOpenPanel('archives', 'explore');
+
+    return {
+      success: true,
+      message: 'Embedding build started. Progress is shown in the Explore tab.',
+      teaching: {
+        whatHappened: 'Started building embeddings for your archive',
+        guiPath: [
+          'Archive panel > Explore tab shows progress',
+          'Build runs in background',
+          'Search will work when complete',
+        ],
+        why: 'Embeddings convert your conversations into semantic vectors, enabling search by meaning rather than just keywords.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Build failed',
     };
   }
 }
@@ -3466,7 +3633,18 @@ You can help users with their book projects, search their archives, and curate c
     \`USE_TOOL(search_facebook, {"query": "family gathering", "type": "post", "limit": 20})\`
     - type: "post", "comment", or "all"
 
-11. **list_conversations** - List all conversations from ChatGPT archive
+11. **check_archive_health** - Check if archive is ready for semantic search
+    \`USE_TOOL(check_archive_health, {})\`
+    - Returns: conversation count, embedding count, issues, and suggested actions
+    - Use this to diagnose search problems
+
+12. **build_embeddings** - Build embeddings for semantic search
+    \`USE_TOOL(build_embeddings, {})\`
+    - Requires Ollama to be running (ollama serve)
+    - Progress shown in Archive > Explore tab
+    - Use when "check_archive_health" shows missing embeddings
+
+13. **list_conversations** - List all conversations from ChatGPT archive
     \`USE_TOOL(list_conversations, {"limit": 20, "search": "philosophy"})\`
     - Returns: conversation list with titles, message counts, dates
     - Opens Archive panel to show results

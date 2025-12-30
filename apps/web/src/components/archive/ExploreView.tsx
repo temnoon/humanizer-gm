@@ -1,9 +1,17 @@
 /**
  * Explore View - Semantic search across the archive
+ *
+ * Receives search results from:
+ * 1. Direct user input (debounced search)
+ * 2. AUI tools via GUI Bridge (Show Don't Tell pattern)
+ *
+ * Shows health status and offers to build embeddings when needed.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { getArchiveServerUrl } from '../../lib/platform';
+import { useSearchResultsAction } from '../../lib/aui';
+import { useArchiveHealth, needsEmbeddings, isOllamaAvailable } from '../../lib/archive/useArchiveHealth';
 
 export interface SearchResult {
   id: string;
@@ -30,7 +38,49 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [fromAUI, setFromAUI] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Archive health check - detect missing embeddings
+  const { health, buildEmbeddings, isBuilding, buildProgress } = useArchiveHealth();
+  const showSetup = needsEmbeddings(health);
+  const ollamaReady = isOllamaAvailable(health);
+
+  // GUI Bridge: Receive search results from AUI tools
+  const { results: auiResults, clear: clearAUIResults } = useSearchResultsAction();
+
+  // When AUI dispatches results, display them
+  useEffect(() => {
+    if (auiResults && auiResults.results.length > 0) {
+      // Map AUI results to our SearchResult format
+      const mapped: SearchResult[] = auiResults.results.map((r, i) => ({
+        id: r.messageId || r.id || `aui-${i}`,
+        content: r.content || r.title || '',
+        similarity: r.similarity || 0.5,
+        conversationId: r.conversationId,
+        conversationTitle: r.title,
+        metadata: {
+          conversationId: r.conversationId,
+          messageId: r.messageId,
+          role: r.role,
+        },
+      }));
+      setResults(mapped);
+      setQuery(auiResults.query);
+      setHasSearched(true);
+      setFromAUI(true);
+      setError(null);
+    }
+  }, [auiResults]);
+
+  // Clear AUI indicator when user starts typing
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    if (fromAUI) {
+      setFromAUI(false);
+      clearAUIResults();
+    }
+  };
 
   const search = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {
@@ -113,8 +163,13 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
           className="explore-search__input"
           placeholder="Search by meaning, not just keywords..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => handleQueryChange(e.target.value)}
         />
+        {fromAUI && (
+          <span className="explore-search__aui-badge" title="Results from AUI assistant">
+            ✦ AUI
+          </span>
+        )}
       </div>
 
       {/* Loading state */}
@@ -168,13 +223,67 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
         </div>
       )}
 
+      {/* Setup needed banner */}
+      {showSetup && !isBuilding && (
+        <div className="explore-setup">
+          <div className="explore-setup__icon">⚡</div>
+          <div className="explore-setup__content">
+            <h4>Build Embeddings</h4>
+            <p>
+              {health?.stats.conversations || 0} conversations imported.
+              Build embeddings to enable semantic search.
+            </p>
+            {!ollamaReady ? (
+              <div className="explore-setup__warning">
+                ⚠️ Ollama not running. Start it with: <code>ollama serve</code>
+              </div>
+            ) : (
+              <button
+                className="explore-setup__button"
+                onClick={() => buildEmbeddings()}
+              >
+                Build Embeddings Now
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Building progress */}
+      {isBuilding && buildProgress && (
+        <div className="explore-building">
+          <div className="explore-building__header">
+            <span className="explore-building__icon">⏳</span>
+            <span>Building embeddings...</span>
+          </div>
+          <div className="explore-building__progress">
+            <div className="explore-building__bar">
+              <div
+                className="explore-building__fill"
+                style={{ width: `${buildProgress.progress}%` }}
+              />
+            </div>
+            <span className="explore-building__percent">{buildProgress.progress}%</span>
+          </div>
+          <div className="explore-building__phase">
+            {buildProgress.phase}: {buildProgress.current}/{buildProgress.total}
+            {buildProgress.currentItem && ` - ${buildProgress.currentItem}`}
+          </div>
+        </div>
+      )}
+
       {/* Initial state */}
-      {!hasSearched && !loading && (
+      {!hasSearched && !loading && !showSetup && !isBuilding && (
         <div className="tool-panel__empty">
           <p>Semantic Search</p>
           <span className="tool-panel__muted">
             Find content by meaning across all your archives
           </span>
+          {health && (
+            <span className="tool-panel__stats">
+              {health.stats.messages.toLocaleString()} embeddings indexed
+            </span>
+          )}
         </div>
       )}
     </div>

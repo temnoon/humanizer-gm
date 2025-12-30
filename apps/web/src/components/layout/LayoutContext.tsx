@@ -154,7 +154,18 @@ export function LayoutProvider({ children }: LayoutProviderProps) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        return { ...DEFAULT_STATE, ...parsed };
+        // CLEANUP: Remove stale highlight data that breaks rendering
+        if (parsed.analysisData && Object.keys(parsed.analysisData).length > 0) {
+          const cleaned = { ...parsed, activeHighlights: [], analysisData: {} };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+        }
+        // Never restore highlights - they break images/LaTeX
+        return {
+          ...DEFAULT_STATE,
+          ...parsed,
+          activeHighlights: [],
+          analysisData: {},
+        };
       }
     } catch {
       // Ignore parse errors

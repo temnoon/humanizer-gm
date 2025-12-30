@@ -71,6 +71,9 @@ export async function initializeEmbedding(): Promise<void> {
   await initPromise;
 }
 
+// Maximum characters to embed (nomic-embed-text has ~8k token context)
+const MAX_TEXT_LENGTH = 24000;
+
 /**
  * Generate embedding for a single text using Ollama API
  */
@@ -82,18 +85,25 @@ export async function embed(text: string): Promise<number[]> {
     return new Array(EMBEDDING_DIM).fill(0);
   }
 
+  // Truncate very long texts to avoid API errors
+  let inputText = text;
+  if (text.length > MAX_TEXT_LENGTH) {
+    inputText = text.slice(0, MAX_TEXT_LENGTH);
+  }
+
   // Call Ollama embedding API
   const response = await fetch(`${OLLAMA_ENDPOINT}/api/embed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: EMBEDDING_MODEL,
-      input: text
+      input: inputText
     })
   });
 
   if (!response.ok) {
-    throw new Error(`Ollama embedding failed: ${response.status}`);
+    const errorText = await response.text().catch(() => 'unknown');
+    throw new Error(`Ollama embedding failed: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -113,6 +123,7 @@ export async function embed(text: string): Promise<number[]> {
 
 /**
  * Generate embeddings for multiple texts in batch
+ * Handles individual failures gracefully by returning zero vectors
  */
 export async function embedBatch(
   texts: string[],
@@ -125,13 +136,26 @@ export async function embedBatch(
 
   const { batchSize = 32, onProgress } = options;
   const embeddings: number[][] = [];
+  let failureCount = 0;
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
 
-    // Process batch
+    // Process batch with individual error handling
     const batchEmbeddings = await Promise.all(
-      batch.map(text => embed(text))
+      batch.map(async (text) => {
+        try {
+          return await embed(text);
+        } catch (error) {
+          failureCount++;
+          if (failureCount <= 5) {
+            console.warn(`[embeddings] Failed to embed text (${text.length} chars):`,
+              error instanceof Error ? error.message : error);
+          }
+          // Return zero vector on failure
+          return new Array(EMBEDDING_DIM).fill(0);
+        }
+      })
     );
 
     embeddings.push(...batchEmbeddings);
@@ -139,6 +163,10 @@ export async function embedBatch(
     if (onProgress) {
       onProgress(Math.min(i + batchSize, texts.length), texts.length);
     }
+  }
+
+  if (failureCount > 0) {
+    console.warn(`[embeddings] ${failureCount} embeddings failed and were replaced with zero vectors`);
   }
 
   return embeddings;

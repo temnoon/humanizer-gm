@@ -72,12 +72,11 @@ export function AnalyzableMarkdown({
   }, [analysisData, processedContent, activeHighlights]);
 
   // Determine render mode
+  // DISABLED: HighlightableText breaks images, LaTeX, and all markdown rendering
+  // TODO: Reimplement highlighting that works WITH markdown, not instead of it
   const shouldShowHighlights = useMemo(() => {
-    if (forceMode === 'markdown') return false;
-    if (forceMode === 'highlight') return true;
-
-    // In analyze mode with active highlights, show highlighted text
-    return mode === 'analyze' && highlights.length > 0;
+    // Always use markdown rendering - highlighting is broken for MVP
+    return false;
   }, [forceMode, mode, highlights.length]);
 
   // Render highlighted text for analysis

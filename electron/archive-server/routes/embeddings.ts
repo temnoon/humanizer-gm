@@ -16,6 +16,8 @@
 import { Router, Request, Response } from 'express';
 import { getArchiveRoot } from '../config';
 import { EmbeddingDatabase } from '../services/embeddings/EmbeddingDatabase';
+import { ArchiveIndexer, type IndexingOptions } from '../services/embeddings/ArchiveIndexer';
+import type { IndexingProgress } from '../services/embeddings/types';
 
 // ═══════════════════════════════════════════════════════════════════
 // EMBEDDING MODULE (uses ESM loader workaround)
@@ -29,6 +31,8 @@ import * as embeddingModule from '../services/embeddings/esm-loader';
 
 let embeddingDb: EmbeddingDatabase | null = null;
 let currentArchivePath: string | null = null;
+let activeIndexer: ArchiveIndexer | null = null;
+let indexingProgress: IndexingProgress | null = null;
 
 function getEmbeddingDb(): EmbeddingDatabase {
   const archivePath = getArchiveRoot();
@@ -46,6 +50,17 @@ function getEmbeddingDb(): EmbeddingDatabase {
   return embeddingDb;
 }
 
+function getOrCreateIndexer(): ArchiveIndexer {
+  const archivePath = getArchiveRoot();
+
+  if (!activeIndexer || currentArchivePath !== archivePath) {
+    activeIndexer = new ArchiveIndexer(archivePath);
+    currentArchivePath = archivePath;
+  }
+
+  return activeIndexer;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // ROUTER
 // ═══════════════════════════════════════════════════════════════════
@@ -58,27 +73,170 @@ export function createEmbeddingsRouter(): Router {
   // ─────────────────────────────────────────────────────────────────
 
   // Build embeddings index
-  router.post('/build', async (_req: Request, res: Response) => {
-    // TODO: Implement with ArchiveIndexer once ESM loading is fully resolved
-    res.json({
-      status: 'pending',
-      message: 'Index building will be available in a future update. Existing embeddings can be searched.',
-      archivePath: getArchiveRoot(),
-    });
+  router.post('/build', async (req: Request, res: Response) => {
+    try {
+      // Check if already indexing
+      if (indexingProgress?.status === 'indexing') {
+        res.status(409).json({
+          status: 'already_running',
+          message: 'Indexing is already in progress',
+          progress: indexingProgress,
+        });
+        return;
+      }
+
+      const { includeParagraphs = false, includeSentences = false, batchSize = 32 } = req.body || {};
+
+      const archivePath = getArchiveRoot();
+      const indexer = getOrCreateIndexer();
+
+      // Set initial progress
+      indexingProgress = {
+        status: 'indexing',
+        phase: 'starting',
+        current: 0,
+        total: 0,
+        startedAt: Date.now(),
+      };
+
+      // Respond immediately, indexing happens in background
+      res.json({
+        status: 'started',
+        message: 'Embedding index build started',
+        archivePath,
+      });
+
+      // Run indexing in background
+      const options: IndexingOptions = {
+        includeParagraphs,
+        includeSentences,
+        batchSize,
+        onProgress: (progress) => {
+          indexingProgress = progress;
+          console.log(`[embeddings] Progress: ${progress.phase} ${progress.current}/${progress.total}`);
+        },
+      };
+
+      indexer.buildIndex(options)
+        .then(() => {
+          console.log('[embeddings] Index build complete');
+        })
+        .catch((err) => {
+          console.error('[embeddings] Index build failed:', err);
+          indexingProgress = {
+            status: 'error',
+            phase: 'failed',
+            current: 0,
+            total: 0,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        });
+
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Archive health check - what's missing?
+  router.get('/health', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDb();
+      const stats = db.getStats();
+
+      let modelLoaded = false;
+      let ollamaAvailable = false;
+
+      try {
+        // Check if Ollama is running
+        const ollamaCheck = await fetch('http://localhost:11434/api/tags');
+        ollamaAvailable = ollamaCheck.ok;
+        modelLoaded = embeddingModule.isInitialized();
+      } catch {
+        // Ollama not running
+      }
+
+      // Determine readiness
+      const hasConversations = stats.conversationCount > 0;
+      const hasEmbeddings = stats.messageCount > 0;
+      const embeddingCoverage = hasConversations && hasEmbeddings
+        ? Math.round((stats.messageCount / Math.max(1, stats.conversationCount * 10)) * 100)
+        : 0;
+
+      const issues: string[] = [];
+      const actions: Array<{ action: string; endpoint: string; method: string }> = [];
+
+      if (!ollamaAvailable) {
+        issues.push('Ollama not running - start with: ollama serve');
+      } else if (!modelLoaded) {
+        issues.push('Embedding model not loaded - will auto-load on first search');
+      }
+
+      if (!hasConversations) {
+        issues.push('No conversations imported - import an archive first');
+      } else if (!hasEmbeddings) {
+        issues.push('No embeddings generated - semantic search unavailable');
+        actions.push({
+          action: 'Build embeddings index',
+          endpoint: '/api/embeddings/build',
+          method: 'POST',
+        });
+      } else if (embeddingCoverage < 80) {
+        issues.push(`Only ${embeddingCoverage}% of content has embeddings`);
+        actions.push({
+          action: 'Rebuild embeddings index',
+          endpoint: '/api/embeddings/build',
+          method: 'POST',
+        });
+      }
+
+      const ready = issues.length === 0 || (ollamaAvailable && hasEmbeddings);
+
+      res.json({
+        ready,
+        archivePath: getArchiveRoot(),
+        stats: {
+          conversations: stats.conversationCount,
+          messages: stats.messageCount,
+          chunks: stats.chunkCount,
+          clusters: stats.clusterCount,
+          anchors: stats.anchorCount,
+        },
+        services: {
+          ollama: ollamaAvailable,
+          modelLoaded,
+          indexing: indexingProgress?.status === 'indexing',
+        },
+        issues,
+        actions,
+        indexingProgress: indexingProgress || null,
+      });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
   });
 
   // Get indexing status
   router.get('/status', async (_req: Request, res: Response) => {
     try {
       const modelLoaded = embeddingModule.isInitialized();
-
-      res.json({
-        isIndexing: false,
+      const progress = indexingProgress || {
         status: 'idle',
         phase: '',
-        progress: 0,
         current: 0,
         total: 0,
+      };
+
+      res.json({
+        isIndexing: progress.status === 'indexing',
+        status: progress.status,
+        phase: progress.phase,
+        progress: progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0,
+        current: progress.current,
+        total: progress.total,
+        currentItem: progress.currentItem,
+        error: progress.error,
+        startedAt: progress.startedAt,
+        completedAt: progress.completedAt,
         modelLoaded,
       });
     } catch (err) {
