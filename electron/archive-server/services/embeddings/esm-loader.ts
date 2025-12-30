@@ -1,24 +1,22 @@
 /**
- * ESM Module Loader
+ * ESM Module Loader (Ollama Version)
  *
- * Workaround for loading ESM modules from CommonJS context.
- * Uses eval to prevent TypeScript from transforming the import() call.
+ * Embedding generation via Ollama API.
+ * Uses nomic-embed-text for 768-dimensional embeddings.
  */
 
-// Force dynamic import to not be transformed by TypeScript
-const dynamicImport = new Function('specifier', 'return import(specifier)');
+const OLLAMA_ENDPOINT = 'http://localhost:11434';
+const EMBEDDING_MODEL = 'nomic-embed-text';
+const EMBEDDING_DIM = 768;
 
-let embeddingPipeline: any = null;
+let ollamaValidated = false;
 let initPromise: Promise<void> | null = null;
 
-const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';
-const EMBEDDING_DIM = 384;
-
 /**
- * Initialize the embedding pipeline (downloads model on first use)
+ * Initialize the embedding system (validates Ollama on first use)
  */
 export async function initializeEmbedding(): Promise<void> {
-  if (embeddingPipeline) return;
+  if (ollamaValidated) return;
 
   if (initPromise) {
     await initPromise;
@@ -26,31 +24,28 @@ export async function initializeEmbedding(): Promise<void> {
   }
 
   initPromise = (async () => {
-    console.log(`[embeddings] Loading model: ${EMBEDDING_MODEL}...`);
+    console.log(`[esm-loader] Initializing with ${EMBEDDING_MODEL}...`);
     const startTime = Date.now();
 
     try {
-      // Dynamic import of ESM module
-      const { pipeline, env } = await dynamicImport('chromadb-default-embed');
-
-      // Configure for Node.js
-      env.allowLocalModels = true;
-      env.useBrowserCache = false;
-
-      const path = await dynamicImport('path');
-      const os = await dynamicImport('os');
-      const cacheDir = path.default.join(os.default.homedir(), '.cache', 'humanizer', 'models');
-      env.cacheDir = cacheDir;
-      env.localModelPath = cacheDir;
-
-      embeddingPipeline = await pipeline('feature-extraction', EMBEDDING_MODEL, {
-        quantized: true,
-      });
-
+      const response = await fetch(`${OLLAMA_ENDPOINT}/api/tags`);
+      if (!response.ok) {
+        throw new Error(`Ollama not responding: ${response.status}`);
+      }
+      const data = await response.json();
+      const hasModel = data.models?.some((m: { name: string }) =>
+        m.name.includes('nomic-embed-text')
+      );
+      if (!hasModel) {
+        throw new Error(
+          'nomic-embed-text model not found. Run: ollama pull nomic-embed-text'
+        );
+      }
+      ollamaValidated = true;
       const elapsed = Date.now() - startTime;
-      console.log(`[embeddings] Model loaded in ${elapsed}ms`);
+      console.log(`[esm-loader] Ready in ${elapsed}ms`);
     } catch (err) {
-      console.error('[embeddings] Failed to load model:', err);
+      console.error('[esm-loader] Failed to initialize:', err);
       throw err;
     }
   })();
@@ -68,15 +63,28 @@ export async function embed(text: string): Promise<number[]> {
     return new Array(EMBEDDING_DIM).fill(0);
   }
 
-  const result = await embeddingPipeline(text, {
-    pooling: 'mean',
-    normalize: true,
+  const response = await fetch(`${OLLAMA_ENDPOINT}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: text
+    })
   });
 
-  const embedding = Array.from(result.data as Float32Array);
+  if (!response.ok) {
+    throw new Error(`Ollama embedding failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const embedding = data.embeddings?.[0];
+
+  if (!embedding || !Array.isArray(embedding)) {
+    throw new Error('Invalid embedding response from Ollama');
+  }
 
   if (embedding.length !== EMBEDDING_DIM) {
-    console.warn(`[embeddings] Expected ${EMBEDDING_DIM} dimensions, got ${embedding.length}`);
+    console.warn(`[esm-loader] Expected ${EMBEDDING_DIM} dimensions, got ${embedding.length}`);
   }
 
   return embedding;
@@ -125,10 +133,10 @@ export function getModelName(): string {
 }
 
 /**
- * Check if the embedding pipeline is initialized
+ * Check if the embedding system is initialized
  */
 export function isInitialized(): boolean {
-  return embeddingPipeline !== null;
+  return ollamaValidated;
 }
 
 /**

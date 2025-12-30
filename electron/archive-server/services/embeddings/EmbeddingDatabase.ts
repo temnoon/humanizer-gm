@@ -3,7 +3,7 @@
  *
  * Unified storage using SQLite + sqlite-vec for:
  * - Text content (conversations, messages, chunks)
- * - Vector embeddings (384-dim all-MiniLM-L6-v2)
+ * - Vector embeddings (768-dim nomic-embed-text via Ollama)
  * - User curation and discovered structures
  *
  * One database per archive for portability.
@@ -26,8 +26,8 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 7;  // Bumped for Xanadu links and content-addressable media
-const EMBEDDING_DIM = 384;  // all-MiniLM-L6-v2
+const SCHEMA_VERSION = 8;  // Bumped for 768-dim Ollama embeddings
+const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 export class EmbeddingDatabase {
   private db: Database.Database;
@@ -190,8 +190,8 @@ export class EmbeddingDatabase {
         tags TEXT,                        -- JSON array
 
         -- Embeddings
-        embedding BLOB,                   -- vec0 embedding (384-dim for all-MiniLM-L6-v2)
-        embedding_model TEXT DEFAULT 'all-MiniLM-L6-v2',
+        embedding BLOB,                   -- vec0 embedding (768-dim nomic-embed-text)
+        embedding_model TEXT DEFAULT 'nomic-embed-text',
 
         -- Search
         search_text TEXT,                 -- Preprocessed for FTS
@@ -1394,6 +1394,142 @@ export class EmbeddingDatabase {
           );
         `);
       }
+    }
+
+    // Migration from version 7 to 8: Upgrade to 768-dim Ollama embeddings
+    if (fromVersion < 8) {
+      console.log('[migration] Upgrading to 768-dim nomic-embed-text embeddings...');
+
+      // Drop all vec0 tables - they need to be recreated with new dimensions
+      if (this.vecLoaded) {
+        const vecTables = [
+          'vec_summaries',
+          'vec_messages',
+          'vec_paragraphs',
+          'vec_sentences',
+          'vec_anchors',
+          'vec_clusters',
+          'vec_content_items',
+          'vec_pyramid_chunks',
+          'vec_pyramid_summaries',
+          'vec_pyramid_apex',
+          'vec_media_items',
+          'vec_image_embeddings'
+        ];
+
+        for (const table of vecTables) {
+          try {
+            this.db.exec(`DROP TABLE IF EXISTS ${table}`);
+            console.log(`[migration] Dropped ${table}`);
+          } catch (err) {
+            console.warn(`[migration] Could not drop ${table}:`, err);
+          }
+        }
+
+        // Recreate vec0 tables with 768-dim
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_summaries USING vec0(
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_messages USING vec0(
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT,
+            message_id TEXT,
+            role TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_paragraphs USING vec0(
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT,
+            message_id TEXT,
+            chunk_index INTEGER,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_sentences USING vec0(
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT,
+            message_id TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_anchors USING vec0(
+            id TEXT PRIMARY KEY,
+            anchor_type TEXT,
+            name TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_clusters USING vec0(
+            id TEXT PRIMARY KEY,
+            cluster_id TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_content_items USING vec0(
+            id TEXT PRIMARY KEY,
+            content_item_id TEXT,
+            type TEXT,
+            source TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_pyramid_chunks USING vec0(
+            id TEXT PRIMARY KEY,
+            thread_id TEXT,
+            chunk_index INTEGER,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_pyramid_summaries USING vec0(
+            id TEXT PRIMARY KEY,
+            thread_id TEXT,
+            level INTEGER,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_pyramid_apex USING vec0(
+            id TEXT PRIMARY KEY,
+            thread_id TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_media_items USING vec0(
+            id TEXT PRIMARY KEY,
+            content_hash TEXT,
+            mime_type TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_image_embeddings USING vec0(
+            id TEXT PRIMARY KEY,
+            image_analysis_id TEXT,
+            source TEXT,
+            embedding float[512]
+          );
+        `);
+
+        console.log('[migration] Created vec0 tables with 768-dim');
+      }
+
+      // Clear existing embeddings (they'll be regenerated with new model)
+      this.db.exec(`
+        UPDATE content_items SET embedding = NULL, embedding_model = 'nomic-embed-text';
+        UPDATE messages SET embedding_id = NULL;
+        UPDATE chunks SET embedding_id = NULL;
+        UPDATE anchors SET embedding = NULL;
+        UPDATE pyramid_chunks SET embedding = NULL, embedding_model = 'nomic-embed-text';
+        UPDATE pyramid_summaries SET embedding = NULL, embedding_model = 'nomic-embed-text';
+        UPDATE pyramid_apex SET embedding = NULL, embedding_model = 'nomic-embed-text';
+        UPDATE media_items SET embedding = NULL, embedding_model = 'nomic-embed-text';
+        UPDATE media_files SET embedding = NULL, embedding_model = 'nomic-embed-text';
+      `);
+
+      console.log('[migration] Cleared old embeddings - run rebuildAllEmbeddings() to regenerate');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);

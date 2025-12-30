@@ -19,6 +19,7 @@ import { createFacebookRouter } from './routes/facebook';
 import { createContentRouter } from './routes/content';
 import { createGalleryRouter } from './routes/gallery';
 import { createImportRouter } from './routes/import';
+import { createLinksRouter } from './routes/links';
 
 // Service registry for cleanup on archive switch
 import { resetServices } from './services/registry';
@@ -95,6 +96,7 @@ function createApp(): Express {
   app.use('/api/content', createContentRouter());
   app.use('/api/gallery', createGalleryRouter());
   app.use('/api/import', createImportRouter());
+  app.use('/api/links', createLinksRouter());
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

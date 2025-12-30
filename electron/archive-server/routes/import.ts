@@ -23,6 +23,7 @@ import {
   createOpenAIParser,
   createGeminiParser,
   createDocumentParser,
+  createPdfParser,
   createFileTypeDetector,
 } from '../services/import/index';
 
@@ -159,6 +160,7 @@ export function createImportRouter(): Router {
       pipeline.registerParser(createOpenAIParser({ verbose: true }));
       pipeline.registerParser(createGeminiParser({ verbose: true }));
       pipeline.registerParser(createDocumentParser({ verbose: true }));
+      pipeline.registerParser(createPdfParser({ verbose: true }));
 
       // Initialize progress tracking
       activePipelines.set(id, {
@@ -379,6 +381,7 @@ export function createImportRouter(): Router {
       pipeline.registerParser(createOpenAIParser({ verbose: true }));
       pipeline.registerParser(createGeminiParser({ verbose: true }));
       pipeline.registerParser(createDocumentParser({ verbose: true }));
+      pipeline.registerParser(createPdfParser({ verbose: true }));
 
       // Initialize progress tracking
       activePipelines.set(jobId, {
@@ -498,6 +501,7 @@ export function createImportRouter(): Router {
       pipeline.registerParser(createOpenAIParser({ verbose: true }));
       pipeline.registerParser(createGeminiParser({ verbose: true }));
       pipeline.registerParser(createDocumentParser({ verbose: true }));
+      pipeline.registerParser(createPdfParser({ verbose: true }));
 
       activePipelines.set(jobId, { status: 'starting', progress: 0 });
 

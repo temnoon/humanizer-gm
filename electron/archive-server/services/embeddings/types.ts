@@ -85,7 +85,7 @@ export interface Anchor {
   name: string;
   description: string | null;
   anchorType: AnchorType;
-  embedding: number[];  // 384-dim vector
+  embedding: number[];  // 768-dim vector
   sourceEmbeddingIds: string[];
   createdAt: number;
 }
@@ -211,8 +211,8 @@ export interface EmbeddingConfig {
 }
 
 export const DEFAULT_CONFIG: Partial<EmbeddingConfig> = {
-  embeddingModel: 'all-MiniLM-L6-v2',
-  embeddingDimensions: 384,
+  embeddingModel: 'nomic-embed-text',
+  embeddingDimensions: 768,
   batchSize: 32,
 };
 
@@ -395,7 +395,7 @@ export const DEFAULT_PYRAMID_CONFIG: PyramidBuildConfig = {
   boundaryStrategy: 'semantic',
   summaryRatio: 0.2,
   maxChildrenPerSummary: 5,
-  embeddingModel: 'all-MiniLM-L6-v2',
+  embeddingModel: 'nomic-embed-text',
   summaryModel: 'claude-3-haiku-20240307',
 };
 

@@ -49,4 +49,6 @@ export {
   createGeminiParser,
   DocumentParser,
   createDocumentParser,
+  PdfParser,
+  createPdfParser,
 } from './parsers/index.js';
