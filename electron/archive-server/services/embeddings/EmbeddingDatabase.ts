@@ -26,7 +26,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 8;  // Bumped for 768-dim Ollama embeddings
+const SCHEMA_VERSION = 9;  // Added image_description_embeddings for semantic image search
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 export class EmbeddingDatabase {
@@ -1530,6 +1530,44 @@ export class EmbeddingDatabase {
       `);
 
       console.log('[migration] Cleared old embeddings - run rebuildAllEmbeddings() to regenerate');
+    }
+
+    // Migration from version 8 to 9: Add image description text embeddings for semantic search
+    if (fromVersion < 9) {
+      console.log('[migration] Adding image description embeddings for semantic image search...');
+
+      // Create table for text embeddings of image descriptions
+      // These use nomic-embed-text (768-dim) for semantic search on description text
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS image_description_embeddings (
+          id TEXT PRIMARY KEY,
+          image_analysis_id TEXT NOT NULL,
+          text TEXT NOT NULL,                     -- The description text that was embedded
+          embedding BLOB NOT NULL,                -- Float32 array (768-dim nomic-embed-text)
+          model TEXT NOT NULL DEFAULT 'nomic-embed-text',
+          dimensions INTEGER NOT NULL DEFAULT ${EMBEDDING_DIM},
+          created_at REAL NOT NULL,
+          FOREIGN KEY (image_analysis_id) REFERENCES image_analysis(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_image_desc_embeddings_analysis
+          ON image_description_embeddings(image_analysis_id);
+      `);
+
+      // Create vec0 virtual table for semantic similarity search
+      if (this.vecLoaded) {
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_image_descriptions USING vec0(
+            id TEXT PRIMARY KEY,
+            image_analysis_id TEXT,
+            source TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+        `);
+        console.log('[migration] Created vec_image_descriptions table for semantic search');
+      }
+
+      console.log('[migration] Added image_description_embeddings table');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
@@ -3631,6 +3669,139 @@ export class EmbeddingDatabase {
       source: row.source,
       similarity: 1 - row.distance, // Convert distance to similarity
     }));
+  }
+
+  // ===========================================================================
+  // Image Description Embedding Operations (Text embeddings for semantic search)
+  // ===========================================================================
+
+  /**
+   * Insert text embedding for an image description
+   * Uses nomic-embed-text (768-dim) for semantic search on description text
+   */
+  insertImageDescriptionEmbedding(data: {
+    id: string;
+    imageAnalysisId: string;
+    text: string;
+    embedding: Float32Array | number[];
+  }): void {
+    const embeddingBuffer = Buffer.from(
+      data.embedding instanceof Float32Array
+        ? data.embedding.buffer
+        : new Float32Array(data.embedding).buffer
+    );
+
+    this.db.prepare(`
+      INSERT OR REPLACE INTO image_description_embeddings
+      (id, image_analysis_id, text, embedding, model, dimensions, created_at)
+      VALUES (?, ?, ?, ?, 'nomic-embed-text', ?, ?)
+    `).run(
+      data.id,
+      data.imageAnalysisId,
+      data.text,
+      embeddingBuffer,
+      EMBEDDING_DIM,
+      Date.now() / 1000
+    );
+
+    // Also insert into vec table if available
+    if (this.vecLoaded) {
+      const analysis = this.db.prepare('SELECT source FROM image_analysis WHERE id = ?')
+        .get(data.imageAnalysisId) as { source: string } | undefined;
+
+      if (analysis) {
+        this.db.prepare(`
+          INSERT OR REPLACE INTO vec_image_descriptions (id, image_analysis_id, source, embedding)
+          VALUES (?, ?, ?, ?)
+        `).run(data.id, data.imageAnalysisId, analysis.source, embeddingBuffer);
+      }
+    }
+  }
+
+  /**
+   * Search image descriptions by semantic similarity
+   * Returns images whose descriptions are semantically similar to the query
+   */
+  searchImageDescriptionsByVector(
+    queryEmbedding: Float32Array | number[],
+    options?: { limit?: number; source?: string }
+  ): Array<{
+    id: string;
+    imageAnalysisId: string;
+    filePath: string;
+    description: string;
+    source: string;
+    similarity: number;
+  }> {
+    if (!this.vecLoaded) {
+      console.warn('[EmbeddingDatabase] Vector search not available - sqlite-vec not loaded');
+      return [];
+    }
+
+    const limit = options?.limit || 20;
+    const embeddingBuffer = Buffer.from(
+      queryEmbedding instanceof Float32Array
+        ? queryEmbedding.buffer
+        : new Float32Array(queryEmbedding).buffer
+    );
+
+    let sql = `
+      SELECT v.id, v.image_analysis_id, v.distance,
+             ia.file_path, ia.description, ia.source
+      FROM vec_image_descriptions v
+      JOIN image_analysis ia ON ia.id = v.image_analysis_id
+      WHERE v.embedding MATCH ?
+    `;
+
+    const params: (Buffer | string | number)[] = [embeddingBuffer];
+
+    if (options?.source) {
+      sql += ` AND v.source = ?`;
+      params.push(options.source);
+    }
+
+    sql += ` ORDER BY v.distance LIMIT ?`;
+    params.push(limit);
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      imageAnalysisId: row.image_analysis_id,
+      filePath: row.file_path,
+      description: row.description || '',
+      source: row.source,
+      similarity: 1 - row.distance, // Convert distance to similarity
+    }));
+  }
+
+  /**
+   * Get image analyses that don't have description embeddings yet
+   */
+  getImageAnalysesWithoutDescriptionEmbeddings(limit: number = 100): Array<{
+    id: string;
+    description: string;
+    source: string;
+  }> {
+    return this.db.prepare(`
+      SELECT ia.id, ia.description, ia.source
+      FROM image_analysis ia
+      LEFT JOIN image_description_embeddings ide ON ide.image_analysis_id = ia.id
+      WHERE ia.description IS NOT NULL
+        AND ia.description != ''
+        AND ide.id IS NULL
+      LIMIT ?
+    `).all(limit) as any[];
+  }
+
+  /**
+   * Count image description embeddings
+   */
+  getImageDescriptionEmbeddingCount(): number {
+    const result = this.db.prepare(
+      'SELECT COUNT(*) as count FROM image_description_embeddings'
+    ).get() as { count: number };
+    return result.count;
   }
 
   /**

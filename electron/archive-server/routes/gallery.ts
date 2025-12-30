@@ -341,6 +341,67 @@ export function createGalleryRouter(): Router {
   });
 
   /**
+   * Semantic search for images by description
+   * Uses nomic-embed-text to find images with semantically similar descriptions
+   *
+   * GET /api/gallery/analysis/semantic-search?q=sunset+over+mountains&limit=20
+   */
+  router.get('/analysis/semantic-search', async (req: Request, res: Response) => {
+    try {
+      const query = req.query.q as string;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const source = req.query.source as string | undefined;
+
+      if (!query) {
+        res.status(400).json({ error: 'Query parameter q is required' });
+        return;
+      }
+
+      // Dynamic import to avoid loading embedding code on startup
+      const EmbeddingGen = await import('../services/embeddings/EmbeddingGenerator.js');
+      const { embed } = EmbeddingGen;
+
+      // Embed the query
+      console.log(`[gallery] Semantic search: "${query}"`);
+      const queryEmbedding = await embed(query);
+
+      // Search
+      const db = getEmbeddingDatabase();
+      const results = db.searchImageDescriptionsByVector(queryEmbedding, { limit, source });
+
+      // Build URLs for each result
+      const archiveRoot = getArchiveRoot();
+      const resultsWithUrls = results.map(r => {
+        let url = r.filePath;
+        if (r.filePath.startsWith(archiveRoot)) {
+          const relativePath = r.filePath.slice(archiveRoot.length + 1);
+          const parts = relativePath.split(path.sep);
+          if (parts.length >= 2) {
+            const folder = parts[0];
+            const filename = parts.slice(1).join('/');
+            url = `/api/conversations/${encodeURIComponent(folder)}/media/${encodeURIComponent(filename)}`;
+          }
+        }
+
+        return {
+          ...r,
+          url,
+        };
+      });
+
+      res.json({
+        success: true,
+        query,
+        results: resultsWithUrls,
+        total: results.length,
+      });
+    } catch (err) {
+      console.error('[gallery] Semantic search error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
    * Analyze a batch of images using vision model
    * POST body: { images: string[], limit?: number }
    * images can be full paths or relative to archive root
@@ -428,9 +489,12 @@ export function createGalleryRouter(): Router {
           console.log(`[gallery] Analyzing: ${path.basename(imagePath)}`);
           const analysis = await VisualModel.analyzeImage(imagePath);
 
+          // Generate ID for this analysis
+          const analysisId = crypto.randomUUID();
+
           // Store in database
           db.upsertImageAnalysis({
-            id: crypto.randomUUID(),
+            id: analysisId,
             file_path: imagePath,
             source: 'chatgpt',
             description: analysis.description,
@@ -442,6 +506,24 @@ export function createGalleryRouter(): Router {
             confidence: analysis.confidence,
             processing_time_ms: analysis.processingTimeMs,
           });
+
+          // Embed the description for semantic search
+          if (analysis.description) {
+            try {
+              const EmbeddingGen = await import('../services/embeddings/EmbeddingGenerator.js');
+              const descEmbedding = await EmbeddingGen.embed(analysis.description);
+
+              db.insertImageDescriptionEmbedding({
+                id: crypto.randomUUID(),
+                imageAnalysisId: analysisId,
+                text: analysis.description,
+                embedding: descEmbedding,
+              });
+              console.log(`[gallery] Embedded description for: ${path.basename(imagePath)}`);
+            } catch (embErr) {
+              console.warn(`[gallery] Failed to embed description:`, (embErr as Error).message);
+            }
+          }
 
           results.push({ path: imagePath, success: true });
         } catch (err) {

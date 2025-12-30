@@ -4,8 +4,12 @@ Direct Image Analysis Script
 Calls Ollama vision model directly and stores results in SQLite.
 Bypasses the slow/timing-out archive server endpoint.
 
+IMPORTANT: Uses vetted model list from electron/vision/profiles.ts
+Set VISION_MODEL env var to override (must be in vetted list).
+
 Usage:
     python3 scripts/direct-image-analysis.py [max_images] [--continue]
+    VISION_MODEL=llava:13b python3 scripts/direct-image-analysis.py 10
 
     max_images: total images to process (default: 10, use 0 for all)
     --continue: continue from where we left off
@@ -29,6 +33,53 @@ ARCHIVE_ROOT = "/Users/tem/openai-export-parser/output_v13_final"
 DB_PATH = f"{ARCHIVE_ROOT}/.embeddings.db"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+
+# Vetted Ollama vision models from electron/vision/profiles.ts
+# Keep in sync with profiles.ts to ensure model selection uses approved models
+VETTED_OLLAMA_MODELS = [
+    'qwen3-vl:8b',        # Primary - best JSON output
+    'qwen2-vl:7b',        # Good alternative
+    'llava:13b',          # Reliable, detailed
+    'llava:7b',           # Faster, less detailed
+    'llava:34b',          # Largest LLaVA
+    'llama3.2-vision:11b', # Meta model
+    'minicpm-v:8b',       # Efficient
+]
+
+# Default model in preference order
+DEFAULT_MODEL = 'qwen3-vl:8b'
+
+
+def get_vision_model() -> str:
+    """Get vision model to use, validating against vetted list."""
+    model = os.environ.get('VISION_MODEL', DEFAULT_MODEL)
+
+    if model not in VETTED_OLLAMA_MODELS:
+        print(f"WARNING: {model} not in vetted list. Using {DEFAULT_MODEL}")
+        print(f"Vetted models: {', '.join(VETTED_OLLAMA_MODELS)}")
+        model = DEFAULT_MODEL
+
+    # Verify model is installed in Ollama
+    try:
+        req = urllib.request.Request(
+            "http://localhost:11434/api/tags",
+            method="GET"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            installed = [m["name"] for m in data.get("models", [])]
+
+            if model not in installed:
+                print(f"WARNING: {model} not installed. Checking alternatives...")
+                for alt in VETTED_OLLAMA_MODELS:
+                    if alt in installed:
+                        print(f"Using installed model: {alt}")
+                        return alt
+                raise RuntimeError(f"No vetted vision model installed. Install with: ollama pull {DEFAULT_MODEL}")
+    except urllib.error.URLError as e:
+        print(f"WARNING: Could not verify Ollama models: {e}")
+
+    return model
 
 ANALYSIS_PROMPT = """Analyze this image comprehensively. Return a JSON object with these fields:
 {
@@ -67,13 +118,21 @@ def find_unanalyzed_images(analyzed_paths, max_count=0):
 
     return unanalyzed
 
-def analyze_image_with_ollama(image_path):
-    """Call Ollama vision model to analyze an image."""
+def analyze_image_with_ollama(image_path, model=None):
+    """Call Ollama vision model to analyze an image.
+
+    Args:
+        image_path: Path to image file
+        model: Optional model override (must be in vetted list)
+    """
+    if model is None:
+        model = get_vision_model()
+
     with open(image_path, "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode("utf-8")
 
     payload = json.dumps({
-        "model": "qwen3-vl:8b",
+        "model": model,
         "prompt": ANALYSIS_PROMPT,
         "images": [img_b64],
         "stream": False,
@@ -119,7 +178,8 @@ def analyze_image_with_ollama(image_path):
         "objects": analysis.get("objects", []),
         "scene": analysis.get("scene", "unknown"),
         "mood": analysis.get("mood", "neutral"),
-        "processing_time_ms": int(elapsed * 1000)
+        "processing_time_ms": int(elapsed * 1000),
+        "model_used": model,  # Track which vetted model was used
     }
 
 def save_to_database(image_path, analysis):
@@ -130,6 +190,9 @@ def save_to_database(image_path, analysis):
     source = "chatgpt"
     if "facebook" in image_path.lower():
         source = "facebook"
+
+    # Use model from analysis, falling back to default
+    model_used = analysis.get("model_used", DEFAULT_MODEL)
 
     conn.execute("""
         INSERT OR REPLACE INTO image_analysis
@@ -145,7 +208,7 @@ def save_to_database(image_path, analysis):
         json.dumps(analysis["objects"]),
         analysis["scene"],
         analysis["mood"],
-        "qwen3-vl:8b",
+        model_used,
         0.75,
         analysis["processing_time_ms"],
         time.time(),
@@ -165,8 +228,11 @@ def main():
             max_images = int(arg)
             break
 
+    # Get the vetted model that will be used
+    model = get_vision_model()
+
     print("=" * 60)
-    print("Direct Image Analysis (Ollama qwen3-vl:8b)")
+    print(f"Direct Image Analysis (Ollama {model})")
     print("=" * 60)
     print(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Archive: {ARCHIVE_ROOT}")

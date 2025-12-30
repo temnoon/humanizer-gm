@@ -6,16 +6,41 @@
  * - Image classification (category tags)
  * - Full image analysis (objects, scene, mood)
  *
+ * IMPORTANT: Uses the vetted vision factory from electron/vision/ for:
+ * - Model selection from approved list
+ * - Output filtering based on model profiles
+ *
  * @requires Ollama running with a vision model installed
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import {
+  getVettedModelsForProvider,
+  getVisionProfile,
+  filterVisionOutput,
+  isVisionModelVetted,
+  type VisionModelConfig,
+} from '../../../vision/index.js';
 
 const OLLAMA_BASE = 'http://localhost:11434';
 
-// Ordered by preference - first available will be used
-const VISION_MODELS = ['qwen3-vl:8b', 'llava:13b', 'llava'];
+// Get vetted Ollama vision models from the central registry
+// Falls back to common vision models if registry is empty
+function getVettedOllamaModels(): string[] {
+  const vetted = getVettedModelsForProvider('ollama');
+  if (vetted.length > 0) {
+    // Order by preference: qwen3-vl first (best JSON output), then llava
+    const modelIds = vetted.map((m: VisionModelConfig) => m.modelId);
+    const preferred = ['qwen3-vl:8b', 'qwen2-vl:7b', 'llava:13b', 'llava:7b', 'llava:34b'];
+    return preferred.filter((m: string) => modelIds.includes(m)).concat(
+      modelIds.filter((m: string) => !preferred.includes(m))
+    );
+  }
+  // Fallback for development
+  console.warn('[VisualModelService] No vetted models found, using fallback list');
+  return ['qwen3-vl:8b', 'llava:13b', 'llava'];
+}
 
 export interface ImageAnalysis {
   description: string;
@@ -41,7 +66,7 @@ export interface DescriptionResult {
 }
 
 /**
- * Check if Ollama vision is available and get the best model
+ * Check if Ollama vision is available and get the best vetted model
  */
 export async function getAvailableVisionModel(): Promise<string | null> {
   try {
@@ -54,17 +79,27 @@ export async function getAvailableVisionModel(): Promise<string | null> {
     const data = await response.json();
     const installedModels = data.models?.map((m: { name: string }) => m.name) || [];
 
-    // Return first available vision model
-    for (const model of VISION_MODELS) {
+    // Get vetted models in preference order
+    const vettedModels = getVettedOllamaModels();
+
+    // Return first available vetted vision model
+    for (const model of vettedModels) {
       if (installedModels.includes(model)) {
+        const vetted = isVisionModelVetted(model);
+        console.log(`[VisualModelService] Using model: ${model} (vetted: ${vetted})`);
         return model;
       }
     }
 
-    // Check for any model containing 'vl', 'llava', or 'vision'
+    // Fallback: Check for any vision model (will be unvetted)
     const visionModel = installedModels.find(
       (m: string) => m.includes('vl') || m.includes('llava') || m.includes('vision')
     );
+
+    if (visionModel) {
+      const vetted = isVisionModelVetted(visionModel);
+      console.warn(`[VisualModelService] Using model: ${visionModel} (vetted: ${vetted}) - not in preferred list`);
+    }
 
     return visionModel || null;
   } catch {
@@ -91,6 +126,7 @@ export function isImageFile(filePath: string): boolean {
 
 /**
  * Call Ollama with an image for vision analysis
+ * Applies output filtering based on model profile
  */
 async function callVisionModel(
   imagePath: string,
@@ -98,11 +134,18 @@ async function callVisionModel(
   options: {
     model?: string;
     timeout?: number;
+    applyFiltering?: boolean; // defaults to true
   } = {}
-): Promise<{ response: string; model: string; timeMs: number }> {
+): Promise<{ response: string; model: string; timeMs: number; filtered?: boolean }> {
   const model = options.model || (await getAvailableVisionModel());
   if (!model) {
     throw new Error('No vision model available. Install qwen3-vl or llava with: ollama pull qwen3-vl:8b');
+  }
+
+  // Log vetting status
+  const profile = getVisionProfile(model);
+  if (!profile?.vetted) {
+    console.warn(`[VisualModelService] Model ${model} is not vetted - output may need manual review`);
   }
 
   const imageBase64 = await imageToBase64(imagePath);
@@ -135,11 +178,28 @@ async function callVisionModel(
 
     const data = await response.json();
     const timeMs = Date.now() - startTime;
+    const rawResponse = data.response || '';
+
+    // Apply output filtering based on model profile (default: true)
+    const shouldFilter = options.applyFiltering !== false;
+    if (shouldFilter && profile) {
+      const filterResult = filterVisionOutput(rawResponse, model);
+      if (filterResult.hadThinkingTags || filterResult.hadPreamble) {
+        console.log(`[VisualModelService] Filtered output: thinkingTags=${filterResult.hadThinkingTags}, preamble=${filterResult.hadPreamble}`);
+      }
+      return {
+        response: filterResult.content,
+        model,
+        timeMs,
+        filtered: true,
+      };
+    }
 
     return {
-      response: data.response || '',
+      response: rawResponse,
       model,
       timeMs,
+      filtered: false,
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
