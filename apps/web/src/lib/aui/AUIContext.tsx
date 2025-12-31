@@ -117,6 +117,57 @@ export interface AUIContextValue {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ELECTRON CHAT API TYPE
+// ═══════════════════════════════════════════════════════════════════
+
+interface ElectronChatAPI {
+  chat: {
+    sendMessage: (content: string, options?: { context?: string }) => Promise<{ success: boolean; error?: string }>;
+    getMessages: (conversationId?: string) => Promise<Array<{ role: string; content: string }>>;
+    startConversation: () => Promise<{ id: string }>;
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WORKSPACE CONTEXT BUILDER
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Build a context string from current workspace state
+ * This is passed to the LLM so it knows what the user is looking at
+ */
+function buildWorkspaceContext(
+  workspace: AUIToolContext['workspace'] | undefined,
+  book: { activeProject: { id: string } | null } | null
+): string {
+  const parts: string[] = [];
+
+  // Active buffer content
+  if (workspace?.bufferContent) {
+    const preview = workspace.bufferContent.slice(0, 500);
+    parts.push(`Buffer "${workspace.bufferName || 'untitled'}" (${workspace.bufferContent.length} chars): "${preview}${workspace.bufferContent.length > 500 ? '...' : ''}"`);
+  }
+
+  // Current view mode
+  if (workspace?.viewMode) {
+    parts.push(`View mode: ${workspace.viewMode}`);
+  }
+
+  // Selected Facebook content
+  if (workspace?.selectedContent) {
+    parts.push(`Viewing: ${workspace.selectedContent.type} from ${workspace.selectedContent.source || 'unknown'}`);
+  }
+
+  // Active book info
+  if (book?.activeProject) {
+    const project = book.activeProject;
+    parts.push(`Active book: ${project.id}`);
+  }
+
+  return parts.length > 0 ? parts.join('\n') : '';
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
 
@@ -359,18 +410,41 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
       abortControllerRef.current = new AbortController();
 
       try {
-        // Call LLM
-        const apiUrl =
-          import.meta.env.VITE_CHAT_API_URL || 'http://localhost:11434/api/chat';
-        const isOllama = apiUrl.includes('11434');
-
-        const messagesForLLM = conversation.messages
-          .filter((m) => m.role !== 'tool')
-          .map((m) => ({ role: m.role, content: m.content }));
-
         let assistantContent: string;
 
-        if (isOllama) {
+        // Build workspace context for the LLM
+        const workspaceContext = buildWorkspaceContext(workspaceState, book);
+
+        // Use Electron chat service if available (routes through AgentMaster)
+        // This provides tiered prompts based on device RAM and automatic output vetting
+        const electronAPI = (window as unknown as { electronAPI?: ElectronChatAPI }).electronAPI;
+        const isElectron = (window as unknown as { isElectron?: boolean }).isElectron;
+
+        if (isElectron && electronAPI?.chat) {
+          // Route through AgentMaster for tiered prompts + vetting
+          const result = await electronAPI.chat.sendMessage(content.trim(), {
+            context: workspaceContext,
+          });
+
+          if (!result.success) {
+            throw new Error(result.error || 'Chat service error');
+          }
+
+          // Get the assistant's response from the messages
+          const messages = await electronAPI.chat.getMessages();
+          const lastAssistant = messages
+            .filter((m: { role: string }) => m.role === 'assistant')
+            .pop();
+          assistantContent = lastAssistant?.content || "I couldn't process that.";
+        } else {
+          // Fallback: Direct Ollama call (web-only mode)
+          const apiUrl =
+            import.meta.env.VITE_CHAT_API_URL || 'http://localhost:11434/api/chat';
+
+          const messagesForLLM = conversation.messages
+            .filter((m) => m.role !== 'tool')
+            .map((m) => ({ role: m.role, content: m.content }));
+
           const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -378,6 +452,8 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
               model: 'llama3.2',
               messages: [
                 { role: 'system', content: AUI_SYSTEM_PROMPT },
+                // Include workspace context as a system message
+                ...(workspaceContext ? [{ role: 'system', content: `Current workspace:\n${workspaceContext}` }] : []),
                 ...messagesForLLM,
                 { role: 'user', content: content.trim() },
               ],
@@ -389,23 +465,6 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
           if (!response.ok) throw new Error('Ollama not available');
           const data = await response.json();
           assistantContent = data.message?.content || "I couldn't process that.";
-        } else {
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: [
-                { role: 'system', content: AUI_SYSTEM_PROMPT },
-                ...messagesForLLM,
-                { role: 'user', content: content.trim() },
-              ],
-            }),
-            signal: abortControllerRef.current.signal,
-          });
-
-          if (!response.ok) throw new Error('Chat API not available');
-          const data = await response.json();
-          assistantContent = data.response || "I couldn't process that.";
         }
 
         // Execute tools FIRST (before displaying message)

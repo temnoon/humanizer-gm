@@ -52,16 +52,17 @@ export function createDetectionRouter(): Router {
       }
 
       const trimmedText = text.trim();
-      if (trimmedText.length < 100) {
+      // Relaxed validation for quick testing (was 100 chars, 20 words)
+      if (trimmedText.length < 20) {
         return res.status(400).json({
-          error: 'Text must be at least 100 characters for accurate detection',
+          error: 'Text must be at least 20 characters for detection',
         });
       }
 
       const words = trimmedText.split(/\s+/).filter(w => w.length > 0);
-      if (words.length < 20) {
+      if (words.length < 5) {
         return res.status(400).json({
-          error: 'Text must be at least 20 words for accurate detection',
+          error: 'Text must be at least 5 words for detection',
         });
       }
 
