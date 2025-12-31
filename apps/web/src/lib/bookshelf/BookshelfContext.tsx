@@ -20,8 +20,13 @@ import type {
   BookProject,
   ResolvedBookProject,
   DraftChapter,
+  SourcePassage,
+  HarvestBucket,
+  NarrativeArc,
+  CurationStatus,
 } from './types';
 import { bookshelfService } from './BookshelfService';
+import { harvestBucketService } from './HarvestBucketService';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONTEXT TYPE
@@ -63,6 +68,37 @@ interface BookshelfContextType {
   // Search
   findByTag: (tag: string) => (Persona | Style | BookProject)[];
   findByAuthor: (author: string) => (Persona | Style | BookProject)[];
+
+  // ─────────────────────────────────────────────────────────────────
+  // HARVEST OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  // Harvest bucket management
+  createHarvestBucket: (bookUri: EntityURI, queries: string[]) => HarvestBucket;
+  getActiveBuckets: (bookUri: EntityURI) => HarvestBucket[];
+  getBucket: (bucketId: string) => HarvestBucket | undefined;
+
+  // Passage curation
+  approvePassage: (bucketId: string, passageId: string) => HarvestBucket | undefined;
+  rejectPassage: (bucketId: string, passageId: string, reason?: string) => HarvestBucket | undefined;
+  markAsGem: (bucketId: string, passageId: string) => HarvestBucket | undefined;
+  moveToCandidates: (bucketId: string, passageId: string) => HarvestBucket | undefined;
+
+  // Bucket lifecycle
+  finishCollecting: (bucketId: string) => HarvestBucket | undefined;
+  stageBucket: (bucketId: string) => HarvestBucket | undefined;
+  commitBucket: (bucketId: string) => BookProject | undefined;
+  discardBucket: (bucketId: string) => boolean;
+
+  // Passage operations on books
+  getPassages: (bookUri: EntityURI) => SourcePassage[];
+  addPassageToBook: (bookUri: EntityURI, passage: SourcePassage) => BookProject | undefined;
+  updatePassageStatus: (bookUri: EntityURI, passageId: string, status: CurationStatus) => BookProject | undefined;
+
+  // Narrative arc operations
+  createArc: (bookUri: EntityURI, thesis: string) => NarrativeArc;
+  getArcsForBook: (bookUri: EntityURI) => NarrativeArc[];
+  approveArc: (arcId: string, feedback?: string) => NarrativeArc | undefined;
 
   // Refresh
   refresh: () => Promise<void>;
@@ -220,6 +256,129 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   }, []);
 
   // ─────────────────────────────────────────────────────────────────
+  // HARVEST OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  // Initialize harvest service on mount
+  useEffect(() => {
+    harvestBucketService.initialize();
+  }, []);
+
+  const createHarvestBucket = useCallback((bookUri: EntityURI, queries: string[]) => {
+    return harvestBucketService.createBucket(bookUri, queries);
+  }, []);
+
+  const getActiveBuckets = useCallback((bookUri: EntityURI) => {
+    return harvestBucketService.getActiveBucketsForBook(bookUri);
+  }, []);
+
+  const getBucket = useCallback((bucketId: string) => {
+    return harvestBucketService.getBucket(bucketId);
+  }, []);
+
+  const approvePassage = useCallback((bucketId: string, passageId: string) => {
+    return harvestBucketService.approvePassage(bucketId, passageId);
+  }, []);
+
+  const rejectPassage = useCallback((bucketId: string, passageId: string, reason?: string) => {
+    return harvestBucketService.rejectPassage(bucketId, passageId, reason);
+  }, []);
+
+  const markAsGem = useCallback((bucketId: string, passageId: string) => {
+    return harvestBucketService.markAsGem(bucketId, passageId);
+  }, []);
+
+  const moveToCandidates = useCallback((bucketId: string, passageId: string) => {
+    return harvestBucketService.moveToCandidates(bucketId, passageId);
+  }, []);
+
+  const finishCollecting = useCallback((bucketId: string) => {
+    return harvestBucketService.finishCollecting(bucketId);
+  }, []);
+
+  const stageBucket = useCallback((bucketId: string) => {
+    return harvestBucketService.stageBucket(bucketId);
+  }, []);
+
+  const commitBucket = useCallback((bucketId: string) => {
+    const result = harvestBucketService.commitBucket(bucketId);
+    if (result) {
+      // Refresh books after commit
+      setBooks(bookshelfService.getAllBooks());
+    }
+    return result;
+  }, []);
+
+  const discardBucket = useCallback((bucketId: string) => {
+    return harvestBucketService.discardBucket(bucketId);
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────
+  // PASSAGE OPERATIONS ON BOOKS
+  // ─────────────────────────────────────────────────────────────────
+
+  const getPassages = useCallback((bookUri: EntityURI) => {
+    const book = bookshelfService.getBook(bookUri);
+    return book?.passages || [];
+  }, []);
+
+  const addPassageToBook = useCallback((bookUri: EntityURI, passage: SourcePassage) => {
+    const book = bookshelfService.getBook(bookUri);
+    if (!book) return undefined;
+
+    const updatedPassages = [...book.passages, passage];
+    const updated = bookshelfService.updateBook(bookUri, {
+      passages: updatedPassages,
+      stats: {
+        ...book.stats,
+        totalPassages: updatedPassages.length,
+      },
+    });
+
+    if (updated) {
+      setBooks(bookshelfService.getAllBooks());
+    }
+    return updated;
+  }, []);
+
+  const updatePassageStatus = useCallback((
+    bookUri: EntityURI,
+    passageId: string,
+    status: CurationStatus
+  ) => {
+    const book = bookshelfService.getBook(bookUri);
+    if (!book) return undefined;
+
+    const updatedPassages = book.passages.map((p) =>
+      p.id === passageId
+        ? { ...p, curation: { ...p.curation, status, curatedAt: Date.now() } }
+        : p
+    );
+
+    const updated = bookshelfService.updateBook(bookUri, { passages: updatedPassages });
+    if (updated) {
+      setBooks(bookshelfService.getAllBooks());
+    }
+    return updated;
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────
+  // NARRATIVE ARC OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  const createArc = useCallback((bookUri: EntityURI, thesis: string) => {
+    return harvestBucketService.createArc(bookUri, thesis);
+  }, []);
+
+  const getArcsForBook = useCallback((bookUri: EntityURI) => {
+    return harvestBucketService.getArcsForBook(bookUri);
+  }, []);
+
+  const approveArc = useCallback((arcId: string, feedback?: string) => {
+    return harvestBucketService.approveArc(arcId, feedback);
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────
   // CONTEXT VALUE
   // ─────────────────────────────────────────────────────────────────
 
@@ -252,6 +411,33 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
 
     findByTag,
     findByAuthor,
+
+    // Harvest operations
+    createHarvestBucket,
+    getActiveBuckets,
+    getBucket,
+
+    // Passage curation
+    approvePassage,
+    rejectPassage,
+    markAsGem,
+    moveToCandidates,
+
+    // Bucket lifecycle
+    finishCollecting,
+    stageBucket,
+    commitBucket,
+    discardBucket,
+
+    // Passage operations
+    getPassages,
+    addPassageToBook,
+    updatePassageStatus,
+
+    // Narrative arc
+    createArc,
+    getArcsForBook,
+    approveArc,
 
     refresh: loadAll,
   };

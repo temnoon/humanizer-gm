@@ -121,3 +121,34 @@ export {
   getUnresolvedNotes,
   getNotesFor,
 } from '@humanizer/core';
+
+// Harvest types (staging, arcs, links)
+export type {
+  HarvestStatus,
+  HarvestBucket,
+  HarvestStats,
+  ArcType,
+  NarrativeArc,
+  ArcTheme,
+  ThemeRelationship,
+  ChapterOutline,
+  ArcEvaluation,
+  PassageLink,
+  NarrativeGap,
+  GapLocation,
+  GapType,
+  GapSuggestion,
+} from '@humanizer/core';
+
+export {
+  createHarvestBucket,
+  createNarrativeArc,
+  createPassageLink,
+  isHarvestTerminal,
+  isHarvestReady,
+  getHarvestProgress,
+  getAllApproved,
+  isArcApproved,
+  getOrphanedPassages,
+  getPassageUsageCount,
+} from '@humanizer/core';
