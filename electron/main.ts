@@ -35,6 +35,17 @@ import { startNpeLocalServer, stopNpeLocalServer, isNpeLocalServerRunning, getNp
 // Whisper (local speech-to-text)
 import { initWhisper, registerWhisperHandlers } from './whisper/whisper-manager';
 
+// AgentMaster (unified LLM abstraction)
+import {
+  getAgentMasterService,
+  setDeviceProfile,
+  clearDeviceOverride,
+  getDeviceProfile,
+  getTierDescription,
+  getRecommendedModels,
+  type MemoryTier,
+} from './agent-master';
+
 // Set app name for macOS menu bar (development mode)
 // In production, this comes from electron-builder.json productName
 app.name = 'Humanizer';
@@ -703,6 +714,60 @@ function registerIPCHandlers() {
 }
 
 // ============================================================
+// AGENT MASTER IPC HANDLERS
+// ============================================================
+
+function registerAgentMasterHandlers() {
+  // Get current device profile
+  ipcMain.handle('agent-master:get-profile', () => {
+    return getDeviceProfile();
+  });
+
+  // Set tier override (for testing different device tiers)
+  ipcMain.handle('agent-master:set-tier', (_e, tier: MemoryTier) => {
+    setDeviceProfile({ tier });
+    const profile = getDeviceProfile();
+    console.log(`[AgentMaster] Tier override set to: ${tier}`);
+    return {
+      tier,
+      description: getTierDescription(tier),
+      recommendedModels: getRecommendedModels(tier),
+      profile,
+    };
+  });
+
+  // Clear tier override (use auto-detection)
+  ipcMain.handle('agent-master:clear-override', () => {
+    clearDeviceOverride();
+    const profile = getDeviceProfile();
+    console.log('[AgentMaster] Tier override cleared, using auto-detection');
+    return {
+      tier: profile.tier,
+      description: getTierDescription(profile.tier),
+      recommendedModels: getRecommendedModels(profile.tier),
+      profile,
+    };
+  });
+
+  // Get tier info
+  ipcMain.handle('agent-master:tier-info', (_e, tier: MemoryTier) => {
+    return {
+      tier,
+      description: getTierDescription(tier),
+      recommendedModels: getRecommendedModels(tier),
+    };
+  });
+
+  // List available capabilities
+  ipcMain.handle('agent-master:capabilities', () => {
+    const agentMaster = getAgentMasterService();
+    return agentMaster.listCapabilities();
+  });
+
+  console.log('AgentMaster IPC handlers registered');
+}
+
+// ============================================================
 // CUSTOM PROTOCOL FOR LOCAL MEDIA
 // ============================================================
 
@@ -948,6 +1013,7 @@ app.whenReady().then(async () => {
   registerLocalMediaProtocol();
 
   registerIPCHandlers();
+  registerAgentMasterHandlers();
 
   // Start OAuth callback server in development mode
   if (!app.isPackaged) {

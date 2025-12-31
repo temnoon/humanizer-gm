@@ -95,6 +95,9 @@ export interface ElectronAPI {
 
   // Agent Council
   agents: AgentAPI;
+
+  // AgentMaster (LLM abstraction with tiered prompts)
+  agentMaster: AgentMasterAPI;
 }
 
 export interface CloudDrive {
@@ -402,6 +405,40 @@ export interface AgentAPI {
   onSessionEvent: (callback: (event: AgentEvent) => void) => () => void;
 }
 
+export type MemoryTier = 'tiny' | 'standard' | 'full';
+
+export interface DeviceProfile {
+  tier: MemoryTier;
+  ramGB: number;
+  preferLocal: boolean;
+  detectedAt: number;
+  userOverride?: boolean;
+}
+
+export interface TierInfo {
+  tier: MemoryTier;
+  description: string;
+  recommendedModels: string[];
+  profile?: DeviceProfile;
+}
+
+export interface AgentMasterAPI {
+  // Get current device profile (includes tier)
+  getProfile: () => Promise<DeviceProfile>;
+
+  // Set tier override for testing (e.g., simulate 8GB device on 32GB machine)
+  setTier: (tier: MemoryTier) => Promise<TierInfo>;
+
+  // Clear tier override and use auto-detection
+  clearOverride: () => Promise<TierInfo>;
+
+  // Get info about a specific tier
+  getTierInfo: (tier: MemoryTier) => Promise<TierInfo>;
+
+  // List available capabilities
+  getCapabilities: () => Promise<string[]>;
+}
+
 // ============================================================
 // EXPOSE API
 // ============================================================
@@ -616,6 +653,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeListener('agents:session', handler);
       };
     },
+  },
+
+  // AgentMaster (LLM abstraction with tiered prompts)
+  agentMaster: {
+    getProfile: () => ipcRenderer.invoke('agent-master:get-profile'),
+    setTier: (tier: MemoryTier) => ipcRenderer.invoke('agent-master:set-tier', tier),
+    clearOverride: () => ipcRenderer.invoke('agent-master:clear-override'),
+    getTierInfo: (tier: MemoryTier) => ipcRenderer.invoke('agent-master:tier-info', tier),
+    getCapabilities: () => ipcRenderer.invoke('agent-master:capabilities'),
   },
 } as ElectronAPI);
 
