@@ -120,10 +120,17 @@ export interface AUIContextValue {
 // ELECTRON CHAT API TYPE
 // ═══════════════════════════════════════════════════════════════════
 
+interface ElectronChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp: number;
+}
+
 interface ElectronChatAPI {
   chat: {
-    sendMessage: (content: string, options?: { context?: string }) => Promise<{ success: boolean; error?: string }>;
-    getMessages: (conversationId?: string) => Promise<Array<{ role: string; content: string }>>;
+    sendMessage: (content: string, options?: { context?: string }) => Promise<ElectronChatMessage[]>;
+    getMessages: (conversationId?: string) => Promise<ElectronChatMessage[]>;
     startConversation: () => Promise<{ id: string }>;
   };
 }
@@ -422,18 +429,14 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
 
         if (isElectron && electronAPI?.chat) {
           // Route through AgentMaster for tiered prompts + vetting
-          const result = await electronAPI.chat.sendMessage(content.trim(), {
+          // sendMessage returns the new messages (including assistant response)
+          const newMessages = await electronAPI.chat.sendMessage(content.trim(), {
             context: workspaceContext,
           });
 
-          if (!result.success) {
-            throw new Error(result.error || 'Chat service error');
-          }
-
-          // Get the assistant's response from the messages
-          const messages = await electronAPI.chat.getMessages();
-          const lastAssistant = messages
-            .filter((m: { role: string }) => m.role === 'assistant')
+          // Find the assistant's response from the returned messages
+          const lastAssistant = newMessages
+            .filter((m) => m.role === 'assistant')
             .pop();
           assistantContent = lastAssistant?.content || "I couldn't process that.";
         } else {
