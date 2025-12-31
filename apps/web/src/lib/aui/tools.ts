@@ -3706,6 +3706,9 @@ async function executeHarvestForThread(
     // Get updated bucket with stats
     const updatedBucket = harvestBucketService.getBucket(bucket.id);
 
+    // GUI Bridge: Open Tools panel → Harvest tab to show results
+    dispatchOpenPanel('tools', 'harvest');
+
     return {
       success: true,
       message: `Harvested ${totalCandidates} passages from ${queries.length} queries`,
