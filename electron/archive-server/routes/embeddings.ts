@@ -459,5 +459,79 @@ export function createEmbeddingsRouter(): Router {
     }
   });
 
+  // ─────────────────────────────────────────────────────────────────
+  // IMAGE DESCRIPTION EMBEDDINGS
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Embed an image description for semantic search.
+   * Called by QueueManager after image analysis or for backfill.
+   *
+   * POST /api/embeddings/embed-image-description
+   * Body: { filePath: string, description: string }
+   */
+  router.post('/embed-image-description', async (req: Request, res: Response) => {
+    try {
+      const { filePath, description } = req.body;
+
+      if (!filePath || !description) {
+        res.status(400).json({ error: 'filePath and description required' });
+        return;
+      }
+
+      const db = getEmbeddingDb();
+
+      // Find the image analysis record
+      const analysis = db.getImageAnalysisByPath(filePath);
+      if (!analysis) {
+        res.status(404).json({ error: 'Image analysis not found for path' });
+        return;
+      }
+
+      // Initialize embedding model if needed
+      if (!embeddingModule.isInitialized()) {
+        await embeddingModule.initializeEmbedding();
+      }
+
+      // Generate embedding for the description
+      const descEmbedding = await embeddingModule.embed(description);
+
+      // Store the embedding
+      db.insertImageDescriptionEmbedding({
+        id: crypto.randomUUID(),
+        imageAnalysisId: analysis.id,
+        text: description,
+        embedding: descEmbedding,
+      });
+
+      res.json({
+        success: true,
+        imageAnalysisId: analysis.id,
+        embeddingDimensions: descEmbedding.length,
+      });
+    } catch (err) {
+      console.error('[embeddings] Image description embedding error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * Get stats on image description embeddings
+   */
+  router.get('/image-description-stats', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDb();
+      const embeddingCount = db.getImageDescriptionEmbeddingCount();
+      const needsEmbedding = db.getImageAnalysesWithoutDescriptionEmbeddings(1000);
+
+      res.json({
+        totalEmbeddings: embeddingCount,
+        needsEmbedding: needsEmbedding.length,
+      });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   return router;
 }
