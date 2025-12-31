@@ -50,7 +50,7 @@ import {
 import { useAuth } from './lib/auth';
 import { LoginPage } from './components/auth/LoginPage';
 import { BookProvider, useBook } from './lib/book';
-import { BookshelfProvider } from './lib/bookshelf';
+import { BookshelfProvider, useBookshelf } from './lib/bookshelf';
 import { executeAllTools, AUI_BOOK_SYSTEM_PROMPT, AUIProvider, useAUI, type AUIContext, type WorkspaceState } from './lib/aui';
 import { ThemeProvider, useTheme } from './lib/theme/ThemeContext';
 import { ThemeSettingsModal } from './components/theme/ThemeSettingsModal';
@@ -58,6 +58,7 @@ import { ArchiveTabs, type SelectedFacebookMedia, type SelectedFacebookContent, 
 import { BookContentView, ContainerWorkspace, AnalyzableMarkdown, WelcomeScreen, StructureInspector, type BookContent } from './components/workspace';
 import type { BookProject } from './components/archive/book-project/types';
 import { ProfileCardsContainer } from './components/tools/ProfileCards';
+import { HarvestQueuePanel } from './components/tools/HarvestQueuePanel';
 import { SocialGraphView } from './components/graph';
 import { useLayout, CornerAssistant, PanelResizer, usePanelState, useLayoutMode, useSplitScreen, SplitScreenWorkspace, useHighlights, useSplitMode, type SplitPaneContent } from './components/layout';
 import type { SentenceAnalysis } from './lib/analysis';
@@ -600,6 +601,7 @@ const TOOL_REGISTRY: ToolDefinition[] = [
   // Edit tools
   { id: 'editor', icon: '¶', label: 'Editor', description: 'Markdown editor', category: 'edit', defaultVisible: true },
   { id: 'book', icon: '❡', label: 'Book', description: 'Book environment', category: 'edit', defaultVisible: false },
+  { id: 'harvest', icon: '🌾', label: 'Harvest', description: 'Passage curation queue', category: 'edit', defaultVisible: true },
 
   // Advanced tools (hidden by default)
   { id: 'pipelines', icon: '⚡', label: 'Pipelines', description: 'Preset workflows', category: 'advanced', defaultVisible: false },
@@ -665,6 +667,9 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
   // Highlight and split mode hooks for analysis integration
   const { setData: setAnalysisData, setActive: setActiveHighlights, analysisData } = useHighlights();
   const { mode: splitMode, setMode: setSplitMode } = useSplitMode();
+
+  // Bookshelf hook for harvest panel
+  const bookshelf = useBookshelf();
 
   // Tool visibility state
   const [toolVisibility, setToolVisibility] = useState<Record<string, boolean>>(loadToolVisibility);
@@ -1451,6 +1456,21 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
               <span className="tool-panel__muted">Chapter organization, export, formatting</span>
             </div>
           </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            HARVEST - Passage curation queue
+            ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'harvest' && (
+          <HarvestQueuePanel
+            bookUri={bookshelf.activeBookUri}
+            onSelectPassage={(passage) => {
+              // Load passage into buffer for viewing
+              importText(passage.text || '', passage.sourceRef?.conversationTitle || 'Passage', {
+                type: 'passage',
+              });
+            }}
+          />
         )}
 
         {/* ═══════════════════════════════════════════════════════════════
