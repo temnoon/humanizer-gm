@@ -38,6 +38,9 @@ export * from './thinking.js';
 // Book types (unified BookProject)
 export * from './book.js';
 
+// Harvest types (staging, arcs, links)
+export * from './harvest.js';
+
 // Container types (unified archive container)
 export * from './container.js';
 

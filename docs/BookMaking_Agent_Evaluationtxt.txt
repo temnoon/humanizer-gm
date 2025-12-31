@@ -1,0 +1,1193 @@
+⏺ Running 5 agents… (ctrl+o to expand)
+   ├─ architect-agent (Architect audit - Bookshelf) · 23 tool uses · 58.0k tokens
+   │  ⎿  Bash: Find all React contexts in lib folder
+   ├─ data-agent (Data audit - Bookshelf schemas) · 25 tool uses · 56.5k tokens
+   │  ⎿  Bash: Find schema tables and migration function
+   ├─ stylist-agent (Stylist audit - Bookshelf UI) · 20 tool uses · 54.1k tokens
+   │  ⎿  Done
+   ├─ accessibility-agent (Accessibility audit - Bookshelf) · 14 tool uses · 66.2k tokens
+   │  ⎿  Bash: Search for focus styles in CSS
+   └─ curator-agent (Curator audit - content quality) · 12 tool uses · 38.0k tokens
+      ⎿  Done
+
+  Todos
+  ☐ Convene House Agent Council for Bookshelf architecture
+  ☐ Synthesize council findings into implementation plan
+  ☐ Create Bookshelf implementation roadmap
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+
+   cat > /tmp/accessibility_audit.md << 'EOF'
+   # House of Accessibility - Bookshelf WCAG 2.1 AA Audit Report
+
+   **Audit Date**: December 30, 2025
+   **Project**: humanizer-gm - Bookshelf Feature
+   **WCAG Standard**: WCAG 2.1 Level AA
+   **Status**: FAIL - Multiple Critical Issues Requiring Remediation
+
+   ---
+
+   ## EXECUTIVE SUMMARY
+
+   The Bookshelf feature requires substantial accessibility improvements before launch. Current implementation has:
+
+   - **Critical Issues**: 12 violations blocking users with disabilities
+   - **Serious Issues**: 8 significant barriers affecting usability
+   - **Moderate Issues**: 15 enhancement opportunities
+
+   **Recommendation**: HOLD release until critical issues resolved.
+
+   ---
+
+   ## CRITICAL ISSUES (Must Fix)
+
+   ### Issue 1: Tab Navigation Missing ARIA Attributes
+   **WCAG 2.1 Section**: 4.1.3 Name, Role, Value
+   **Severity**: CRITICAL
+   **Files**:
+   - `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/ArchiveIconTabBar.tsx`
+   - `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/BookProjectDetail.tsx`
+
+   **Current Code**:
+   ```tsx
+   // ArchiveIconTabBar.tsx (lines 14-26)
+   <nav className="archive-tabs__nav">
+     {ARCHIVE_TABS.map(tab => (
+       <button
+         key={tab.id}
+         className={`archive-tabs__tab ${activeTab === tab.id ? 'archive-tabs__tab--active' : ''}`}
+         onClick={() => onTabChange(tab.id)}
+         title={tab.description}
+       >
+         <span className="archive-tabs__tab-icon">{tab.icon}</span>
+         <span className="archive-tabs__tab-label">{tab.label}</span>
+       </button>
+     ))}
+   </nav>
+   ```
+
+   **Violations**:
+   1. No `role="tab"` attribute on buttons
+   2. No `aria-selected` to indicate active state
+   3. No `aria-controls` to connect tab to panel
+   4. Nav container missing `role="tablist"`
+
+   **Impact**: Screen reader users cannot identify tab structure or determine which tab is active.
+
+   **Required Fix**:
+   ```tsx
+   <nav className="archive-tabs__nav" role="tablist" aria-label="Archive content tabs">
+     {ARCHIVE_TABS.map(tab => (
+       <button
+         key={tab.id}
+         role="tab"
+         aria-selected={activeTab === tab.id}
+         aria-controls={`${tab.id}-panel`}
+         className={`archive-tabs__tab ${activeTab === tab.id ? 'archive-tabs__tab--active' : ''}`}
+         onClick={() => onTabChange(tab.id)}
+         tabIndex={activeTab === tab.id ? 0 : -1}
+       >
+         <span className="archive-tabs__tab-icon" aria-hidden="true">{tab.icon}</span>
+         <span className="archive-tabs__tab-label">{tab.label}</span>
+       </button>
+     ))}
+   </nav>
+
+   {/* Tab panel wrapper */}
+   <div id={`${activeTab}-panel`} role="tabpanel" aria-labelledby={activeTab}>
+     {renderTabContent()}
+   </div>
+   ```
+
+   ---
+
+   ### Issue 2: Book Card Buttons Lack Proper Semantics
+   **WCAG 2.1 Section**: 2.1.1 Keyboard
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/BooksView.tsx` (lines 738-768, 777-800)
+
+   **Current Code**:
+   ```tsx
+   <div
+     key={project.id}
+     className="book-card book-card--project"
+     onClick={() => handleOpenProject(project.id)}
+     role="button"
+     tabIndex={0}
+     onKeyDown={(e) => e.key === 'Enter' && handleOpenProject(project.id)}
+   >
+   ```
+
+   **Violations**:
+   1. Using `<div>` with `role="button"` instead of native `<button>` element
+   2. Only handles 'Enter' key - should also handle 'Space'
+   3. No visible focus indicator (missing CSS)
+   4. Touch target may be too small for some variants
+
+   **Impact**: Keyboard navigation broken for Space key, focus not visually distinguishable.
+
+   **Required Fix**:
+   ```tsx
+   // Use semantic <button> element instead
+   <button
+     key={project.id}
+     className="book-card book-card--project"
+     onClick={() => handleOpenProject(project.id)}
+     aria-label={`Open ${project.name} project`}
+   >
+     {/* ... content ... */}
+   </button>
+
+   // Add to CSS:
+   .book-card:focus-visible {
+     outline: 3px solid var(--color-primary);
+     outline-offset: 2px;
+   }
+   ```
+
+   ---
+
+   ### Issue 3: Status Badges Use Color Alone
+   **WCAG 2.1 Section**: 1.4.1 Use of Color
+   **Severity**: CRITICAL
+   **Files**:
+   - `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/BookProjectDetail.tsx` (line 98-100)
+   - `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/BooksView.tsx` (line 765-767)
+
+   **Current Code**:
+   ```tsx
+   <span
+     className="book-project__status"
+     style={{ backgroundColor: statusColors[project.status] }}
+   >
+     {project.status}
+   </span>
+   ```
+
+   **Problem**: Color (blue, orange, green) is used as the only visual means of distinguishing status. Colorblind users cannot differentiate.
+
+   **Impact**: Users with color blindness (8% male, 0.5% female) cannot determine book status.
+
+   **Required Fix**:
+   ```tsx
+   <span
+     className={`book-project__status book-project__status--${project.status}`}
+     style={{ backgroundColor: statusColors[project.status] }}
+   >
+     {/* Add visual indicator + text */}
+     <span className="status-indicator" aria-hidden="true">
+       {project.status === 'harvesting' && '◉'}
+       {project.status === 'curating' && '◕'}
+       {project.status === 'drafting' && '◑'}
+       {project.status === 'complete' && '✓'}
+     </span>
+     {project.status}
+   </span>
+
+   /* CSS: Ensure sufficient contrast and pattern */
+   .book-project__status {
+     display: inline-flex;
+     align-items: center;
+     gap: 0.5rem;
+     padding: 0.25rem 0.75rem;
+     border-radius: 0.25rem;
+     font-weight: 600;
+     font-size: 0.875rem;
+   }
+
+   /* Add patterns to distinguish status */
+   .book-project__status--harvesting {
+     background: linear-gradient(45deg, #3b82f6 25%, transparent 25%, transparent 75%, #3b82f6 75%, #3b82f6);
+   }
+
+   .book-project__status--drafting {
+     background: linear-gradient(45deg, #6366f1 25%, transparent 25%, transparent 75%, #6366f1 75%, #6366f1);
+   }
+   ```
+
+   ---
+
+   ### Issue 4: Passage Status Buttons Not Keyboard Accessible
+   **WCAG 2.1 Section**: 2.1.1 Keyboard
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/book-project/BookProjectDetail.tsx` (lines 434-455)
+
+   **Current Code**:
+   ```tsx
+   <div className="passage-card__actions">
+     <button
+       className="action-btn action-btn--approve"
+       onClick={(e) => { e.stopPropagation(); onStatusChange?.(passage.id, 'approved'); }}
+       title="Approve"
+     >
+       ✓
+     </button>
+     <button
+       className="action-btn action-btn--reject"
+       onClick={(e) => { e.stopPropagation(); onStatusChange?.(passage.id, 'rejected'); }}
+       title="Reject"
+     >
+       ✗
+     </button>
+     <button
+       className="action-btn action-btn--gem"
+       onClick={(e) => { e.stopPropagation(); onStatusChange?.(passage.id, 'gem'); }}
+       title="Mark as Gem"
+     >
+       ⭐
+     </button>
+   </div>
+   ```
+
+   **Violations**:
+   1. Icon-only buttons with only `title` attribute (not accessible to keyboard users in all browsers)
+   2. No `aria-label` providing accessible name
+   3. No visual focus indicator
+   4. Touch targets likely under 44px
+
+   **Impact**: Screen reader users hear only emoji symbols, cannot understand button purpose.
+
+   **Required Fix**:
+   ```tsx
+   <div className="passage-card__actions">
+     <button
+       className="action-btn action-btn--approve"
+       onClick={(e) => { e.stopPropagation(); onStatusChange?.(passage.id, 'approved'); }}
+       aria-label="Approve this passage"
+       title="Approve this passage"
+     >
+       <span aria-hidden="true">✓</span>
+     </button>
+     <button
+       className="action-btn action-btn--reject"
+       onClick={(e) => { e.stopPropagation(); onStatusChange?.(passage.id, 'rejected'); }}
+       aria-label="Reject this passage"
+       title="Reject this passage"
+     >
+       <span aria-hidden="true">✗</span>
+     </button>
+     <button
+       className="action-btn action-btn--gem"
+       onClick={(e) => { e.stopPropagation(); onStatusChange?.(passage.id, 'gem'); }}
+       aria-label="Mark this passage as a gem"
+       title="Mark this passage as a gem"
+     >
+       <span aria-hidden="true">⭐</span>
+     </button>
+   </div>
+
+   /* CSS */
+   .action-btn {
+     min-width: 44px;
+     min-height: 44px;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     border: 1px solid var(--color-border-subtle);
+     background: var(--color-surface-secondary);
+     cursor: pointer;
+     border-radius: 0.375rem;
+   }
+
+   .action-btn:focus-visible {
+     outline: 3px solid var(--color-primary);
+     outline-offset: 2px;
+   }
+   ```
+
+   ---
+
+   ### Issue 5: Gem Highlighting Without Non-Visual Indicator
+   **WCAG 2.1 Section**: 1.4.1 Use of Color
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/book-project/BookProjectDetail.tsx` (line 392)
+
+   **Current Code**:
+   ```tsx
+   const statusColors: Record<string, string> = {
+     candidate: 'var(--color-status-warning, #f59e0b)',
+     unreviewed: 'var(--color-status-warning, #f59e0b)',
+     approved: 'var(--color-status-success, #22c55e)',
+     rejected: 'var(--color-text-tertiary, #6b7280)',
+     gem: '#fbbf24', // Gold/yellow only
+   };
+   ```
+
+   **Problem**: Gem status identified only by color (gold/yellow). No text label or pattern distinguishes it from approved.
+
+   **Impact**: Users with deuteranopia (red-green colorblindness) cannot identify gems.
+
+   **Required Fix**:
+   ```tsx
+   /* In component JSX */
+   <span className={`status-badge status-badge--${status}`}>
+     {status === 'gem' && <span className="gem-indicator" aria-hidden="true">★</span>}
+     {status === 'gem' ? 'gem' : status}
+   </span>
+
+   /* CSS */
+   .status-badge {
+     display: inline-flex;
+     align-items: center;
+     gap: 0.375rem;
+     padding: 0.25rem 0.75rem;
+     border-radius: 0.25rem;
+     font-weight: 600;
+   }
+
+   .status-badge--gem {
+     background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+     color: #000;
+     border: 2px solid #d97706;
+   }
+
+   .gem-indicator {
+     font-size: 1.25rem;
+   }
+   ```
+
+   ---
+
+   ### Issue 6: Form Labels Missing in Filters
+   **WCAG 2.1 Section**: 3.3.2 Labels or Instructions
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/book-project/BookProjectDetail.tsx` (lines 256-288)
+
+   **Current Code**:
+   ```tsx
+   <div className="sources-tab__filters">
+     <div className="filter-group">
+       <label>Thread:</label>
+       <select
+         value={viewState.sourcesFilter.thread}
+         onChange={e => setViewState(prev => ({
+           ...prev,
+           sourcesFilter: { ...prev.sourcesFilter, thread: e.target.value },
+         }))}
+       >
+         <option value="all">All Threads ({passages.length})</option>
+         {threads.map(t => (
+           <option key={t.name} value={t.name}>
+             {t.name} ({t.passageCount})
+           </option>
+         ))}
+       </select>
+     </div>
+   ```
+
+   **Violations**:
+   1. `<label>` is not associated with `<select>` via `htmlFor` and `id`
+   2. Screen reader won't connect label to form control
+   3. No validation/error messages structure
+
+   **Impact**: Screen reader users don't know which select corresponds to which label.
+
+   **Required Fix**:
+   ```tsx
+   <div className="sources-tab__filters">
+     <div className="filter-group">
+       <label htmlFor="thread-filter">Filter by Thread:</label>
+       <select
+         id="thread-filter"
+         value={viewState.sourcesFilter.thread}
+         onChange={e => setViewState(prev => ({
+           ...prev,
+           sourcesFilter: { ...prev.sourcesFilter, thread: e.target.value },
+         }))}
+         aria-describedby="thread-help"
+       >
+         <option value="all">All Threads ({passages.length})</option>
+         {threads.map(t => (
+           <option key={t.name} value={t.name}>
+             {t.name} ({t.passageCount})
+           </option>
+         ))}
+       </select>
+       <span id="thread-help" className="filter-help">
+         Select a thread to filter passages
+       </span>
+     </div>
+
+     <div className="filter-group">
+       <label htmlFor="status-filter">Filter by Status:</label>
+       <select
+         id="status-filter"
+         value={viewState.sourcesFilter.status}
+         onChange={e => setViewState(prev => ({
+           ...prev,
+           sourcesFilter: { ...prev.sourcesFilter, status: e.target.value as any },
+         }))}
+         aria-describedby="status-help"
+       >
+         <option value="all">All</option>
+         <option value="unreviewed">Unreviewed</option>
+         <option value="approved">Approved</option>
+         <option value="gem">Gems</option>
+         <option value="rejected">Rejected</option>
+       </select>
+       <span id="status-help" className="filter-help">
+         Select a passage status category
+       </span>
+     </div>
+   </div>
+   ```
+
+   ---
+
+   ### Issue 7: Expandable Sections Lack ARIA Controls
+   **WCAG 2.1 Section**: 4.1.2 Name, Role, State
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/BooksView.tsx` (lines 504-514)
+
+   **Current Code**:
+   ```tsx
+   {passagesByStatus.gems.length > 0 && (
+     <div className="book-nav__group">
+       <button
+         className="book-nav__group-header"
+         onClick={() => toggleExpanded('gems')}
+       >
+         <span className="book-nav__group-icon">
+           {expandedItems.has('gems') ? '▼' : '▶'}
+         </span>
+         <span className="book-nav__group-title">💎 Gems</span>
+         <span className="book-nav__group-count">{passagesByStatus.gems.length}</span>
+       </button>
+   ```
+
+   **Violations**:
+   1. No `aria-expanded` to communicate expanded/collapsed state
+   2. No `aria-controls` linking button to section being expanded
+   3. Icon-only (▼/▶) provides no semantic information
+
+   **Impact**: Screen reader users don't know if section is expanded or collapsed.
+
+   **Required Fix**:
+   ```tsx
+   {passagesByStatus.gems.length > 0 && (
+     <div className="book-nav__group">
+       <button
+         className="book-nav__group-header"
+         onClick={() => toggleExpanded('gems')}
+         aria-expanded={expandedItems.has('gems')}
+         aria-controls="gems-group-content"
+         aria-label={`${expandedItems.has('gems') ? 'Collapse' : 'Expand'} gems section`}
+       >
+         <span className="book-nav__group-icon" aria-hidden="true">
+           {expandedItems.has('gems') ? '▼' : '▶'}
+         </span>
+         <span className="book-nav__group-title">Gems</span>
+         <span className="book-nav__group-count">{passagesByStatus.gems.length}</span>
+       </button>
+       {expandedItems.has('gems') && (
+         <div
+           id="gems-group-content"
+           className="book-nav__group-items"
+           role="region"
+           aria-label="Gems passages"
+         >
+           {/* ... passages ... */}
+         </div>
+       )}
+     </div>
+   )}
+   ```
+
+   ---
+
+   ### Issue 8: Textarea in Modal Missing Label Association
+   **WCAG 2.1 Section**: 1.3.1 Info and Relationships
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/book-project/BookProjectDetail.tsx` (lines 562-571)
+
+   **Current Code**:
+   ```tsx
+   <div className="aui-note-input">
+     <input
+       type="text"
+       value={noteInput}
+       onChange={e => setNoteInput(e.target.value)}
+       placeholder="Add a note..."
+       onKeyDown={e => e.key === 'Enter' && handleAddNote()}
+     />
+     <button onClick={handleAddNote}>Add</button>
+   </div>
+   ```
+
+   **Violations**:
+   1. Input has no label (placeholder is not a label)
+   2. Button text "Add" is vague - should say "Add note"
+   3. No error message container if validation needed
+
+   **Impact**: Screen reader users don't know what the input field does.
+
+   **Required Fix**:
+   ```tsx
+   <fieldset className="aui-note-input">
+     <legend className="sr-only">Add note</legend>
+     <label htmlFor="aui-note-input" className="sr-only">
+       Note content
+     </label>
+     <input
+       id="aui-note-input"
+       type="text"
+       value={noteInput}
+       onChange={e => setNoteInput(e.target.value)}
+       placeholder="Add a note..."
+       onKeyDown={e => e.key === 'Enter' && handleAddNote()}
+       aria-describedby="note-help"
+     />
+     <span id="note-help" className="note-help-text">
+       Press Enter to submit
+     </span>
+     <button onClick={handleAddNote} aria-label="Add note">
+       Add
+     </button>
+   </fieldset>
+
+   /* CSS */
+   .sr-only {
+     position: absolute;
+     width: 1px;
+     height: 1px;
+     padding: 0;
+     margin: -1px;
+     overflow: hidden;
+     clip: rect(0, 0, 0, 0);
+     white-space: nowrap;
+     border-width: 0;
+   }
+   ```
+
+   ---
+
+   ### Issue 9: No Focus Trap in Dialog
+   **WCAG 2.1 Section**: 2.4.3 Focus Order
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/GalleryView.tsx`
+
+   **Problem**: Dialog/modal components don't trap focus, allowing users to tab outside the modal to background content.
+
+   **Impact**: Screen reader users become disoriented when focus escapes modal.
+
+   **Required Implementation**:
+   ```tsx
+   // Create a custom hook for focus trapping
+   export function useFocusTrap(isOpen: boolean, containerRef: React.RefObject<HTMLDivElement>) {
+     useEffect(() => {
+       if (!isOpen || !containerRef.current) return;
+
+       const container = containerRef.current;
+       const focusableElements = container.querySelectorAll(
+         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+       );
+
+       const firstElement = focusableElements[0] as HTMLElement;
+       const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+       const handleKeyDown = (e: KeyboardEvent) => {
+         if (e.key !== 'Tab') return;
+
+         if (e.shiftKey) {
+           // Shift+Tab
+           if (document.activeElement === firstElement) {
+             e.preventDefault();
+             lastElement.focus();
+           }
+         } else {
+           // Tab
+           if (document.activeElement === lastElement) {
+             e.preventDefault();
+             firstElement.focus();
+           }
+         }
+       };
+
+       document.addEventListener('keydown', handleKeyDown);
+       firstElement?.focus();
+
+       return () => {
+         document.removeEventListener('keydown', handleKeyDown);
+       };
+     }, [isOpen]);
+   }
+
+   // Use in modal
+   export function BookshelfModal({ isOpen, onClose, children }: Props) {
+     const modalRef = useRef<HTMLDivElement>(null);
+     useFocusTrap(isOpen, modalRef);
+
+     return (
+       <div
+         ref={modalRef}
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="modal-title"
+         className={isOpen ? 'modal' : 'modal--hidden'}
+       >
+         {children}
+       </div>
+     );
+   }
+   ```
+
+   ---
+
+   ### Issue 10: Reduced Motion Not Implemented
+   **WCAG 2.1 Section**: 2.3.3 Animation from Interactions
+   **Severity**: CRITICAL
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/packages/ui/styles/components/book-editor.css` (line 668-680)
+
+   **Current Code**:
+   ```css
+   @media (prefers-reduced-motion: reduce) {
+     .book-editor__split-view,
+     .book-editor__editor-pane,
+     .book-editor__preview-pane,
+     .book-editor__divider,
+     .book-editor__mode-toggle-floating {
+       transition-duration: 0.01ms !important;
+     }
+
+     .book-editor__mode-toggle-floating:hover {
+       transform: none;
+     }
+   }
+   ```
+
+   **Problem**: Good start, but not complete. Bookshelf components lack reduced-motion support entirely.
+
+   **Required Addition**:
+   ```css
+   /* Add to all component stylesheets */
+
+   @media (prefers-reduced-motion: reduce) {
+     /* Bookshelf components */
+     .book-nav *,
+     .book-card *,
+     .passage-card *,
+     .book-project * {
+       animation-duration: 0.01ms !important;
+       animation-iteration-count: 1 !important;
+       transition-duration: 0.01ms !important;
+     }
+
+     /* Disable transforms on hover */
+     .book-editor__mode-toggle-floating:hover,
+     .book-nav__tab:hover,
+     .book-card:hover,
+     .passage-card:hover {
+       transform: none;
+     }
+
+     /* Disable background animations */
+     .status-badge--gem {
+       background: #fbbf24 !important;
+     }
+   }
+   ```
+
+   ---
+
+   ### Issue 11: No Skip Link for Navigation
+   **WCAG 2.1 Section**: 2.4.1 Bypass Blocks
+   **Severity**: CRITICAL
+   **File**: Main app layout component
+
+   **Problem**: Users must tab through entire Archive sidebar before reaching main content.
+
+   **Required Implementation**:
+   ```tsx
+   // Add to top of App.tsx or layout
+   <a
+     href="#main-content"
+     className="skip-link"
+     tabIndex={0}
+   >
+     Skip to main content
+   </a>
+
+   {/* Later in layout */}
+   <main id="main-content">
+     {/* Main content here */}
+   </main>
+
+   /* CSS */
+   .skip-link {
+     position: absolute;
+     top: -40px;
+     left: 0;
+     background: var(--color-primary);
+     color: white;
+     padding: 8px;
+     z-index: 100;
+   }
+
+   .skip-link:focus {
+     top: 0;
+   }
+   ```
+
+   ---
+
+   ### Issue 12: No Keyboard Shortcuts Documentation
+   **WCAG 2.1 Section**: 2.1.1 Keyboard
+   **Severity**: CRITICAL
+   **Problem**: Users unaware of available keyboard shortcuts
+
+   **Required Implementation**:
+   ```tsx
+   // Create help modal showing shortcuts
+   export function KeyboardShortcutsHelp() {
+     return (
+       <dialog role="dialog" aria-labelledby="shortcuts-title">
+         <h2 id="shortcuts-title">Keyboard Shortcuts</h2>
+         <table>
+           <caption>Available keyboard shortcuts in Bookshelf</caption>
+           <thead>
+             <tr>
+               <th scope="col">Key Combination</th>
+               <th scope="col">Action</th>
+             </tr>
+           </thead>
+           <tbody>
+             <tr>
+               <td><kbd>?</kbd></td>
+               <td>Show this help dialog</td>
+             </tr>
+             <tr>
+               <td><kbd>Tab</kbd></td>
+               <td>Navigate between interactive elements</td>
+             </tr>
+             <tr>
+               <td><kbd>Shift</kbd> + <kbd>Tab</kbd></td>
+               <td>Navigate backwards</td>
+             </tr>
+             <tr>
+               <td><kbd>Enter</kbd></td>
+               <td>Activate focused button or link</td>
+             </tr>
+             <tr>
+               <td><kbd>Space</kbd></td>
+               <td>Toggle expanded/collapsed sections</td>
+             </tr>
+             <tr>
+               <td><kbd>Arrow Up</kbd> / <kbd>Down</kbd></td>
+               <td>Navigate list items</td>
+             </tr>
+           </tbody>
+         </table>
+       </dialog>
+     );
+   }
+   ```
+
+   ---
+
+   ## SERIOUS ISSUES (Should Fix)
+
+   ### Issue 13: Touch Targets Under 44px
+   **WCAG 2.1 Section**: 2.5.5 Target Size
+   **Severity**: SERIOUS
+   **Files**: Multiple button components
+
+   **Examples**:
+   - `.action-btn` (approve/reject/gem) - currently likely 32px or less
+   - `.book-nav__group-icon` toggle - likely 24px
+   - Thread badges in filter - likely 36px
+
+   **Fix**: Ensure `min-width: 44px` and `min-height: 44px` on all interactive elements.
+
+   ---
+
+   ### Issue 14: No Visible Focus Indicators on Book Cards
+   **WCAG 2.1 Section**: 2.4.7 Focus Visible
+   **Severity**: SERIOUS
+   **File**: CSS for `.book-card`
+
+   **Fix**: Add to CSS:
+   ```css
+   .book-card:focus-visible {
+     outline: 3px solid var(--color-primary);
+     outline-offset: 2px;
+   }
+   ```
+
+   ---
+
+   ### Issue 15: Thread Badge Colors Need Contrast Check
+   **WCAG 2.1 Section**: 1.4.3 Contrast
+   **Severity**: SERIOUS
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/archive/book-project/BookProjectDetail.tsx` (lines 300, 309)
+
+   **Problem**: Thread colors (using `thread.color`) may not meet 3:1 contrast requirement.
+
+   **Fix**: Verify all thread colors meet 3:1 contrast minimum. Test with WebAIM contrast checker.
+
+   ---
+
+   ### Issue 16: No Aria-busy State for Loading
+   **WCAG 2.1 Section**: 4.1.3 Name, Role, Value
+   **Severity**: SERIOUS
+   **File**: BooksView (loading state)
+
+   **Fix**:
+   ```tsx
+   if (loading) {
+     return (
+       <div
+         className="archive-browser__loading"
+         role="status"
+         aria-live="polite"
+         aria-busy="true"
+       >
+         Loading books...
+       </div>
+     );
+   }
+   ```
+
+   ---
+
+   ### Issue 17: Chapter List Navigation Not Optimized
+   **WCAG 2.1 Section**: 2.4.8 Focus Visible
+   **Severity**: SERIOUS
+   **File**: BookProjectDetail.tsx DraftsTab (lines 673-686)
+
+   **Problem**: Chapter list lacks `aria-label` context and clear keyboard navigation pattern.
+
+   **Fix**:
+   ```tsx
+   <aside className="drafts-tab__sidebar" aria-label="Chapter navigation">
+     <h3>Chapters</h3>
+     <ul
+       className="chapter-list"
+       role="navigation"
+       aria-label="Book chapters"
+     >
+       {chapters.map(ch => (
+         <li key={ch.id}>
+           <button
+             className={`chapter-item ${viewState.selectedChapter === ch.id ? 'active' : ''}`}
+             onClick={() => selectChapter(ch.id)}
+             aria-current={viewState.selectedChapter === ch.id ? 'page' : undefined}
+             aria-label={`Chapter ${ch.number}: ${ch.title}`}
+           >
+             <span className="chapter-number" aria-hidden="true">{ch.number}.</span>
+             <span className="chapter-title">{ch.title}</span>
+           </button>
+         </li>
+       ))}
+     </ul>
+   </aside>
+   ```
+
+   ---
+
+   ### Issue 18: Progress Bars Missing ARIA Attributes
+   **WCAG 2.1 Section**: 4.1.2 Name, Role, State
+   **Severity**: SERIOUS
+   **Problem**: No `aria-valuenow`, `aria-valuemin`, `aria-valuemax` on progress indicators
+
+   **Required Implementation**:
+   ```tsx
+   <div
+     role="progressbar"
+     aria-valuenow={value}
+     aria-valuemin={0}
+     aria-valuemax={100}
+     aria-label="Passage curation progress"
+     className="progress-bar"
+   >
+     <div
+       className="progress-bar__fill"
+       style={{ width: `${value}%` }}
+     />
+   </div>
+   ```
+
+   ---
+
+   ### Issue 19: Modal Heading Not Associated
+   **WCAG 2.1 Section**: 1.3.1 Info and Relationships
+   **Severity**: SERIOUS
+   **File**: GalleryView lightbox (line 826)
+
+   **Current**:
+   ```tsx
+   <div role="dialog" aria-labelledby="lightbox-title">
+   ```
+
+   **Fix**: Ensure the element with `id="lightbox-title"` is actually a heading:
+   ```tsx
+   <div role="dialog" aria-modal="true" aria-labelledby="lightbox-title">
+     <h2 id="lightbox-title">Image: {currentImage.alt}</h2>
+   ```
+
+   ---
+
+   ### Issue 20: Vertical Divider Not Keyboard Accessible
+   **WCAG 2.1 Section**: 2.1.1 Keyboard
+   **Severity**: SERIOUS
+   **File**: `/Users/tem/humanizer_root/humanizer-gm/apps/web/src/components/layout/SplitDivider.tsx`
+
+   **Problem**: Divider likely works with mouse but keyboard handling may be incomplete.
+
+   **Required Enhancement**:
+   ```tsx
+   const handleKeyDown = (e: KeyboardEvent) => {
+     const step = 20;
+     let delta = 0;
+
+     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+       delta = step;
+       e.preventDefault();
+     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+       delta = -step;
+       e.preventDefault();
+     } else if (e.key === 'Home') {
+       // Set to minimum (20%)
+       setPosition(0.2);
+       e.preventDefault();
+       return;
+     } else if (e.key === 'End') {
+       // Set to maximum (80%)
+       setPosition(0.8);
+       e.preventDefault();
+       return;
+     }
+
+     if (delta !== 0) {
+       const newPosition = Math.max(0.1, Math.min(0.9, position + (delta / containerWidth)));
+       setPosition(newPosition);
+     }
+   };
+   ```
+
+   ---
+
+   ## MODERATE ISSUES (Nice to Have)
+
+   ### Issue 21: Default Tab Selection
+   Ensure the first tab is always selected on load for keyboard users.
+
+   ### Issue 22: Alt Text for Decorative Emojis
+   Most emojis (📚, 🧠, 📝, 💎) should use `aria-hidden="true"`.
+
+   ### Issue 23: Long Chapter Content Needs Sections
+   Assist screen reader users in navigating long content with proper heading hierarchy.
+
+   ### Issue 24: Passage Card Preview Text
+   Truncated text ("...") provides no hint of content length or excerpt quality.
+
+   ### Issue 25: Margin Notes Heading Context
+   Marginalia section needs proper heading level relationship.
+
+   ### Issue 26: Error Messages Not Live Announced
+   Use `role="alert"` for validation errors.
+
+   ### Issue 27: Sort/Filter Buttons Not Clearly Active
+   Active sort/filter should have `aria-pressed="true"`.
+
+   ### Issue 28: Decision Timeline Markers
+   Visual timeline indicators need semantic meaning.
+
+   ### Issue 29: Tab Overflow Handling
+   When many tabs exist, overflow buttons need proper ARIA.
+
+   ### Issue 30: Chapter Editor Textarea Heading
+   Editor needs a proper label, not just placeholder.
+
+   ### Issue 31: Time Displays Lack Readable Format
+   Use `<time datetime="...">` for dates.
+
+   ### Issue 32: Query Tags Not Keyboard Operable
+   If removable, need delete button with proper ARIA.
+
+   ### Issue 33: Concept Tags Not Descriptive
+   "📌 Concept" could be clearer with ARIA labels.
+
+   ### Issue 34: Empty States Lack Navigation Hints
+   Empty messages should suggest next actions (keyboard shortcuts).
+
+   ### Issue 35: Confidence Scores Without Context
+   "80% confidence" needs explanation of what this means.
+
+   ---
+
+   ## KEYBOARD NAVIGATION SPECIFICATION
+
+   ### Tab Order Requirements
+
+   ```
+   1. Skip to main content link
+   2. Archive tab bar (Conversations, Gallery, Books, etc.)
+   3. Filter/Search controls in active tab
+   4. Content list/grid
+   5. Detail pane controls
+   6. Modal/dialog if open
+   7. Floating controls (bottom right)
+   ```
+
+   ### Keyboard Shortcuts to Implement
+
+   ```
+   Global:
+     ?             → Show keyboard shortcuts help
+     Escape        → Close modal/dialog, cancel edit
+
+   Navigation:
+     Tab           → Next interactive element
+     Shift+Tab     → Previous interactive element
+     Enter         → Activate focused element
+     Space         → Toggle expanded/collapsed
+     ArrowUp/Down  → Navigate list items
+     Home/End      → Jump to first/last item
+
+   Tab Management:
+     Ctrl+Tab      → Next tab (optional)
+     Ctrl+Shift+Tab → Previous tab (optional)
+
+   Passage Curation:
+     a             → Approve focused passage
+     r             → Reject focused passage
+     g             → Mark as gem
+     Enter         → Open passage detail
+
+   Text Selection:
+     Ctrl+A        → Select all text in editor
+   ```
+
+   ---
+
+   ## WCAG COMPLIANCE CHECKLIST
+
+   ### Perceivable
+
+   - [x] Images have alt text
+   - [ ] Status badges use text + visual indicators (ISSUE 3)
+   - [ ] Gem highlighting has non-color indicator (ISSUE 5)
+   - [ ] Color contrast meets 4.5:1 for text, 3:1 for UI (NEED VERIFICATION)
+   - [ ] Focus indicators visible (ISSUE 14)
+
+   ### Operable
+
+   - [ ] All functionality available via keyboard (ISSUES 2, 4, 7, 9, 20)
+   - [ ] No keyboard traps (ISSUE 9)
+   - [ ] Focus visible on all elements (ISSUE 14)
+   - [ ] Touch targets >= 44px (ISSUE 13)
+   - [ ] Skip to main content link (ISSUE 11)
+   - [ ] Reduced motion respected (ISSUE 10)
+
+   ### Understandable
+
+   - [ ] Form labels associated with inputs (ISSUE 6)
+   - [ ] Consistent navigation patterns
+   - [ ] Error messages clear
+   - [ ] Help available (keyboard shortcuts - ISSUE 12)
+
+   ### Robust
+
+   - [ ] Valid HTML/ARIA (ISSUE 1, 7, 8, 18)
+   - [ ] Proper semantic elements (ISSUE 2)
+   - [ ] Modal management (ISSUE 9)
+   - [ ] Live regions for status changes
+
+   ---
+
+   ## RECOMMENDED IMPLEMENTATION ROADMAP
+
+   ### Phase 1: Critical Issues (1-2 days)
+   1. Fix tab semantics (Issue 1)
+   2. Replace divs with buttons (Issue 2)
+   3. Add aria-label to icon buttons (Issue 4)
+   4. Add focus indicators globally
+   5. Implement skip link
+
+   ### Phase 2: Serious Issues (1-2 days)
+   6. Add aria-expanded/aria-controls (Issue 7)
+   7. Fix form label associations (Issue 6)
+   8. Ensure 44px touch targets
+   9. Add reduced-motion support (Issue 10)
+   10. Implement focus trap in modals (Issue 9)
+
+   ### Phase 3: Remaining Issues (1-2 days)
+   11. Add keyboard shortcut help (Issue 12)
+   12. Fix all status indicators (Issues 3, 5)
+   13. Add ARIA for loading/progress (Issues 16, 18)
+   14. Keyboard navigation enhancements
+   15. Testing and refinement
+
+   ### Phase 4: Testing & Validation (1 day)
+   - Keyboard-only navigation audit
+   - Screen reader testing (VoiceOver/NVDA)
+   - Lighthouse accessibility audit
+   - Contrast verification (WebAIM)
+   - Touch target validation
+
+   ---
+
+   ## TESTING REQUIREMENTS
+
+   ### Automated Testing
+   ```bash
+   # Lighthouse
+   npm run audit:accessibility
+
+   # axe DevTools (browser extension)
+   # Must score 95+ or better
+
+   # Pa11y
+   npx pa11y https://localhost:5173
+   ```
+
+   ### Manual Testing
+   1. **Keyboard Only**: Navigate entire interface using Tab/Shift+Tab only
+   2. **Screen Reader**: Test with VoiceOver (Mac) or NVDA (Windows)
+   3. **Zoom**: Test at 200% zoom level
+   4. **Reduced Motion**: Enable OS reduced-motion, verify animations stop
+   5. **Color Blindness**: Use colorblind simulator tools
+   6. **Touch**: Test on mobile with 44px minimum targets
+
+   ---
+
+   ## REFERENCES
+
+   - WCAG 2.1 AA: https://www.w3.org/WAI/WCAG21/quickref/
+   - WAI-ARIA 1.2: https://www.w3.org/WAI/ARIA/apg/
+   - Accessibility Checklist: https://www.a11y-101.com/checklist
+   - Testing Tools:
+     - axe DevTools: https://www.deque.com/axe/devtools/
+     - WAVE: https://wave.webaim.org/
+     - Lighthouse: Built into Chrome DevTools
+     - VoiceOver: Built into macOS/iOS
+     - NVDA: https://www.nvaccess.org/
+
+   ---
+
+   ## VERDICT
+
+   **STATUS**: FAIL - DO NOT RELEASE
+
+   **Blocking Issues**: 12 critical violations
+   **Estimated Remediation Time**: 4-5 days
+   **Required Sign-off**: Accessibility Agent + QA
+
+   **Next Steps**:
+   1. Prioritize critical issues using roadmap above
+   2. Implement fixes per phase
+   3. Re-audit with automated tools
+   4. Conduct manual keyboard/screen reader testing
+   5. Request accessibility sign-off before merge
+
+   ---
+
+   **Audit Conducted By**: House of Accessibility
+   **WCAG Standard**: 2.1 Level AA
+   **Date**: December 30, 2025
+   **Reviewer**: Accessibility Agent
+   EOF
+   cat /tmp/accessibility_audit.md
+
+   Generate comprehensive accessibility audit report
