@@ -16756,3 +16756,31 @@ button.media-viewer__related-thumb {
   border-color: var(--studio-accent, #4a90d9);
   background: #e3f2fd;
 }
+
+/* Start Harvest button in BooksView */
+.book-nav__harvest-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #f5e6d3 0%, #e8d5c4 100%);
+  border: 1px solid #d4c4b0;
+  border-radius: 6px;
+  color: #5d4e37;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 44px;
+}
+
+.book-nav__harvest-btn:hover {
+  background: linear-gradient(135deg, #efe0cf 0%, #e2cfbe 100%);
+  border-color: #c4b4a0;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.book-nav__harvest-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}

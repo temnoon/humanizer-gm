@@ -378,6 +378,35 @@ Start writing here...
     }
   }, [book, bookProjects, selectedProjectId, onSelectBookContent]);
 
+  // Start a harvest for the current project
+  const handleStartHarvest = useCallback(() => {
+    if (!selectedProjectId) return;
+
+    const project = bookProjects.find(p => p.id === selectedProjectId);
+    if (!project) return;
+
+    // Create a harvest bucket with default queries based on project name
+    const queries = [project.name];
+    if (project.subtitle) {
+      queries.push(project.subtitle);
+    }
+
+    // Get book URI from library book or construct one
+    const bookUri = (project as unknown as { _uri?: string })?._uri
+      || (project as unknown as { uri?: string })?.uri
+      || `book://${project.id}`;
+
+    // Set as active book in bookshelf context
+    bookshelf.setActiveBookUri(bookUri);
+
+    // Create the harvest bucket
+    const bucket = bookshelf.createHarvestBucket(bookUri, queries);
+    console.log('[BooksView] Created harvest bucket:', bucket.id);
+
+    // Notify user
+    alert(`Harvest started for "${project.name}"\n\nUse the Harvest tab in Tools panel to review candidates.\n\nQueries: ${queries.join(', ')}`);
+  }, [selectedProjectId, bookProjects, bookshelf]);
+
   // Handle thinking click - send to main workspace
   const handleThinkingClick = useCallback(() => {
     const project = bookProjects.find(p => p.id === selectedProjectId);
@@ -498,6 +527,14 @@ Start writing here...
         <div className="book-nav__content">
           {activeTab === 'sources' && (
             <div className="book-nav__sources">
+              {/* Start Harvest button */}
+              <button
+                className="book-nav__harvest-btn"
+                onClick={handleStartHarvest}
+              >
+                🌾 Start Harvest
+              </button>
+
               {/* Gems */}
               {passagesByStatus.gems.length > 0 && (
                 <div className="book-nav__group">
