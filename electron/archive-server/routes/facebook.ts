@@ -482,23 +482,56 @@ export function createFacebookRouter(): Router {
     }
   });
 
-  // Import graph data
+  // Import Facebook data from export folder
   router.post('/graph/import', async (req: Request, res: Response) => {
     try {
-      const { archivePath } = req.body;
+      const { exportPath, targetPath } = req.body;
 
-      if (!archivePath) {
-        res.status(400).json({ error: 'archivePath required' });
+      if (!exportPath) {
+        res.status(400).json({ error: 'exportPath required (path to Facebook export folder)' });
         return;
       }
 
-      // TODO: Use FacebookFullParser for import
+      // Dynamically import the parser to avoid circular dependencies
+      const { FacebookFullParser } = await import('../services/facebook/FacebookFullParser.js');
+      const parser = new FacebookFullParser();
+
+      const archiveRoot = getArchiveRoot();
+      const defaultTarget = path.join(archiveRoot, 'facebook_import_' + Date.now());
+
+      console.log(`[facebook] Starting import from: ${exportPath}`);
+      console.log(`[facebook] Target directory: ${targetPath || defaultTarget}`);
+
+      // Respond immediately, import runs in background
       res.json({
-        success: false,
-        message: 'Facebook import via API not yet fully implemented. Use the import tab.',
+        success: true,
+        message: 'Facebook import started',
+        exportPath,
+        targetPath: targetPath || defaultTarget,
+      });
+
+      // Run import in background
+      parser.importExport({
+        exportDir: exportPath,
+        targetDir: targetPath || defaultTarget,
+        archivePath: archiveRoot,
+        generateEmbeddings: true,
+        onProgress: (progress) => {
+          console.log(`[facebook] Import progress: ${progress.stage} - ${progress.message}`);
+        },
+      }).then((result) => {
+        console.log(`[facebook] Import complete:`, {
+          posts: result.posts_imported,
+          comments: result.comments_imported,
+          reactions: result.reactions_imported,
+          photos: result.photos_imported,
+          videos: result.videos_imported,
+        });
+      }).catch((err) => {
+        console.error('[facebook] Import failed:', err);
       });
     } catch (err) {
-      console.error('[facebook] Error importing graph:', err);
+      console.error('[facebook] Error starting import:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });
