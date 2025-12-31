@@ -2,16 +2,17 @@
 
 **Date**: December 30, 2025
 **Branch**: `feature/xanadu-768-embeddings`
-**Status**: Phase 1 Complete, Phase 2 Ready
+**Status**: Phase 1 & 2 Complete, Phase 3 Ready
 
 ---
 
 ## Session Summary
 
-Built the **AgentMaster** unified LLM abstraction layer - all LLM calls will go through this system which provides:
+Built the **AgentMaster** unified LLM abstraction layer - all LLM calls now go through this system which provides:
 - **Tiered prompts** based on device RAM (tiny/standard/full)
 - **Automatic output vetting** (strips thinking tags, preambles)
 - **Model-agnostic capability routing**
+- **Real provider calls** (Ollama, Anthropic, OpenAI implemented)
 
 ---
 
@@ -20,17 +21,20 @@ Built the **AgentMaster** unified LLM abstraction layer - all LLM calls will go 
 | Commit | Description |
 |--------|-------------|
 | `9512df8` | feat(aui): Add Phase 3 harvest bucket tools |
-| `1a2b3c4` | fix(aui): Add GUI bridge to harvest_for_thread |
 | `6c45ec1` | feat(agent-master): Add unified LLM abstraction layer |
+| `pending` | feat(ai-control): Add real provider implementations |
+| `pending` | refactor(chat): Migrate to AgentMaster |
 
 ---
 
-## New Module: `electron/agent-master/`
+## Phase 1 Complete: AgentMaster Foundation
+
+### New Module: `electron/agent-master/`
 
 ```
 electron/agent-master/
 ├── index.ts              # Singleton export
-├── types.ts              # Core interfaces (~170 lines)
+├── types.ts              # Core interfaces (~180 lines)
 ├── service.ts            # Main service wrapping AIControlService (~200 lines)
 ├── device-profile.ts     # RAM detection → tier (~100 lines)
 ├── prompt-engine.ts      # Tier selection, interpolation (~200 lines)
@@ -54,12 +58,69 @@ const agentMaster = getAgentMasterService();
 const result = await agentMaster.execute({
   capability: 'chat',
   input: 'user message',
-  forceTier?: 'tiny',      // Optional override
-  forceModel?: 'llama3.2:3b', // Debug override
+  messages: conversationHistory,  // NEW: conversation support
+  forceTier?: 'tiny',
+  forceModel?: 'llama3.2:3b',
 });
 ```
 
-### Vetting Profiles (12+ models)
+---
+
+## Phase 2 Complete: Chat Service Migration
+
+### What Changed
+
+**`electron/ai-control/providers.ts`** (NEW ~350 lines)
+- Implemented real LLM provider calls
+- `callOllama()`, `callAnthropic()`, `callOpenAI()`
+- `streamOllama()`, `streamAnthropic()`, `streamOpenAI()`
+- Unified `callProvider()` and `streamProvider()` dispatchers
+
+**`electron/ai-control/router.ts`**
+- Updated `AIControlService.call()` to use real providers (was returning stub)
+- Updated `AIControlService.stream()` for real streaming
+- Added `buildMessages()` to construct LLM message arrays
+
+**`electron/chat/service.ts`**
+- Replaced `callLLM()` to use `agentMaster.execute()`
+- Removed direct Ollama/Anthropic/OpenAI calls
+- Marked `AUI_SYSTEM_PROMPT` as deprecated (now in prompts/chat.ts)
+- Added conversation history support via `messages` parameter
+
+**`electron/chat/types.ts`**
+- Added `teaching` field to `LLMResponse`
+- Added `userId` to `ChatServiceConfig`
+
+**`electron/agent-master/types.ts`**
+- Added `ConversationMessage` interface
+- Added `messages` field to `AgentMasterRequest`
+
+---
+
+## Phase 3: Next Steps
+
+### 3.1 Test on 8GB M1 Mac
+```bash
+npm run electron:dev
+# Chat should auto-select 'standard' tier with smaller prompts
+```
+
+### 3.2 Add More Tiered Prompts
+
+Create tiered versions for other capabilities:
+- `prompts/humanizer.ts` - Humanization
+- `prompts/translation.ts` - Translation
+- `prompts/quantum.ts` - Tetralemma analysis
+
+### 3.3 Update Model Master Agent
+
+**File**: `electron/agents/houses/model-master.ts`
+
+Integrate with AgentMaster service for unified routing.
+
+---
+
+## Vetting Profiles (12+ models)
 
 | Model Pattern | Strategy | What Gets Stripped |
 |---------------|----------|-------------------|
@@ -70,61 +131,16 @@ const result = await agentMaster.execute({
 
 ---
 
-## Phase 2: Next Steps
-
-### 2.1 Migrate Chat Service (Priority)
-
-**File**: `electron/chat/service.ts`
-
-```typescript
-// BEFORE (line ~421)
-const llmMessages: LLMMessage[] = [
-  { role: 'system', content: AUI_SYSTEM_PROMPT },
-];
-// Direct Ollama/Anthropic/OpenAI calls
-
-// AFTER
-import { getAgentMasterService } from '../agent-master';
-
-const agentMaster = getAgentMasterService();
-const result = await agentMaster.execute({
-  capability: 'chat',
-  input: userMessage,
-  userId: userId,
-});
-// Automatic tier selection, vetting, clean output
-```
-
-### 2.2 Add More Tiered Prompts
-
-Create tiered versions for:
-- `prompts/humanizer.ts` - Humanization capability
-- `prompts/translation.ts` - Translation capability
-- `prompts/quantum.ts` - Tetralemma analysis
-
-### 2.3 Update Model Master Agent
-
-**File**: `electron/agents/houses/model-master.ts`
-
-Integrate with AgentMaster service for unified routing.
-
----
-
-## Plan File
-
-Full implementation plan: `/Users/tem/.claude/plans/hidden-sparking-prism.md`
-
----
-
 ## Key Files Reference
 
 | File | Purpose |
 |------|---------|
-| `electron/agent-master/index.ts` | Main export |
+| `electron/agent-master/index.ts` | Main AgentMaster export |
 | `electron/agent-master/service.ts` | Core service |
-| `electron/ai-control/` | Underlying AIControlService |
-| `electron/chat/service.ts` | **Next migration target** |
-| `electron/vision/profiles.ts` | Vision vetting (pattern to follow) |
+| `electron/agent-master/prompts/chat.ts` | Tiered AUI prompts |
+| `electron/ai-control/providers.ts` | LLM provider implementations |
+| `electron/ai-control/router.ts` | AIControlService with real calls |
+| `electron/chat/service.ts` | Chat service (now uses AgentMaster) |
 
 ---
 
@@ -134,9 +150,41 @@ Full implementation plan: `/Users/tem/.claude/plans/hidden-sparking-prism.md`
 cd /Users/tem/humanizer_root/humanizer-gm
 npm run electron:dev
 
-# In browser console or chat:
+# In chat:
 # Type: "Search for consciousness"
-# Should work - but still uses old direct LLM calls until Phase 2 migration
+# Now uses AgentMaster → tiered prompts → automatic vetting
+```
+
+---
+
+## Architecture After Phase 2
+
+```
+ChatService.sendMessage()
+    │
+    └── callLLM()
+          │
+          ├── Build conversation history
+          │
+          └── agentMaster.execute({
+                capability: 'chat',
+                input: userMessage,
+                messages: history,
+              })
+                │
+                ├── Select tiered prompt (tiny/standard/full)
+                │
+                ├── Build AIRequest with system prompt + messages
+                │
+                └── AIControlService.call()
+                      │
+                      ├── Route to best provider/model
+                      │
+                      └── callProvider() [Ollama/Anthropic/OpenAI]
+                            │
+                            └── filterOutput() [strip thinking tags, preambles]
+                                  │
+                                  └── Clean response to user
 ```
 
 ---
@@ -144,33 +192,24 @@ npm run electron:dev
 ## Context for New Session
 
 ```
-I'm continuing AgentMaster implementation in humanizer-gm.
+AgentMaster Phase 1 & 2 DONE in humanizer-gm.
 
-Phase 1 DONE: Created electron/agent-master/ with:
+Phase 1: Created electron/agent-master/ with:
 - Tiered prompts (tiny/standard/full based on RAM)
 - Output vetting (strips <think> tags, preambles)
-- Service wrapping AIControlService
+- 12+ model vetting profiles
 
-Phase 2 TODO: Migrate electron/chat/service.ts to use AgentMaster
-- Replace direct LLM calls with agentMaster.execute()
-- Remove hardcoded AUI_SYSTEM_PROMPT (now in prompts/chat.ts)
-- Test on 8GB M1 Mac
+Phase 2: Migrated chat to AgentMaster:
+- electron/ai-control/providers.ts (real LLM calls)
+- electron/chat/service.ts (uses agentMaster.execute())
+- Conversation history support
+
+Phase 3 TODO:
+- Test on 8GB M1 Mac with tiered prompts
+- Add more tiered prompts (humanizer, translation)
 
 Read: docs/HANDOFF_DEC30_AGENTMASTER.md
-Plan: /Users/tem/.claude/plans/hidden-sparking-prism.md
 ```
-
----
-
-## Related Work This Session
-
-Also completed **Phase 3 Harvest Tools** earlier:
-- `harvest_for_thread` - Search → bucket
-- `propose_narrative_arc` - Cluster → chapters
-- `find_resonant_mirrors` - Semantic similarity
-- `detect_narrative_gaps` - Gap analysis
-
-All in `apps/web/src/lib/aui/tools.ts`
 
 ---
 

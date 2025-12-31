@@ -170,14 +170,25 @@ export interface VettingResult {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * Message in a conversation
+ */
+export interface ConversationMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+/**
  * Request to AgentMaster
  */
 export interface AgentMasterRequest {
   /** Capability to invoke (e.g., 'chat', 'humanizer', 'translation') */
   capability: string;
 
-  /** Input text/content */
+  /** Input text/content (current user message) */
   input: string;
+
+  /** Conversation history (previous messages) */
+  messages?: ConversationMessage[];
 
   /** Capability-specific parameters */
   params?: Record<string, unknown>;

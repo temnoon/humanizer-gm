@@ -27,6 +27,7 @@ export type {
   TieredPromptDefinition,
   VettingProfile,
   VettingResult,
+  ConversationMessage,
   AgentMasterRequest,
   AgentMasterResponse,
   AgentMasterService,

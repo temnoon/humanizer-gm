@@ -22,11 +22,26 @@ import type {
   ChatServiceEvents,
   ChatEventHandler,
 } from './types';
+import {
+  getAgentMasterService,
+  type ConversationMessage,
+} from '../agent-master';
 
 // ═══════════════════════════════════════════════════════════════════
-// SYSTEM PROMPT
+// SYSTEM PROMPT (DEPRECATED)
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * @deprecated This prompt is no longer used directly.
+ * AgentMaster now provides tiered prompts based on device RAM:
+ * - tiny:     ~400 tokens for <8GB RAM devices
+ * - standard: ~1200 tokens for 8-16GB RAM devices
+ * - full:     ~3500 tokens for >16GB RAM devices
+ *
+ * See: electron/agent-master/prompts/chat.ts
+ *
+ * This is kept for reference and backward compatibility.
+ */
 const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), the AI assistant for Humanizer Studio.
 
 === PHILOSOPHICAL GROUNDING ===
@@ -415,159 +430,56 @@ export class ChatService {
     userContent: string,
     options?: SendMessageOptions
   ): Promise<LLMResponse> {
-    // Build message history
-    const messages = this.store.getMessages(conversationId);
-    const llmMessages: LLMMessage[] = [
-      { role: 'system', content: AUI_SYSTEM_PROMPT },
-    ];
+    // Build conversation history (excluding tool messages)
+    // Note: System prompt is now provided by AgentMaster based on device tier
+    const storedMessages = this.store.getMessages(conversationId);
+    const conversationHistory: ConversationMessage[] = [];
 
     // Add context if provided
     if (options?.context) {
-      llmMessages.push({
+      conversationHistory.push({
         role: 'system',
         content: `Current context:\n${options.context}`,
       });
     }
 
-    // Add conversation history (excluding tool messages)
-    for (const msg of messages) {
+    // Add conversation history (excluding tool messages and current input)
+    for (const msg of storedMessages) {
       if (msg.role === 'tool') continue;
-      llmMessages.push({
+      conversationHistory.push({
         role: msg.role as 'user' | 'assistant' | 'system',
         content: msg.content,
       });
     }
 
-    // Add current message
-    llmMessages.push({ role: 'user', content: userContent });
+    // Call AgentMaster with 'chat' capability
+    // AgentMaster will:
+    // - Select tiered prompt based on device RAM
+    // - Route to best available model
+    // - Vet output (strip thinking tags, preambles)
+    const agentMaster = getAgentMasterService();
 
-    // Call appropriate provider
-    switch (this.config.llm.provider) {
-      case 'ollama':
-        return this.callOllama(llmMessages);
-      case 'anthropic':
-        return this.callAnthropic(llmMessages);
-      case 'openai':
-        return this.callOpenAI(llmMessages);
-      default:
-        throw new Error(`Unknown LLM provider: ${this.config.llm.provider}`);
-    }
-  }
-
-  private async callOllama(messages: LLMMessage[]): Promise<LLMResponse> {
-    const baseUrl = this.config.llm.baseUrl || 'http://localhost:11434';
-
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: this.config.llm.model,
-        messages,
-        stream: false,
-      }),
+    const result = await agentMaster.execute({
+      capability: 'chat',
+      input: userContent,
+      messages: conversationHistory,
+      userId: this.config.userId,
+      sessionId: conversationId,
+      // Allow config overrides for debugging
+      forceModel: this.config.llm.model !== 'auto' ? this.config.llm.model : undefined,
     });
 
-    if (!response.ok) {
-      throw new Error(`Ollama error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    // Convert AgentMaster response to LLMResponse format
     return {
-      content: data.message?.content || '',
-      model: this.config.llm.model,
-      usage: data.eval_count
-        ? {
-            promptTokens: data.prompt_eval_count || 0,
-            completionTokens: data.eval_count || 0,
-            totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
-          }
-        : undefined,
-    };
-  }
-
-  private async callAnthropic(messages: LLMMessage[]): Promise<LLMResponse> {
-    const baseUrl = this.config.llm.baseUrl || 'https://api.anthropic.com';
-    const apiKey = this.config.llm.apiKey;
-
-    if (!apiKey) {
-      throw new Error('Anthropic API key required');
-    }
-
-    // Extract system message
-    const systemMessage = messages.find((m) => m.role === 'system');
-    const chatMessages = messages.filter((m) => m.role !== 'system');
-
-    const response = await fetch(`${baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: this.config.llm.model,
-        max_tokens: this.config.llm.maxTokens || 4096,
-        system: systemMessage?.content,
-        messages: chatMessages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Anthropic error: ${error}`);
-    }
-
-    const data = await response.json();
-    return {
-      content: data.content[0]?.text || '',
-      model: data.model,
+      content: result.output,
+      model: result.modelUsed,
       usage: {
-        promptTokens: data.usage?.input_tokens || 0,
-        completionTokens: data.usage?.output_tokens || 0,
-        totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0),
+        promptTokens: result.inputTokens,
+        completionTokens: result.outputTokens,
+        totalTokens: result.inputTokens + result.outputTokens,
       },
-    };
-  }
-
-  private async callOpenAI(messages: LLMMessage[]): Promise<LLMResponse> {
-    const baseUrl = this.config.llm.baseUrl || 'https://api.openai.com';
-    const apiKey = this.config.llm.apiKey;
-
-    if (!apiKey) {
-      throw new Error('OpenAI API key required');
-    }
-
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.config.llm.model,
-        messages,
-        max_tokens: this.config.llm.maxTokens || 4096,
-        temperature: this.config.llm.temperature || 0.7,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenAI error: ${error}`);
-    }
-
-    const data = await response.json();
-    return {
-      content: data.choices[0]?.message?.content || '',
-      model: data.model,
-      usage: {
-        promptTokens: data.usage?.prompt_tokens || 0,
-        completionTokens: data.usage?.completion_tokens || 0,
-        totalTokens: data.usage?.total_tokens || 0,
-      },
+      // Preserve teaching output for AUI display
+      teaching: result.teaching,
     };
   }
 

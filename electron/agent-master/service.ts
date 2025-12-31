@@ -100,8 +100,8 @@ class AgentMasterServiceImpl implements AgentMasterService {
     // 3. Get AIControlService and call
     const aiService = getAIControlService();
 
-    // Inject the tiered system prompt
-    // The AIControlService will use this as the system prompt
+    // Inject the tiered system prompt and conversation history
+    // The AIControlService will use these to build the messages array
     const aiRequestWithPrompt: AIRequest = {
       ...aiRequest,
       params: {
@@ -109,6 +109,8 @@ class AgentMasterServiceImpl implements AgentMasterService {
         systemPrompt: promptSelection.systemPrompt,
         maxTokens: promptSelection.prompt.maxTokens,
         temperature: promptSelection.prompt.temperature,
+        // Pass conversation history if provided
+        messages: request.messages,
       },
     };
 
@@ -191,7 +193,7 @@ class AgentMasterServiceImpl implements AgentMasterService {
       throw new Error(`Unknown capability: ${request.capability}`);
     }
 
-    // 2. Build AI request
+    // 2. Build AI request with conversation history
     const aiRequest: AIRequest = {
       capability: request.capability,
       input: request.input,
@@ -200,6 +202,8 @@ class AgentMasterServiceImpl implements AgentMasterService {
         systemPrompt: promptSelection.systemPrompt,
         maxTokens: promptSelection.prompt.maxTokens,
         temperature: promptSelection.prompt.temperature,
+        // Pass conversation history if provided
+        messages: request.messages,
       },
       userId: request.userId,
       sessionId: request.sessionId,
@@ -209,6 +213,10 @@ class AgentMasterServiceImpl implements AgentMasterService {
 
     if (request.forceModel) {
       aiRequest.modelOverride = request.forceModel;
+    }
+
+    if (request.forceProvider) {
+      aiRequest.providerOverride = request.forceProvider;
     }
 
     // 3. Get AIControlService and stream
