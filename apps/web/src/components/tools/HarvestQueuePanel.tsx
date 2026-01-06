@@ -12,6 +12,20 @@ import { getArchiveServerUrl } from '../../lib/platform';
 import type { EntityURI } from '@humanizer/core';
 
 // ═══════════════════════════════════════════════════════════════════
+// CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Default harvest settings - TODO: Make these user-configurable via settings UI
+ */
+const HARVEST_DEFAULTS = {
+  /** Results per query (default: 40, range: 10-100) */
+  resultsPerQuery: 40,
+  /** Minimum similarity threshold (default: 0.3, range: 0.0-0.9) */
+  minSimilarity: 0.3,
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════
 
@@ -396,7 +410,7 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               query,
-              limit: 20,
+              limit: HARVEST_DEFAULTS.resultsPerQuery,
             }),
           });
 

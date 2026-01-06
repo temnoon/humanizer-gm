@@ -286,9 +286,29 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
   // IMPORTANT: Memoize to prevent infinite re-renders in useEffect dependencies
   const book = useMemo(() => ({
     activeProject: bookshelf.activeBook || bookContext?.activeProject || null,
-    createProject: bookContext?.createProject ?? (() => {
-      console.warn('[AUI] No BookContext - use bookshelf.createBook instead');
-      return null;
+    createProject: bookContext?.createProject ?? (async (name: string, subtitle?: string) => {
+      // Use bookshelf.createBook when BookContext not available
+      console.log('[AUI] Creating book via bookshelf.createBook:', name, subtitle);
+      const book = await bookshelf.createBook({
+        id: `book-${Date.now()}`,
+        name,
+        subtitle,
+        status: 'harvesting',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        personaRefs: [],
+        styleRefs: [],
+        threads: [],
+        sourceRefs: [],
+        passages: [],
+        chapters: [],
+        stats: { totalSources: 0, totalPassages: 0, approvedPassages: 0, gems: 0, chapters: 0, wordCount: 0 },
+      });
+      // Set as active book
+      if (book?.uri) {
+        bookshelf.setActiveBookUri(book.uri);
+      }
+      return book;
     }) as unknown as (name: string, subtitle?: string) => import('../bookshelf/types').BookProject,
     updateChapter: (chapterId: string, content: string, changes?: string) => {
       if (bookshelf.updateChapterSimple) {
@@ -338,6 +358,8 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
     getPassages: () => bookshelf.getPassagesSimple?.() ?? bookContext?.getPassages?.() ?? [],
   }), [
     bookshelf.activeBook,
+    bookshelf.createBook,
+    bookshelf.setActiveBookUri,
     bookshelf.updateChapterSimple,
     bookshelf.createChapterSimple,
     bookshelf.deleteChapterSimple,
