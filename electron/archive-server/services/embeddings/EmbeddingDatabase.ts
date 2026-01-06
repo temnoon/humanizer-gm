@@ -12,6 +12,8 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { v4 as uuidv4 } from 'uuid';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import type {
   Conversation,
   Message,
@@ -26,8 +28,42 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 9;  // Added image_description_embeddings for semantic image search
+const SCHEMA_VERSION = 10;  // Added unified book/persona/style tables (Xanadu consolidation)
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
+
+/**
+ * Find sqlite-vec extension path - handles both dev and packaged Electron environments
+ */
+function findSqliteVecPath(): string | null {
+  const platform = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'windows' : 'linux';
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const ext = platform === 'darwin' ? 'dylib' : platform === 'windows' ? 'dll' : 'so';
+  const packageName = `sqlite-vec-${platform}-${arch}`;
+
+  // Possible paths to check (in order of priority)
+  const possiblePaths = [
+    // Packaged Electron app (asar unpacked with nested node_modules)
+    join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', 'sqlite-vec', 'node_modules', packageName, `vec0.${ext}`),
+    // Packaged Electron app (asar unpacked, sibling)
+    join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', packageName, `vec0.${ext}`),
+    // Development - relative to __dirname
+    join(__dirname, '..', '..', '..', '..', 'node_modules', packageName, `vec0.${ext}`),
+    // Development - from cwd
+    join(process.cwd(), 'node_modules', packageName, `vec0.${ext}`),
+    // Development - nested in sqlite-vec
+    join(process.cwd(), 'node_modules', 'sqlite-vec', 'node_modules', packageName, `vec0.${ext}`),
+  ];
+
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      console.log(`[EmbeddingDatabase] Found sqlite-vec at: ${p}`);
+      return p;
+    }
+  }
+
+  console.warn('[EmbeddingDatabase] sqlite-vec extension not found. Tried:', possiblePaths);
+  return null;
+}
 
 export class EmbeddingDatabase {
   private db: Database.Database;
@@ -43,11 +79,25 @@ export class EmbeddingDatabase {
 
     // Load sqlite-vec extension for vector operations
     try {
+      // First try the standard load
       sqliteVec.load(this.db);
       this.vecLoaded = true;
+      console.log('[EmbeddingDatabase] sqlite-vec loaded via standard path');
     } catch (err) {
-      console.warn('sqlite-vec extension not loaded:', err);
-      // Continue without vector support
+      // Fall back to custom path finding for packaged apps
+      console.log('[EmbeddingDatabase] Standard load failed, trying custom paths...');
+      const vecPath = findSqliteVecPath();
+      if (vecPath) {
+        try {
+          this.db.loadExtension(vecPath);
+          this.vecLoaded = true;
+          console.log('[EmbeddingDatabase] sqlite-vec loaded via custom path');
+        } catch (loadErr) {
+          console.warn('[EmbeddingDatabase] Failed to load sqlite-vec from custom path:', loadErr);
+        }
+      } else {
+        console.warn('[EmbeddingDatabase] sqlite-vec extension not available');
+      }
     }
 
     this.initSchema();
@@ -1568,6 +1618,276 @@ export class EmbeddingDatabase {
       }
 
       console.log('[migration] Added image_description_embeddings table');
+    }
+
+    // Migration from version 9 to 10: Xanadu unified book/persona/style storage
+    if (fromVersion < 10) {
+      console.log('[migration] Adding unified book/persona/style tables (Xanadu consolidation)...');
+
+      this.db.exec(`
+        -- ========================================================================
+        -- XANADU UNIFIED BOOK STORAGE
+        -- Consolidates BookProjectService + BookshelfService into single source
+        -- ========================================================================
+
+        -- Books table (replaces localStorage book-project-* and bookshelf-books)
+        CREATE TABLE IF NOT EXISTS books (
+          id TEXT PRIMARY KEY,
+          uri TEXT UNIQUE NOT NULL,              -- 'book://user/slug' or 'book://library/name'
+          name TEXT NOT NULL,
+          subtitle TEXT,
+          author TEXT,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'harvesting',  -- 'harvesting', 'drafting', 'revising', 'mastering'
+
+          -- References (JSON arrays of URIs)
+          persona_refs TEXT,                     -- ['persona://author/name', ...]
+          style_refs TEXT,                       -- ['style://author/name', ...]
+          source_refs TEXT,                      -- Source references for harvesting
+
+          -- Thread definitions for harvesting
+          threads TEXT,                          -- JSON array of thread objects
+          harvest_config TEXT,                   -- JSON harvest configuration
+
+          -- Editorial/thinking context
+          editorial TEXT,                        -- JSON editorial principles
+          thinking TEXT,                         -- JSON thinking context (decisions, notes)
+
+          -- Pyramid reference
+          pyramid_id TEXT,                       -- Reference to pyramid_apex.id
+
+          -- Statistics (JSON)
+          stats TEXT,                            -- {totalSources, totalPassages, approvedPassages, gems, chapters, wordCount}
+
+          -- Profile/analysis
+          profile TEXT,                          -- JSON book profile (apex summary, tone, stats)
+
+          -- Metadata
+          tags TEXT,                             -- JSON array of tags
+          is_library INTEGER DEFAULT 0,          -- 1 if built-in library book
+
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+        );
+
+        -- Personas table (from BookshelfService)
+        CREATE TABLE IF NOT EXISTS personas (
+          id TEXT PRIMARY KEY,
+          uri TEXT UNIQUE NOT NULL,              -- 'persona://author/name'
+          name TEXT NOT NULL,
+          description TEXT,
+          author TEXT,
+
+          -- Voice characteristics
+          voice TEXT,                            -- JSON: selfDescription, styleNotes, register, emotionalRange, syntaxPatterns
+          vocabulary TEXT,                       -- JSON: preferred, avoided, domainTerms
+
+          -- Provenance
+          derived_from TEXT,                     -- JSON array of source references
+          influences TEXT,                       -- JSON array: [{name, weight, notes}]
+          exemplars TEXT,                        -- JSON array: [{text, notes}]
+
+          -- System prompt for LLM use
+          system_prompt TEXT,
+
+          -- Embedding for similarity search
+          embedding BLOB,
+          embedding_model TEXT DEFAULT 'nomic-embed-text',
+
+          -- Metadata
+          tags TEXT,                             -- JSON array
+          is_library INTEGER DEFAULT 0,          -- 1 if built-in
+
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+        );
+
+        -- Styles table (from BookshelfService)
+        CREATE TABLE IF NOT EXISTS styles (
+          id TEXT PRIMARY KEY,
+          uri TEXT UNIQUE NOT NULL,              -- 'style://author/name'
+          name TEXT NOT NULL,
+          description TEXT,
+          author TEXT,
+
+          -- Style characteristics
+          characteristics TEXT,                  -- JSON: formality, abstractionLevel, complexity, metaphorDensity
+          structure TEXT,                        -- JSON: paragraphLength, usesLists, usesHeaders, usesEpigraphs
+
+          -- Style prompt for LLM use
+          style_prompt TEXT,
+
+          -- Provenance
+          derived_from TEXT,                     -- JSON array of source references
+
+          -- Embedding for similarity search
+          embedding BLOB,
+          embedding_model TEXT DEFAULT 'nomic-embed-text',
+
+          -- Metadata
+          tags TEXT,                             -- JSON array
+          is_library INTEGER DEFAULT 0,
+
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+        );
+
+        -- Book passages (harvested content for books)
+        CREATE TABLE IF NOT EXISTS book_passages (
+          id TEXT PRIMARY KEY,
+          book_id TEXT NOT NULL,
+
+          -- Source reference
+          source_ref TEXT,                       -- JSON: uri, sourceType, conversationId, conversationTitle, label
+
+          -- Content
+          text TEXT NOT NULL,
+          word_count INTEGER DEFAULT 0,
+          role TEXT,                             -- 'user' or 'assistant'
+
+          -- Harvest metadata
+          harvested_by TEXT,                     -- 'manual', 'search', 'aui', 'thread'
+          thread_id TEXT,                        -- Which thread this belongs to
+
+          -- Curation
+          curation_status TEXT DEFAULT 'candidate',  -- 'candidate', 'approved', 'gem', 'rejected'
+          curation_note TEXT,
+
+          -- Chapter assignment
+          chapter_id TEXT,                       -- Assigned chapter (nullable)
+
+          -- Metadata
+          tags TEXT,                             -- JSON array
+
+          -- Embedding for similarity
+          embedding BLOB,
+          embedding_model TEXT DEFAULT 'nomic-embed-text',
+
+          created_at REAL NOT NULL,
+
+          FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+          FOREIGN KEY (chapter_id) REFERENCES book_chapters(id) ON DELETE SET NULL
+        );
+
+        -- Book chapters (with version history)
+        CREATE TABLE IF NOT EXISTS book_chapters (
+          id TEXT PRIMARY KEY,
+          book_id TEXT NOT NULL,
+
+          -- Chapter identity
+          number INTEGER NOT NULL,
+          title TEXT NOT NULL,
+
+          -- Current content
+          content TEXT,
+          word_count INTEGER DEFAULT 0,
+          version INTEGER DEFAULT 1,
+
+          -- Status
+          status TEXT DEFAULT 'outline',         -- 'outline', 'drafting', 'revising', 'complete'
+
+          -- Structure
+          epigraph TEXT,                         -- JSON: {text, source}
+          sections TEXT,                         -- JSON array of section objects
+          marginalia TEXT,                       -- JSON array of margin notes
+
+          -- Metadata
+          metadata TEXT,                         -- JSON: notes, lastEditedBy, lastEditedAt, auiSuggestions
+          passage_refs TEXT,                     -- JSON array of passage IDs used in chapter
+
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL,
+
+          FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+        );
+
+        -- Chapter versions (for version control)
+        CREATE TABLE IF NOT EXISTS chapter_versions (
+          id TEXT PRIMARY KEY,
+          chapter_id TEXT NOT NULL,
+          version INTEGER NOT NULL,
+
+          content TEXT NOT NULL,
+          word_count INTEGER DEFAULT 0,
+          changes TEXT,                          -- Description of what changed
+          created_by TEXT,                       -- 'user' or 'aui'
+
+          created_at REAL NOT NULL,
+
+          FOREIGN KEY (chapter_id) REFERENCES book_chapters(id) ON DELETE CASCADE,
+          UNIQUE(chapter_id, version)
+        );
+
+        -- ========================================================================
+        -- INDEXES FOR BOOK TABLES
+        -- ========================================================================
+
+        CREATE INDEX IF NOT EXISTS idx_books_uri ON books(uri);
+        CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
+        CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
+        CREATE INDEX IF NOT EXISTS idx_books_library ON books(is_library);
+        CREATE INDEX IF NOT EXISTS idx_books_updated ON books(updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_personas_uri ON personas(uri);
+        CREATE INDEX IF NOT EXISTS idx_personas_author ON personas(author);
+        CREATE INDEX IF NOT EXISTS idx_personas_library ON personas(is_library);
+
+        CREATE INDEX IF NOT EXISTS idx_styles_uri ON styles(uri);
+        CREATE INDEX IF NOT EXISTS idx_styles_author ON styles(author);
+        CREATE INDEX IF NOT EXISTS idx_styles_library ON styles(is_library);
+
+        CREATE INDEX IF NOT EXISTS idx_book_passages_book ON book_passages(book_id);
+        CREATE INDEX IF NOT EXISTS idx_book_passages_curation ON book_passages(curation_status);
+        CREATE INDEX IF NOT EXISTS idx_book_passages_chapter ON book_passages(chapter_id);
+        CREATE INDEX IF NOT EXISTS idx_book_passages_thread ON book_passages(thread_id);
+
+        CREATE INDEX IF NOT EXISTS idx_book_chapters_book ON book_chapters(book_id);
+        CREATE INDEX IF NOT EXISTS idx_book_chapters_number ON book_chapters(book_id, number);
+
+        CREATE INDEX IF NOT EXISTS idx_chapter_versions_chapter ON chapter_versions(chapter_id);
+        CREATE INDEX IF NOT EXISTS idx_chapter_versions_num ON chapter_versions(chapter_id, version);
+      `);
+
+      // Add content_type columns to pyramid_chunks for content-aware chunking
+      try {
+        this.db.exec(`
+          ALTER TABLE pyramid_chunks ADD COLUMN content_type TEXT;
+          ALTER TABLE pyramid_chunks ADD COLUMN language TEXT;
+          ALTER TABLE pyramid_chunks ADD COLUMN context_before TEXT;
+          ALTER TABLE pyramid_chunks ADD COLUMN context_after TEXT;
+          ALTER TABLE pyramid_chunks ADD COLUMN linked_chunk_ids TEXT;
+        `);
+        console.log('[migration] Added content_type columns to pyramid_chunks');
+      } catch {
+        // Columns may already exist
+      }
+
+      // Create vector tables for personas and styles
+      if (this.vecLoaded) {
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_personas USING vec0(
+            id TEXT PRIMARY KEY,
+            persona_uri TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_styles USING vec0(
+            id TEXT PRIMARY KEY,
+            style_uri TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_book_passages USING vec0(
+            id TEXT PRIMARY KEY,
+            book_id TEXT,
+            passage_id TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+        `);
+        console.log('[migration] Created vec tables for personas, styles, passages');
+      }
+
+      console.log('[migration] Completed Xanadu unified book storage migration');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
@@ -4395,6 +4715,603 @@ export class EmbeddingDatabase {
       ORDER BY created_at DESC
       LIMIT ?
     `).all(limit) as any[];
+  }
+
+  // ===========================================================================
+  // Book Operations (Xanadu Unified Storage)
+  // ===========================================================================
+
+  /**
+   * Insert or update a book
+   */
+  upsertBook(book: {
+    id: string;
+    uri: string;
+    name: string;
+    subtitle?: string;
+    author?: string;
+    description?: string;
+    status?: string;
+    personaRefs?: string[];
+    styleRefs?: string[];
+    sourceRefs?: unknown[];
+    threads?: unknown[];
+    harvestConfig?: unknown;
+    editorial?: unknown;
+    thinking?: unknown;
+    pyramidId?: string;
+    stats?: unknown;
+    profile?: unknown;
+    tags?: string[];
+    isLibrary?: boolean;
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO books (
+        id, uri, name, subtitle, author, description, status,
+        persona_refs, style_refs, source_refs, threads, harvest_config,
+        editorial, thinking, pyramid_id, stats, profile, tags, is_library,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        uri = excluded.uri,
+        name = excluded.name,
+        subtitle = excluded.subtitle,
+        author = excluded.author,
+        description = excluded.description,
+        status = excluded.status,
+        persona_refs = excluded.persona_refs,
+        style_refs = excluded.style_refs,
+        source_refs = excluded.source_refs,
+        threads = excluded.threads,
+        harvest_config = excluded.harvest_config,
+        editorial = excluded.editorial,
+        thinking = excluded.thinking,
+        pyramid_id = excluded.pyramid_id,
+        stats = excluded.stats,
+        profile = excluded.profile,
+        tags = excluded.tags,
+        is_library = excluded.is_library,
+        updated_at = excluded.updated_at
+    `).run(
+      book.id,
+      book.uri,
+      book.name,
+      book.subtitle ?? null,
+      book.author ?? null,
+      book.description ?? null,
+      book.status ?? 'harvesting',
+      book.personaRefs ? JSON.stringify(book.personaRefs) : null,
+      book.styleRefs ? JSON.stringify(book.styleRefs) : null,
+      book.sourceRefs ? JSON.stringify(book.sourceRefs) : null,
+      book.threads ? JSON.stringify(book.threads) : null,
+      book.harvestConfig ? JSON.stringify(book.harvestConfig) : null,
+      book.editorial ? JSON.stringify(book.editorial) : null,
+      book.thinking ? JSON.stringify(book.thinking) : null,
+      book.pyramidId ?? null,
+      book.stats ? JSON.stringify(book.stats) : null,
+      book.profile ? JSON.stringify(book.profile) : null,
+      book.tags ? JSON.stringify(book.tags) : null,
+      book.isLibrary ? 1 : 0,
+      now,
+      now
+    );
+  }
+
+  /**
+   * Get a book by ID or URI
+   */
+  getBook(idOrUri: string): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT * FROM books WHERE id = ? OR uri = ?
+    `).get(idOrUri, idOrUri) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.parseBookRow(row);
+  }
+
+  /**
+   * Get all books
+   */
+  getAllBooks(includeLibrary = true): Record<string, unknown>[] {
+    const query = includeLibrary
+      ? 'SELECT * FROM books ORDER BY updated_at DESC'
+      : 'SELECT * FROM books WHERE is_library = 0 ORDER BY updated_at DESC';
+    const rows = this.db.prepare(query).all() as Record<string, unknown>[];
+    return rows.map(row => this.parseBookRow(row));
+  }
+
+  /**
+   * Delete a book and all related data
+   */
+  deleteBook(id: string): void {
+    this.db.prepare('DELETE FROM books WHERE id = ?').run(id);
+  }
+
+  private parseBookRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      uri: row.uri,
+      name: row.name,
+      subtitle: row.subtitle,
+      author: row.author,
+      description: row.description,
+      status: row.status,
+      personaRefs: row.persona_refs ? JSON.parse(row.persona_refs as string) : [],
+      styleRefs: row.style_refs ? JSON.parse(row.style_refs as string) : [],
+      sourceRefs: row.source_refs ? JSON.parse(row.source_refs as string) : [],
+      threads: row.threads ? JSON.parse(row.threads as string) : [],
+      harvestConfig: row.harvest_config ? JSON.parse(row.harvest_config as string) : null,
+      editorial: row.editorial ? JSON.parse(row.editorial as string) : null,
+      thinking: row.thinking ? JSON.parse(row.thinking as string) : null,
+      pyramidId: row.pyramid_id,
+      stats: row.stats ? JSON.parse(row.stats as string) : {},
+      profile: row.profile ? JSON.parse(row.profile as string) : null,
+      tags: row.tags ? JSON.parse(row.tags as string) : [],
+      isLibrary: row.is_library === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ===========================================================================
+  // Persona Operations
+  // ===========================================================================
+
+  /**
+   * Insert or update a persona
+   */
+  upsertPersona(persona: {
+    id: string;
+    uri: string;
+    name: string;
+    description?: string;
+    author?: string;
+    voice?: unknown;
+    vocabulary?: unknown;
+    derivedFrom?: unknown[];
+    influences?: unknown[];
+    exemplars?: unknown[];
+    systemPrompt?: string;
+    tags?: string[];
+    isLibrary?: boolean;
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO personas (
+        id, uri, name, description, author, voice, vocabulary,
+        derived_from, influences, exemplars, system_prompt, tags, is_library,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        uri = excluded.uri,
+        name = excluded.name,
+        description = excluded.description,
+        author = excluded.author,
+        voice = excluded.voice,
+        vocabulary = excluded.vocabulary,
+        derived_from = excluded.derived_from,
+        influences = excluded.influences,
+        exemplars = excluded.exemplars,
+        system_prompt = excluded.system_prompt,
+        tags = excluded.tags,
+        is_library = excluded.is_library,
+        updated_at = excluded.updated_at
+    `).run(
+      persona.id,
+      persona.uri,
+      persona.name,
+      persona.description ?? null,
+      persona.author ?? null,
+      persona.voice ? JSON.stringify(persona.voice) : null,
+      persona.vocabulary ? JSON.stringify(persona.vocabulary) : null,
+      persona.derivedFrom ? JSON.stringify(persona.derivedFrom) : null,
+      persona.influences ? JSON.stringify(persona.influences) : null,
+      persona.exemplars ? JSON.stringify(persona.exemplars) : null,
+      persona.systemPrompt ?? null,
+      persona.tags ? JSON.stringify(persona.tags) : null,
+      persona.isLibrary ? 1 : 0,
+      now,
+      now
+    );
+  }
+
+  /**
+   * Get a persona by ID or URI
+   */
+  getPersona(idOrUri: string): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT * FROM personas WHERE id = ? OR uri = ?
+    `).get(idOrUri, idOrUri) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.parsePersonaRow(row);
+  }
+
+  /**
+   * Get all personas
+   */
+  getAllPersonas(includeLibrary = true): Record<string, unknown>[] {
+    const query = includeLibrary
+      ? 'SELECT * FROM personas ORDER BY name'
+      : 'SELECT * FROM personas WHERE is_library = 0 ORDER BY name';
+    const rows = this.db.prepare(query).all() as Record<string, unknown>[];
+    return rows.map(row => this.parsePersonaRow(row));
+  }
+
+  /**
+   * Delete a persona
+   */
+  deletePersona(id: string): void {
+    this.db.prepare('DELETE FROM personas WHERE id = ?').run(id);
+  }
+
+  private parsePersonaRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      uri: row.uri,
+      name: row.name,
+      description: row.description,
+      author: row.author,
+      voice: row.voice ? JSON.parse(row.voice as string) : null,
+      vocabulary: row.vocabulary ? JSON.parse(row.vocabulary as string) : null,
+      derivedFrom: row.derived_from ? JSON.parse(row.derived_from as string) : [],
+      influences: row.influences ? JSON.parse(row.influences as string) : [],
+      exemplars: row.exemplars ? JSON.parse(row.exemplars as string) : [],
+      systemPrompt: row.system_prompt,
+      tags: row.tags ? JSON.parse(row.tags as string) : [],
+      isLibrary: row.is_library === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ===========================================================================
+  // Style Operations
+  // ===========================================================================
+
+  /**
+   * Insert or update a style
+   */
+  upsertStyle(style: {
+    id: string;
+    uri: string;
+    name: string;
+    description?: string;
+    author?: string;
+    characteristics?: unknown;
+    structure?: unknown;
+    stylePrompt?: string;
+    derivedFrom?: unknown[];
+    tags?: string[];
+    isLibrary?: boolean;
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO styles (
+        id, uri, name, description, author, characteristics, structure,
+        style_prompt, derived_from, tags, is_library, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        uri = excluded.uri,
+        name = excluded.name,
+        description = excluded.description,
+        author = excluded.author,
+        characteristics = excluded.characteristics,
+        structure = excluded.structure,
+        style_prompt = excluded.style_prompt,
+        derived_from = excluded.derived_from,
+        tags = excluded.tags,
+        is_library = excluded.is_library,
+        updated_at = excluded.updated_at
+    `).run(
+      style.id,
+      style.uri,
+      style.name,
+      style.description ?? null,
+      style.author ?? null,
+      style.characteristics ? JSON.stringify(style.characteristics) : null,
+      style.structure ? JSON.stringify(style.structure) : null,
+      style.stylePrompt ?? null,
+      style.derivedFrom ? JSON.stringify(style.derivedFrom) : null,
+      style.tags ? JSON.stringify(style.tags) : null,
+      style.isLibrary ? 1 : 0,
+      now,
+      now
+    );
+  }
+
+  /**
+   * Get a style by ID or URI
+   */
+  getStyle(idOrUri: string): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT * FROM styles WHERE id = ? OR uri = ?
+    `).get(idOrUri, idOrUri) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.parseStyleRow(row);
+  }
+
+  /**
+   * Get all styles
+   */
+  getAllStyles(includeLibrary = true): Record<string, unknown>[] {
+    const query = includeLibrary
+      ? 'SELECT * FROM styles ORDER BY name'
+      : 'SELECT * FROM styles WHERE is_library = 0 ORDER BY name';
+    const rows = this.db.prepare(query).all() as Record<string, unknown>[];
+    return rows.map(row => this.parseStyleRow(row));
+  }
+
+  /**
+   * Delete a style
+   */
+  deleteStyle(id: string): void {
+    this.db.prepare('DELETE FROM styles WHERE id = ?').run(id);
+  }
+
+  private parseStyleRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      uri: row.uri,
+      name: row.name,
+      description: row.description,
+      author: row.author,
+      characteristics: row.characteristics ? JSON.parse(row.characteristics as string) : null,
+      structure: row.structure ? JSON.parse(row.structure as string) : null,
+      stylePrompt: row.style_prompt,
+      derivedFrom: row.derived_from ? JSON.parse(row.derived_from as string) : [],
+      tags: row.tags ? JSON.parse(row.tags as string) : [],
+      isLibrary: row.is_library === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ===========================================================================
+  // Book Passage Operations
+  // ===========================================================================
+
+  /**
+   * Insert or update a book passage
+   */
+  upsertBookPassage(passage: {
+    id: string;
+    bookId: string;
+    sourceRef?: unknown;
+    text: string;
+    wordCount?: number;
+    role?: string;
+    harvestedBy?: string;
+    threadId?: string;
+    curationStatus?: string;
+    curationNote?: string;
+    chapterId?: string;
+    tags?: string[];
+  }): void {
+    const now = Date.now();
+    const wordCount = passage.wordCount ?? passage.text.trim().split(/\s+/).filter(Boolean).length;
+
+    this.db.prepare(`
+      INSERT INTO book_passages (
+        id, book_id, source_ref, text, word_count, role, harvested_by,
+        thread_id, curation_status, curation_note, chapter_id, tags, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        source_ref = excluded.source_ref,
+        text = excluded.text,
+        word_count = excluded.word_count,
+        role = excluded.role,
+        harvested_by = excluded.harvested_by,
+        thread_id = excluded.thread_id,
+        curation_status = excluded.curation_status,
+        curation_note = excluded.curation_note,
+        chapter_id = excluded.chapter_id,
+        tags = excluded.tags
+    `).run(
+      passage.id,
+      passage.bookId,
+      passage.sourceRef ? JSON.stringify(passage.sourceRef) : null,
+      passage.text,
+      wordCount,
+      passage.role ?? null,
+      passage.harvestedBy ?? 'manual',
+      passage.threadId ?? null,
+      passage.curationStatus ?? 'candidate',
+      passage.curationNote ?? null,
+      passage.chapterId ?? null,
+      passage.tags ? JSON.stringify(passage.tags) : null,
+      now
+    );
+  }
+
+  /**
+   * Get passages for a book
+   */
+  getBookPassages(bookId: string, curationStatus?: string): Record<string, unknown>[] {
+    let query = 'SELECT * FROM book_passages WHERE book_id = ?';
+    const params: (string | null)[] = [bookId];
+
+    if (curationStatus) {
+      query += ' AND curation_status = ?';
+      params.push(curationStatus);
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    const rows = this.db.prepare(query).all(...params) as Record<string, unknown>[];
+    return rows.map(row => this.parsePassageRow(row));
+  }
+
+  /**
+   * Update passage curation status
+   */
+  updatePassageCuration(id: string, status: string, note?: string): void {
+    this.db.prepare(`
+      UPDATE book_passages SET curation_status = ?, curation_note = ? WHERE id = ?
+    `).run(status, note ?? null, id);
+  }
+
+  /**
+   * Delete a passage
+   */
+  deleteBookPassage(id: string): void {
+    this.db.prepare('DELETE FROM book_passages WHERE id = ?').run(id);
+  }
+
+  private parsePassageRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      bookId: row.book_id,
+      sourceRef: row.source_ref ? JSON.parse(row.source_ref as string) : null,
+      text: row.text,
+      wordCount: row.word_count,
+      role: row.role,
+      harvestedBy: row.harvested_by,
+      threadId: row.thread_id,
+      curationStatus: row.curation_status,
+      curationNote: row.curation_note,
+      chapterId: row.chapter_id,
+      tags: row.tags ? JSON.parse(row.tags as string) : [],
+      createdAt: row.created_at,
+    };
+  }
+
+  // ===========================================================================
+  // Book Chapter Operations
+  // ===========================================================================
+
+  /**
+   * Insert or update a chapter
+   */
+  upsertBookChapter(chapter: {
+    id: string;
+    bookId: string;
+    number: number;
+    title: string;
+    content?: string;
+    wordCount?: number;
+    version?: number;
+    status?: string;
+    epigraph?: unknown;
+    sections?: unknown[];
+    marginalia?: unknown[];
+    metadata?: unknown;
+    passageRefs?: string[];
+  }): void {
+    const now = Date.now();
+    const wordCount = chapter.wordCount ?? (chapter.content?.trim().split(/\s+/).filter(Boolean).length ?? 0);
+
+    this.db.prepare(`
+      INSERT INTO book_chapters (
+        id, book_id, number, title, content, word_count, version, status,
+        epigraph, sections, marginalia, metadata, passage_refs, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        number = excluded.number,
+        title = excluded.title,
+        content = excluded.content,
+        word_count = excluded.word_count,
+        version = excluded.version,
+        status = excluded.status,
+        epigraph = excluded.epigraph,
+        sections = excluded.sections,
+        marginalia = excluded.marginalia,
+        metadata = excluded.metadata,
+        passage_refs = excluded.passage_refs,
+        updated_at = excluded.updated_at
+    `).run(
+      chapter.id,
+      chapter.bookId,
+      chapter.number,
+      chapter.title,
+      chapter.content ?? null,
+      wordCount,
+      chapter.version ?? 1,
+      chapter.status ?? 'outline',
+      chapter.epigraph ? JSON.stringify(chapter.epigraph) : null,
+      chapter.sections ? JSON.stringify(chapter.sections) : null,
+      chapter.marginalia ? JSON.stringify(chapter.marginalia) : null,
+      chapter.metadata ? JSON.stringify(chapter.metadata) : null,
+      chapter.passageRefs ? JSON.stringify(chapter.passageRefs) : null,
+      now,
+      now
+    );
+  }
+
+  /**
+   * Get chapters for a book
+   */
+  getBookChapters(bookId: string): Record<string, unknown>[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM book_chapters WHERE book_id = ? ORDER BY number
+    `).all(bookId) as Record<string, unknown>[];
+    return rows.map(row => this.parseChapterRow(row));
+  }
+
+  /**
+   * Get a single chapter
+   */
+  getBookChapter(id: string): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT * FROM book_chapters WHERE id = ?
+    `).get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.parseChapterRow(row);
+  }
+
+  /**
+   * Delete a chapter
+   */
+  deleteBookChapter(id: string): void {
+    this.db.prepare('DELETE FROM book_chapters WHERE id = ?').run(id);
+  }
+
+  /**
+   * Save a chapter version snapshot
+   */
+  saveChapterVersion(chapterId: string, version: number, content: string, changes?: string, createdBy?: string): void {
+    const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+    this.db.prepare(`
+      INSERT INTO chapter_versions (id, chapter_id, version, content, word_count, changes, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `${chapterId}-v${version}`,
+      chapterId,
+      version,
+      content,
+      wordCount,
+      changes ?? null,
+      createdBy ?? 'user',
+      Date.now()
+    );
+  }
+
+  /**
+   * Get chapter version history
+   */
+  getChapterVersions(chapterId: string): Record<string, unknown>[] {
+    return this.db.prepare(`
+      SELECT * FROM chapter_versions WHERE chapter_id = ? ORDER BY version DESC
+    `).all(chapterId) as Record<string, unknown>[];
+  }
+
+  private parseChapterRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      bookId: row.book_id,
+      number: row.number,
+      title: row.title,
+      content: row.content,
+      wordCount: row.word_count,
+      version: row.version,
+      status: row.status,
+      epigraph: row.epigraph ? JSON.parse(row.epigraph as string) : null,
+      sections: row.sections ? JSON.parse(row.sections as string) : [],
+      marginalia: row.marginalia ? JSON.parse(row.marginalia as string) : [],
+      metadata: row.metadata ? JSON.parse(row.metadata as string) : null,
+      passageRefs: row.passage_refs ? JSON.parse(row.passage_refs as string) : [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
   // ===========================================================================

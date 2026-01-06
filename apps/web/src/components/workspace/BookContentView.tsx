@@ -11,7 +11,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-import { useBook } from '../../lib/book';
+import { useBookshelf } from '../../lib/bookshelf';
 import type {
   BookProject,
   DraftChapter,
@@ -68,8 +68,8 @@ export function BookContentView({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
 
-  // Book context for persistence
-  const book = useBook();
+  // Bookshelf context for persistence (unified storage)
+  const bookshelf = useBookshelf();
 
   // Update editContent when content changes (e.g., from version revert)
   useEffect(() => {
@@ -77,12 +77,12 @@ export function BookContentView({
   }, [content.content]);
 
   // Handle save with persistence
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     setSaveStatus('saving');
 
-    // Use book context to save if we have a chapter
+    // Use bookshelf context to save if we have a chapter
     if (content.type === 'chapter' && content.source.itemId) {
-      book.updateChapter(
+      await bookshelf.updateChapterSimple(
         content.source.itemId,
         editContent,
         `Manual save`
@@ -97,7 +97,7 @@ export function BookContentView({
 
     // Reset status after 2 seconds
     setTimeout(() => setSaveStatus('idle'), 2000);
-  }, [editContent, onEdit, book, content.type, content.source.itemId]);
+  }, [editContent, onEdit, bookshelf, content.type, content.source.itemId]);
 
   const handleCancel = useCallback(() => {
     setEditContent(content.content);
@@ -111,12 +111,39 @@ export function BookContentView({
   }, []);
 
   // Revert to selected version
-  const handleRevertToVersion = useCallback(() => {
+  const handleRevertToVersion = useCallback(async () => {
     if (selectedVersion && content.source.itemId) {
-      book.revertToVersion(content.source.itemId, selectedVersion);
+      await bookshelf.revertToVersionSimple(content.source.itemId, selectedVersion);
       setSelectedVersion(null);
     }
-  }, [selectedVersion, content.source.itemId, book]);
+  }, [selectedVersion, content.source.itemId, bookshelf]);
+
+  // Delete a version (not yet implemented in Xanadu - logs warning)
+  const handleDeleteVersion = useCallback((version: number) => {
+    if (content.source.itemId && window.confirm(`Delete version ${version}? This cannot be undone.`)) {
+      // TODO: Add deleteVersion to BookshelfContext when Xanadu IPC supports it
+      console.warn('[BookContentView] deleteVersion not yet implemented in unified storage');
+      if (selectedVersion === version) {
+        setSelectedVersion(null);
+      }
+    }
+  }, [content.source.itemId, selectedVersion]);
+
+  // Writer notes state
+  const [writerNotes, setWriterNotes] = useState(content.chapter?.writerNotes || '');
+  const [notesExpanded, setNotesExpanded] = useState(false);
+
+  // Save writer notes
+  const handleSaveNotes = useCallback(async () => {
+    if (content.source.itemId) {
+      await bookshelf.updateWriterNotesSimple(content.source.itemId, writerNotes);
+    }
+  }, [content.source.itemId, writerNotes, bookshelf]);
+
+  // Sync writerNotes state when content changes
+  useEffect(() => {
+    setWriterNotes(content.chapter?.writerNotes || '');
+  }, [content.chapter?.writerNotes]);
 
   const typeIcons: Record<BookContentType, string> = {
     chapter: '📝',
@@ -263,47 +290,67 @@ export function BookContentView({
           <summary>
             Chapter Metadata
             <span className="book-content-view__metadata-stats">
-              v{content.chapter.version} · {content.chapter.wordCount.toLocaleString()} words · {content.chapter.status}
+              v{content.chapter.version ?? 1} · {(content.chapter.wordCount ?? content.chapter.versions?.[0]?.content?.split(/\s+/).length ?? 0).toLocaleString()} words · {content.chapter.status ?? 'draft'}
             </span>
           </summary>
           <div className="book-content-view__metadata-content">
             <div className="book-content-view__metadata-section">
               <h4>Version History</h4>
-              {content.chapter.versions.length > 0 ? (
+              {(content.chapter.versions?.length ?? 0) > 0 ? (
                 <ul className="book-content-view__version-list">
-                  {content.chapter.versions.slice().reverse().map((v) => (
-                    <li
-                      key={v.version}
-                      className={`book-content-view__version-item ${selectedVersion === v.version ? 'book-content-view__version-item--selected' : ''} ${v.version === content.chapter?.version ? 'book-content-view__version-item--current' : ''}`}
-                      onClick={() => handleVersionSelect(v)}
-                    >
-                      <span className="book-content-view__version-number">
-                        v{v.version}
-                        {v.version === content.chapter?.version && ' (current)'}
-                      </span>
-                      <span className="book-content-view__version-changes">{v.changes}</span>
-                      <span className="book-content-view__version-meta">
-                        {new Date(v.timestamp).toLocaleDateString()} · {v.createdBy}
-                      </span>
-                      {selectedVersion === v.version && v.version !== content.chapter?.version && (
-                        <button
-                          className="book-content-view__version-revert"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRevertToVersion();
-                          }}
-                        >
-                          Revert to this version
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                  {content.chapter.versions.slice().reverse().map((v, idx) => {
+                    const versionNum = v.version ?? idx + 1;
+                    const versionId = v.version ?? idx;
+                    const timestamp = v.timestamp ?? Date.now();
+                    const author = v.createdBy ?? 'Unknown';
+                    return (
+                      <li
+                        key={versionId}
+                        className={`book-content-view__version-item ${selectedVersion === versionNum ? 'book-content-view__version-item--selected' : ''} ${versionNum === (content.chapter?.version ?? 1) ? 'book-content-view__version-item--current' : ''}`}
+                        onClick={() => handleVersionSelect(v)}
+                      >
+                        <span className="book-content-view__version-number">
+                          v{versionNum}
+                          {versionNum === (content.chapter?.version ?? 1) && ' (current)'}
+                        </span>
+                        <span className="book-content-view__version-changes">{v.changes ?? 'No changes recorded'}</span>
+                        <span className="book-content-view__version-meta">
+                          {new Date(timestamp).toLocaleDateString()} · {author}
+                        </span>
+                        <div className="book-content-view__version-actions">
+                          {selectedVersion === versionNum && versionNum !== (content.chapter?.version ?? 1) && (
+                            <button
+                              className="book-content-view__version-revert"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRevertToVersion();
+                              }}
+                            >
+                              Revert
+                            </button>
+                          )}
+                          {versionNum !== (content.chapter?.version ?? 1) && (
+                            <button
+                              className="book-content-view__version-delete"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteVersion(versionNum);
+                              }}
+                              title="Delete this version"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="book-content-view__metadata-empty">No version history yet</p>
               )}
             </div>
-            {content.chapter.sections.length > 0 && (
+            {content.chapter.sections?.length > 0 && (
               <div className="book-content-view__metadata-section">
                 <h4>Sections</h4>
                 <ul className="book-content-view__section-list">
@@ -320,6 +367,22 @@ export function BookContentView({
                 </ul>
               </div>
             )}
+
+            {/* Writer Notes - production notes not included in final output */}
+            <div className="book-content-view__metadata-section">
+              <h4>
+                Writer Notes
+                <span className="book-content-view__notes-hint">(not included in output)</span>
+              </h4>
+              <textarea
+                className="book-content-view__notes-input"
+                placeholder="Add production notes here..."
+                value={writerNotes}
+                onChange={(e) => setWriterNotes(e.target.value)}
+                onBlur={handleSaveNotes}
+                rows={3}
+              />
+            </div>
           </div>
         </details>
       )}

@@ -18,3 +18,11 @@ export { WelcomeScreen } from './WelcomeScreen';
 
 // Data structure inspection
 export { StructureInspector } from './StructureInspector';
+
+// Harvest review
+export {
+  HarvestWorkspaceView,
+  type HarvestConversation,
+  type ConversationMessage,
+  type StagedMessage,
+} from './HarvestWorkspaceView';

@@ -26,3 +26,11 @@ export {
 
 // Re-export route utilities
 export { buildConversationIndex, getConversationsFromIndex } from './routes/archives';
+
+// Re-export service registry for unified storage access (Xanadu)
+export {
+  getEmbeddingDatabase,
+  resetServices,
+  areServicesInitialized,
+  waitForServices,
+} from './services/registry';

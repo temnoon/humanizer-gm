@@ -39,6 +39,13 @@ export type BookStatus =
   | 'complete'; // Done
 
 /**
+ * Book type - distinguishes multi-chapter books from single-chapter papers
+ * - book: Multi-chapter work with TOC (default)
+ * - paper: Single-chapter work like essays or articles
+ */
+export type BookType = 'book' | 'paper';
+
+/**
  * A Book Project - the main container for a book being created.
  *
  * This unified type combines:
@@ -49,6 +56,9 @@ export type BookStatus =
  */
 export interface BookProject extends EntityMeta {
   type: 'book';
+
+  /** Book type: 'book' (multi-chapter with TOC) or 'paper' (single-chapter essay/article) */
+  bookType?: BookType;
 
   /** Subtitle */
   subtitle?: string;
@@ -225,6 +235,9 @@ export interface DraftChapter {
 
   /** Marginalia/notes */
   marginalia: Marginalia[];
+
+  /** Writer notes - not included in final output, for production only */
+  writerNotes?: string;
 
   /** Metadata */
   metadata: ChapterMetadata;

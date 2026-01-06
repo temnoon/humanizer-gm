@@ -27,7 +27,14 @@ import { getCouncilOrchestrator, type CouncilOrchestrator, type ProposedAction, 
 import { getAgentRegistry } from './agents/runtime/registry';
 
 // Embedded Archive Server
-import { startArchiveServer as startEmbeddedArchiveServer, stopArchiveServer as stopEmbeddedArchiveServer, isArchiveServerRunning } from './archive-server';
+import {
+  startArchiveServer as startEmbeddedArchiveServer,
+  stopArchiveServer as stopEmbeddedArchiveServer,
+  isArchiveServerRunning,
+  getEmbeddingDatabase,
+  areServicesInitialized,
+  waitForServices,
+} from './archive-server';
 
 // Embedded NPE-Local Server (AI Detection, Transformations)
 import { startNpeLocalServer, stopNpeLocalServer, isNpeLocalServerRunning, getNpeLocalPort } from './npe-local';
@@ -451,7 +458,7 @@ function registerIPCHandlers() {
     dbPath: chatDbPath,
     llm: {
       provider: 'ollama',
-      model: store.get('ollamaModel') || 'llama3.2',
+      model: store.get('ollamaModel') || 'qwen3:14b',
       baseUrl: 'http://localhost:11434',
     },
     archiveUrl: archiveServerPort ? `http://localhost:${archiveServerPort}` : undefined,
@@ -768,6 +775,272 @@ function registerAgentMasterHandlers() {
 }
 
 // ============================================================
+// XANADU UNIFIED STORAGE IPC HANDLERS
+// ============================================================
+
+function registerXanaduHandlers() {
+  // Check if services are ready before any operation
+  const ensureDb = () => {
+    if (!areServicesInitialized()) {
+      throw new Error('Archive services not initialized. Start archive server first.');
+    }
+    return getEmbeddingDatabase();
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // BOOK OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:book:list', (_e, includeLibrary = true) => {
+    const db = ensureDb();
+    return db.getAllBooks(includeLibrary);
+  });
+
+  ipcMain.handle('xanadu:book:get', (_e, idOrUri: string) => {
+    const db = ensureDb();
+    return db.getBook(idOrUri);
+  });
+
+  ipcMain.handle('xanadu:book:upsert', (_e, book: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertBook(book as Parameters<typeof db.upsertBook>[0]);
+    return { success: true, id: book.id };
+  });
+
+  ipcMain.handle('xanadu:book:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteBook(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // PERSONA OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:persona:list', (_e, includeLibrary = true) => {
+    const db = ensureDb();
+    return db.getAllPersonas(includeLibrary);
+  });
+
+  ipcMain.handle('xanadu:persona:get', (_e, idOrUri: string) => {
+    const db = ensureDb();
+    return db.getPersona(idOrUri);
+  });
+
+  ipcMain.handle('xanadu:persona:upsert', (_e, persona: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertPersona(persona as Parameters<typeof db.upsertPersona>[0]);
+    return { success: true, id: persona.id };
+  });
+
+  ipcMain.handle('xanadu:persona:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deletePersona(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // STYLE OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:style:list', (_e, includeLibrary = true) => {
+    const db = ensureDb();
+    return db.getAllStyles(includeLibrary);
+  });
+
+  ipcMain.handle('xanadu:style:get', (_e, idOrUri: string) => {
+    const db = ensureDb();
+    return db.getStyle(idOrUri);
+  });
+
+  ipcMain.handle('xanadu:style:upsert', (_e, style: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertStyle(style as Parameters<typeof db.upsertStyle>[0]);
+    return { success: true, id: style.id };
+  });
+
+  ipcMain.handle('xanadu:style:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteStyle(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // PASSAGE OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:passage:list', (_e, bookId: string, curationStatus?: string) => {
+    const db = ensureDb();
+    return db.getBookPassages(bookId, curationStatus);
+  });
+
+  ipcMain.handle('xanadu:passage:upsert', (_e, passage: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertBookPassage(passage as Parameters<typeof db.upsertBookPassage>[0]);
+    return { success: true, id: passage.id };
+  });
+
+  ipcMain.handle('xanadu:passage:curate', (_e, id: string, status: string, note?: string) => {
+    const db = ensureDb();
+    db.updatePassageCuration(id, status, note);
+    return { success: true };
+  });
+
+  ipcMain.handle('xanadu:passage:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteBookPassage(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // CHAPTER OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:chapter:list', (_e, bookId: string) => {
+    const db = ensureDb();
+    return db.getBookChapters(bookId);
+  });
+
+  ipcMain.handle('xanadu:chapter:get', (_e, id: string) => {
+    const db = ensureDb();
+    return db.getBookChapter(id);
+  });
+
+  ipcMain.handle('xanadu:chapter:upsert', (_e, chapter: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertBookChapter(chapter as Parameters<typeof db.upsertBookChapter>[0]);
+    return { success: true, id: chapter.id };
+  });
+
+  ipcMain.handle('xanadu:chapter:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteBookChapter(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // CHAPTER VERSION OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:version:list', (_e, chapterId: string) => {
+    const db = ensureDb();
+    return db.getChapterVersions(chapterId);
+  });
+
+  ipcMain.handle('xanadu:version:save', (
+    _e,
+    chapterId: string,
+    version: number,
+    content: string,
+    changes?: string,
+    createdBy?: string
+  ) => {
+    const db = ensureDb();
+    db.saveChapterVersion(chapterId, version, content, changes, createdBy);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // SEED LIBRARY DATA (First Run)
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:seed-library', async () => {
+    // Wait for services to be ready (handles race condition on startup)
+    const ready = await waitForServices(15000); // 15 second timeout
+    if (!ready) {
+      console.warn('[Xanadu] Timed out waiting for services to initialize');
+      return { success: false, error: 'Services not ready after 15s timeout' };
+    }
+
+    const db = ensureDb();
+
+    // Check if library already seeded (look for a known library persona)
+    const existingPersona = db.getPersona('persona://tem-noon/marginalia-voice');
+    if (existingPersona) {
+      console.log('[Xanadu] Library already seeded');
+      return { success: true, alreadySeeded: true };
+    }
+
+    console.log('[Xanadu] Seeding library data...');
+
+    // Import library data from BookshelfService pattern
+    // NOTE: In production, this would read from the LIBRARY_* constants
+    // For now we import them dynamically to avoid circular deps
+
+    try {
+      // Seed library personas (createdAt/updatedAt generated by upsert)
+      const libraryPersonas = await import('./xanadu/library-seed').then(m => m.LIBRARY_PERSONAS);
+      for (const persona of libraryPersonas) {
+        db.upsertPersona({
+          id: persona.id,
+          uri: persona.uri,
+          name: persona.name,
+          description: persona.description,
+          author: persona.author,
+          voice: persona.voice,
+          vocabulary: persona.vocabulary,
+          derivedFrom: persona.derivedFrom,
+          influences: persona.influences,
+          exemplars: persona.exemplars,
+          systemPrompt: persona.systemPrompt,
+          tags: persona.tags,
+          isLibrary: true,
+        });
+      }
+
+      // Seed library styles (createdAt/updatedAt generated by upsert)
+      const libraryStyles = await import('./xanadu/library-seed').then(m => m.LIBRARY_STYLES);
+      for (const style of libraryStyles) {
+        db.upsertStyle({
+          id: style.id,
+          uri: style.uri,
+          name: style.name,
+          description: style.description,
+          author: style.author,
+          characteristics: style.characteristics,
+          structure: style.structure,
+          stylePrompt: style.stylePrompt,
+          derivedFrom: style.derivedFrom,
+          tags: style.tags,
+          isLibrary: true,
+        });
+      }
+
+      // Seed library books (createdAt/updatedAt generated by upsert)
+      const libraryBooks = await import('./xanadu/library-seed').then(m => m.LIBRARY_BOOKS);
+      for (const book of libraryBooks) {
+        db.upsertBook({
+          id: book.id,
+          uri: book.uri,
+          name: book.name,
+          subtitle: book.subtitle,
+          description: book.description,
+          author: book.author,
+          status: book.status,
+          personaRefs: book.personaRefs,
+          styleRefs: book.styleRefs,
+          sourceRefs: book.sourceRefs,
+          threads: book.threads,
+          harvestConfig: book.harvestConfig,
+          editorial: book.editorial,
+          stats: book.stats,
+          tags: book.tags,
+          isLibrary: true,
+        });
+      }
+
+      console.log('[Xanadu] Library seed complete');
+      return { success: true, alreadySeeded: false };
+    } catch (err) {
+      console.error('[Xanadu] Failed to seed library:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  console.log('Xanadu unified storage IPC handlers registered');
+}
+
+// ============================================================
 // CUSTOM PROTOCOL FOR LOCAL MEDIA
 // ============================================================
 
@@ -1039,6 +1312,9 @@ app.whenReady().then(async () => {
   // Set flag BEFORE calling startArchiveServer since it checks this
   store.set('archiveServerEnabled', true);
   await startArchiveServer();
+
+  // Register Xanadu handlers (after archive server to ensure DB is ready)
+  registerXanaduHandlers();
 
   // Always start npe-local server for AI detection and transformations
   await startNpeLocal();

@@ -12,6 +12,8 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { getArchiveServerUrl } from '../../lib/platform';
 import { useSearchResultsAction } from '../../lib/aui';
 import { useArchiveHealth, needsEmbeddings, isOllamaAvailable } from '../../lib/archive/useArchiveHealth';
+import { useBookshelf, type SourcePassage } from '../../lib/bookshelf';
+import type { EntityURI } from '@humanizer/core';
 
 export interface SearchResult {
   id: string;
@@ -39,12 +41,58 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [fromAUI, setFromAUI] = useState(false);
+  const [savedToHarvest, setSavedToHarvest] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Archive health check - detect missing embeddings
   const { health, buildEmbeddings, isBuilding, buildProgress } = useArchiveHealth();
   const showSetup = needsEmbeddings(health);
   const ollamaReady = isOllamaAvailable(health);
+
+  // Bookshelf for harvest bucket creation
+  const { activeBookUri, createHarvestBucket } = useBookshelf();
+
+  // Save current search results to a harvest bucket
+  const handleSaveToHarvest = useCallback(async () => {
+    if (!activeBookUri || results.length === 0) return;
+
+    // Import harvestBucketService directly for adding candidates
+    const { harvestBucketService } = await import('../../lib/bookshelf/HarvestBucketService');
+
+    // Create bucket with search query
+    const bucket = createHarvestBucket(activeBookUri, [query]);
+
+    // Convert search results to passages and add as candidates
+    for (const result of results) {
+      const passage: SourcePassage = {
+        id: result.id,
+        text: result.content,
+        wordCount: result.content.split(/\s+/).length,
+        similarity: result.similarity,
+        timestamp: Date.now(),
+        sourceRef: {
+          uri: `source://chatgpt/${result.conversationId}` as EntityURI,
+          sourceType: 'chatgpt',
+          conversationId: result.conversationId,
+          conversationTitle: result.conversationTitle,
+        },
+        curation: {
+          status: 'candidate',
+          curatedAt: Date.now(),
+        },
+        tags: [],
+      };
+      harvestBucketService.addCandidate(bucket.id, passage);
+    }
+
+    setSavedToHarvest(true);
+    setTimeout(() => setSavedToHarvest(false), 2000);
+  }, [activeBookUri, results, query, createHarvestBucket]);
+
+  // Reset saved state when results change
+  useEffect(() => {
+    setSavedToHarvest(false);
+  }, [results]);
 
   // GUI Bridge: Receive search results from AUI tools
   const { results: auiResults, clear: clearAUIResults } = useSearchResultsAction();
@@ -118,6 +166,21 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
     }
   }, []);
 
+  // Listen for explore-search events from Find Similar button
+  useEffect(() => {
+    const handleExploreSearch = (e: CustomEvent<{ query: string }>) => {
+      const searchQuery = e.detail?.query;
+      if (searchQuery) {
+        setQuery(searchQuery);
+        setFromAUI(false);
+        search(searchQuery);
+      }
+    };
+
+    window.addEventListener('explore-search', handleExploreSearch as EventListener);
+    return () => window.removeEventListener('explore-search', handleExploreSearch as EventListener);
+  }, [search]);
+
   // Debounced search
   useEffect(() => {
     if (debounceRef.current) {
@@ -189,6 +252,23 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
       {/* Results */}
       {results.length > 0 && (
         <div className="explore-results">
+          {/* Results header with actions */}
+          <div className="explore-results__header">
+            <span className="explore-results__count">
+              {results.length} result{results.length !== 1 ? 's' : ''}
+            </span>
+            {activeBookUri && (
+              <button
+                className={`explore-results__harvest-btn ${savedToHarvest ? 'explore-results__harvest-btn--saved' : ''}`}
+                onClick={handleSaveToHarvest}
+                disabled={savedToHarvest}
+                title="Save these results to a harvest bucket for curation"
+              >
+                {savedToHarvest ? '✓ Saved' : '🌾 Save to Harvest'}
+              </button>
+            )}
+          </div>
+
           {results.map(result => (
             <div
               key={result.id}

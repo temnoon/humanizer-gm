@@ -40,6 +40,7 @@ export type {
   Operation,
   OperationType,
   ArchiveSource,
+  ArchiveSourceType,
   Buffer,
   Pipeline,
   PipelineStep,

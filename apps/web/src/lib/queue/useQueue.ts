@@ -96,9 +96,10 @@ interface QueueAPI {
   onEvent: (callback: (event: QueueEvent) => void) => () => void;
 }
 
-interface ElectronWindow extends Window {
+// Local type for queue access - compatible with global Window declaration
+interface ElectronQueueWindow {
   electronAPI?: {
-    queue: QueueAPI;
+    queue?: QueueAPI;
   };
   isElectron?: boolean;
 }
@@ -156,7 +157,7 @@ export function useQueue(): UseQueueResult {
 
   // Get queue API
   const getQueueAPI = useCallback((): QueueAPI | null => {
-    const win = window as ElectronWindow;
+    const win = window as ElectronQueueWindow;
     if (win.isElectron && win.electronAPI?.queue) {
       return win.electronAPI.queue;
     }

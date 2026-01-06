@@ -45,6 +45,24 @@ export function areServicesInitialized(): boolean {
 }
 
 /**
+ * Wait for services to be initialized (with timeout)
+ * Useful for IPC handlers that may be called before archive server starts
+ */
+export async function waitForServices(timeoutMs: number = 10000): Promise<boolean> {
+  const startTime = Date.now();
+  const pollInterval = 100; // Check every 100ms
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (areServicesInitialized()) {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  return false; // Timed out
+}
+
+/**
  * Reset all service instances when archive switches
  * Call this before switching archive paths
  */

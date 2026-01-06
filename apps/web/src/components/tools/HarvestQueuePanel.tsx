@@ -7,6 +7,9 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useBookshelf, type HarvestBucket, type SourcePassage } from '../../lib/bookshelf';
+import { harvestBucketService } from '../../lib/bookshelf/HarvestBucketService';
+import { getArchiveServerUrl } from '../../lib/platform';
+import type { EntityURI } from '@humanizer/core';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -17,6 +20,10 @@ interface HarvestQueuePanelProps {
   bookUri: string | null;
   /** Callback when a passage is selected for viewing */
   onSelectPassage?: (passage: SourcePassage) => void;
+  /** Callback to open source conversation in archive */
+  onOpenSource?: (conversationId: string) => void;
+  /** Callback to review full conversation in workspace */
+  onReviewInWorkspace?: (conversationId: string, conversationTitle: string, passage: SourcePassage) => void;
 }
 
 type CurationAction = 'approve' | 'reject' | 'gem' | 'undo';
@@ -29,27 +36,121 @@ interface PassageCardProps {
   passage: SourcePassage;
   onAction: (action: CurationAction) => void;
   onSelect?: () => void;
+  onOpenSource?: (conversationId: string) => void;
+  onReviewInWorkspace?: (conversationId: string, conversationTitle: string) => void;
   showActions?: boolean;
 }
 
-function PassageCard({ passage, onAction, onSelect, showActions = true }: PassageCardProps) {
+function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWorkspace, showActions = true }: PassageCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [fullContent, setFullContent] = useState<string | null>(null);
+  const [loadingContent, setLoadingContent] = useState(false);
   const status = passage.curation?.status || 'candidate';
   const text = passage.text || '';
-  const preview = text.length > 150 ? text.slice(0, 150) + '...' : text;
+  const conversationId = passage.sourceRef?.conversationId;
+  const conversationFolder = passage.sourceRef?.conversationFolder;  // Use folder for API calls
+  const conversationTitle = passage.sourceRef?.conversationTitle || 'Unknown Source';
+
+  // Show full content if loaded, otherwise show indexed text
+  const displayText = fullContent || text;
+  const isLong = displayText.length > 200 || text.length < 100; // Always allow expand for short indexed text
+  const preview = isLong && !isExpanded ? displayText.slice(0, 200) + '...' : displayText;
+
+  // Load full conversation content on expand
+  const handleToggleExpand = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // Use conversationFolder for API calls (folder name), fall back to conversationId
+    const folderOrId = conversationFolder || conversationId;
+    if (!isExpanded && !fullContent && folderOrId) {
+      // Load full content from archive
+      setLoadingContent(true);
+      try {
+        const { getArchiveServerUrl } = await import('../../lib/platform');
+        const archiveServer = await getArchiveServerUrl();
+        const response = await fetch(`${archiveServer}/api/conversations/${encodeURIComponent(folderOrId)}`);
+
+        if (response.ok) {
+          const data = await response.json();
+          // Find the matching message or combine all assistant messages
+          if (data.messages && data.messages.length > 0) {
+            // Combine all messages for full context
+            const fullText = data.messages
+              .map((m: { role: string; content: string }) =>
+                `**${m.role === 'user' ? 'You' : 'Assistant'}:**\n${typeof m.content === 'string' ? m.content : ''}`
+              )
+              .join('\n\n---\n\n');
+            setFullContent(fullText);
+          }
+        }
+      } catch (err) {
+        console.warn('[PassageCard] Failed to load full content:', err);
+      } finally {
+        setLoadingContent(false);
+      }
+    }
+
+    setIsExpanded(!isExpanded);
+  };
+
+  const handleOpenSource = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const folderOrId = conversationFolder || conversationId;
+    if (folderOrId && onOpenSource) {
+      onOpenSource(folderOrId);
+    }
+  };
 
   return (
     <div
-      className={`harvest-card harvest-card--${status}`}
+      className={`harvest-card harvest-card--${status} ${isExpanded ? 'harvest-card--expanded' : ''}`}
       onClick={onSelect}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onSelect?.()}
     >
       <div className="harvest-card__content">
-        <div className="harvest-card__source">
-          {passage.sourceRef?.conversationTitle || 'Unknown Source'}
+        <div className="harvest-card__header">
+          <div className="harvest-card__source">
+            {conversationTitle}
+          </div>
+          {(conversationFolder || conversationId) && onOpenSource && (
+            <button
+              className="harvest-card__source-link"
+              onClick={handleOpenSource}
+              title="Open original conversation"
+              aria-label="Open source conversation"
+            >
+              🔗 View Source
+            </button>
+          )}
+          {(conversationFolder || conversationId) && onReviewInWorkspace && (
+            <button
+              className="harvest-card__review-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReviewInWorkspace(conversationFolder || conversationId || '', conversationTitle);
+              }}
+              title="Review full conversation in workspace"
+              aria-label="Review in workspace"
+            >
+              📖 Review
+            </button>
+          )}
         </div>
-        <div className="harvest-card__text">{preview}</div>
+        <div className={`harvest-card__text ${isExpanded ? 'harvest-card__text--full' : ''}`}>
+          {preview}
+        </div>
+        {isLong && (
+          <button
+            className="harvest-card__expand"
+            onClick={handleToggleExpand}
+            aria-expanded={isExpanded}
+            disabled={loadingContent}
+          >
+            {loadingContent ? '⏳ Loading full conversation...' : isExpanded ? '▲ Show less' : '▼ Load full conversation'}
+          </button>
+        )}
         <div className="harvest-card__meta">
           {passage.wordCount} words
           {passage.similarity !== undefined && (
@@ -112,18 +213,22 @@ interface BucketHeaderProps {
   bucket: HarvestBucket;
   isExpanded: boolean;
   onToggle: () => void;
+  onRunHarvest?: () => void;
   onStage?: () => void;
   onCommit?: () => void;
   onDiscard?: () => void;
+  isHarvesting?: boolean;
 }
 
 function BucketHeader({
   bucket,
   isExpanded,
   onToggle,
+  onRunHarvest,
   onStage,
   onCommit,
   onDiscard,
+  isHarvesting = false,
 }: BucketHeaderProps) {
   const progress = bucket.stats.totalCandidates > 0
     ? Math.round((bucket.stats.reviewed / bucket.stats.totalCandidates) * 100)
@@ -132,6 +237,7 @@ function BucketHeader({
   const canStage = bucket.status === 'reviewing' &&
     (bucket.approved.length > 0 || bucket.gems.length > 0);
   const canCommit = bucket.status === 'staged';
+  const canHarvest = bucket.status === 'collecting' && bucket.candidates.length === 0;
 
   return (
     <div className="bucket-header">
@@ -148,6 +254,16 @@ function BucketHeader({
           {bucket.status}
         </span>
       </button>
+
+      {/* Show queries used for this bucket */}
+      {bucket.queries && bucket.queries.length > 0 && (
+        <div className="bucket-header__queries">
+          <span className="bucket-header__queries-label">🔍</span>
+          <span className="bucket-header__queries-text">
+            {bucket.queries.join(', ')}
+          </span>
+        </div>
+      )}
 
       <div className="bucket-header__stats">
         <span className="bucket-stat" title="Candidates">
@@ -172,11 +288,23 @@ function BucketHeader({
       )}
 
       <div className="bucket-header__actions">
+        {canHarvest && (
+          <button
+            className="bucket-action bucket-action--harvest"
+            onClick={onRunHarvest}
+            disabled={isHarvesting}
+            title="Run semantic search to find candidates"
+            aria-label="Run harvest to find passages"
+          >
+            {isHarvesting ? '⏳ Searching...' : '🌾 Run Harvest'}
+          </button>
+        )}
         {canStage && (
           <button
             className="bucket-action bucket-action--stage"
             onClick={onStage}
             title="Stage for commit"
+            aria-label="Stage approved passages for commit"
           >
             Stage
           </button>
@@ -186,6 +314,7 @@ function BucketHeader({
             className="bucket-action bucket-action--commit"
             onClick={onCommit}
             title="Commit to book"
+            aria-label="Commit staged passages to book"
           >
             Commit
           </button>
@@ -195,6 +324,7 @@ function BucketHeader({
             className="bucket-action bucket-action--discard"
             onClick={onDiscard}
             title="Discard bucket"
+            aria-label="Discard this harvest bucket"
           >
             ✗
           </button>
@@ -208,16 +338,19 @@ function BucketHeader({
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════
 
-export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePanelProps) {
+export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onReviewInWorkspace }: HarvestQueuePanelProps) {
   const bookshelf = useBookshelf();
   const [expandedBuckets, setExpandedBuckets] = useState<Set<string>>(new Set());
   const [activeSection, setActiveSection] = useState<'candidates' | 'approved' | 'rejected'>('candidates');
+  const [harvestingBuckets, setHarvestingBuckets] = useState<Set<string>>(new Set());
+  const [harvestError, setHarvestError] = useState<string | null>(null);
 
   // Get active buckets for current book
+  // Include bucketVersion in dependencies to refresh when buckets change
   const activeBuckets = useMemo(() => {
     if (!bookUri) return [];
     return bookshelf.getActiveBuckets(bookUri);
-  }, [bookUri, bookshelf]);
+  }, [bookUri, bookshelf, bookshelf.bucketVersion]);
 
   // Toggle bucket expansion
   const toggleBucket = useCallback((bucketId: string) => {
@@ -231,6 +364,103 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePane
       return next;
     });
   }, []);
+
+  // Run semantic search to populate a bucket with candidates
+  const handleRunHarvest = useCallback(async (bucketId: string) => {
+    const bucket = bookshelf.getBucket(bucketId);
+    if (!bucket || bucket.queries.length === 0) {
+      setHarvestError('No queries defined for this harvest');
+      return;
+    }
+
+    setHarvestingBuckets((prev) => new Set(prev).add(bucketId));
+    setHarvestError(null);
+
+    try {
+      const archiveServer = await getArchiveServerUrl();
+
+      // Execute search for each query and combine results
+      const allResults: Array<{
+        id: string;
+        content: string;
+        similarity: number;
+        conversationId?: string;
+        conversationFolder?: string;  // Folder name for API calls
+        conversationTitle?: string;
+      }> = [];
+
+      for (const query of bucket.queries) {
+        try {
+          const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query,
+              limit: 20,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.results) {
+              allResults.push(...data.results);
+            }
+          }
+        } catch (err) {
+          console.warn(`[HarvestQueue] Search failed for query "${query}":`, err);
+        }
+      }
+
+      // Dedupe results by ID
+      const seenIds = new Set<string>();
+      const uniqueResults = allResults.filter((r) => {
+        if (seenIds.has(r.id)) return false;
+        seenIds.add(r.id);
+        return true;
+      });
+
+      // Convert to passages and add to bucket
+      for (const result of uniqueResults) {
+        const passage: SourcePassage = {
+          id: result.id || `harvest-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          text: result.content,
+          wordCount: result.content.split(/\s+/).length,
+          similarity: result.similarity,
+          timestamp: Date.now(),
+          sourceRef: {
+            uri: `source://chatgpt/${result.conversationFolder || result.conversationId}` as EntityURI,
+            sourceType: 'chatgpt',
+            conversationId: result.conversationId,
+            conversationFolder: result.conversationFolder,  // Folder name for API calls
+            conversationTitle: result.conversationTitle,
+          },
+          curation: {
+            status: 'candidate',
+            curatedAt: Date.now(),
+          },
+          tags: [],
+        };
+        harvestBucketService.addCandidate(bucketId, passage);
+      }
+
+      // If we got results, transition to reviewing status
+      if (uniqueResults.length > 0) {
+        harvestBucketService.finishCollecting(bucketId);
+        console.log(`[HarvestQueue] Added ${uniqueResults.length} candidates from ${bucket.queries.length} queries`);
+      } else {
+        setHarvestError('No results found. Try different search queries.');
+      }
+    } catch (err) {
+      console.error('[HarvestQueue] Harvest failed:', err);
+      setHarvestError('Semantic search failed. Make sure embeddings are built.');
+    } finally {
+      setHarvestingBuckets((prev) => {
+        const next = new Set(prev);
+        next.delete(bucketId);
+        return next;
+      });
+    }
+  }, [bookshelf]);
 
   // Handle passage curation
   const handlePassageAction = useCallback(
@@ -297,6 +527,21 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePane
         </span>
       </header>
 
+      {/* Error message */}
+      {harvestError && (
+        <div className="harvest-panel__error">
+          <span className="harvest-panel__error-icon">⚠️</span>
+          <span className="harvest-panel__error-text">{harvestError}</span>
+          <button
+            className="harvest-panel__error-dismiss"
+            onClick={() => setHarvestError(null)}
+            aria-label="Dismiss error"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="harvest-panel__buckets">
         {activeBuckets.map((bucket) => (
           <div key={bucket.id} className="harvest-bucket">
@@ -304,9 +549,11 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePane
               bucket={bucket}
               isExpanded={expandedBuckets.has(bucket.id)}
               onToggle={() => toggleBucket(bucket.id)}
+              onRunHarvest={() => handleRunHarvest(bucket.id)}
               onStage={() => handleStageBucket(bucket.id)}
               onCommit={() => handleCommitBucket(bucket.id)}
               onDiscard={() => handleDiscardBucket(bucket.id)}
+              isHarvesting={harvestingBuckets.has(bucket.id)}
             />
 
             {expandedBuckets.has(bucket.id) && (
@@ -343,6 +590,8 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePane
                           passage={passage}
                           onAction={(action) => handlePassageAction(bucket.id, passage.id, action)}
                           onSelect={() => onSelectPassage?.(passage)}
+                          onOpenSource={onOpenSource}
+                          onReviewInWorkspace={onReviewInWorkspace ? (cId, cTitle) => onReviewInWorkspace(cId, cTitle, passage) : undefined}
                         />
                       ))
                     ) : (
@@ -361,6 +610,8 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePane
                             passage={{ ...passage, curation: { ...passage.curation, status: 'gem' } }}
                             onAction={(action) => handlePassageAction(bucket.id, passage.id, action)}
                             onSelect={() => onSelectPassage?.(passage)}
+                            onOpenSource={onOpenSource}
+                            onReviewInWorkspace={onReviewInWorkspace ? (cId, cTitle) => onReviewInWorkspace(cId, cTitle, passage) : undefined}
                           />
                         ))}
                         {bucket.approved.map((passage) => (
@@ -369,6 +620,8 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePane
                             passage={passage}
                             onAction={(action) => handlePassageAction(bucket.id, passage.id, action)}
                             onSelect={() => onSelectPassage?.(passage)}
+                            onOpenSource={onOpenSource}
+                            onReviewInWorkspace={onReviewInWorkspace ? (cId, cTitle) => onReviewInWorkspace(cId, cTitle, passage) : undefined}
                           />
                         ))}
                       </>
@@ -387,6 +640,8 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage }: HarvestQueuePane
                           passage={passage}
                           onAction={(action) => handlePassageAction(bucket.id, passage.id, action)}
                           onSelect={() => onSelectPassage?.(passage)}
+                          onOpenSource={onOpenSource}
+                          onReviewInWorkspace={onReviewInWorkspace ? (cId, cTitle) => onReviewInWorkspace(cId, cTitle, passage) : undefined}
                         />
                       ))
                     ) : (

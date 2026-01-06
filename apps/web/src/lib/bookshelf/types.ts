@@ -61,6 +61,7 @@ export {
 export type {
   BookProject,
   BookStatus,
+  BookType,
   DraftChapter,
   ChapterStatus,
   DraftVersion,

@@ -22,7 +22,7 @@ import { createImportRouter } from './routes/import';
 import { createLinksRouter } from './routes/links';
 
 // Service registry for cleanup on archive switch
-import { resetServices } from './services/registry';
+import { resetServices, getEmbeddingDatabase } from './services/registry';
 
 // ═══════════════════════════════════════════════════════════════════
 // SERVER INSTANCE
@@ -134,6 +134,16 @@ export async function startServer(port?: number): Promise<string> {
       const url = `http://localhost:${serverPort}`;
       console.log(`[archive-server] Started on ${url}`);
       console.log(`[archive-server] Archive: ${config.archiveConfig.archivePath}`);
+
+      // Initialize EmbeddingDatabase eagerly to ensure Xanadu IPC handlers work
+      // This runs migrations and makes areServicesInitialized() return true
+      try {
+        getEmbeddingDatabase();
+        console.log(`[archive-server] EmbeddingDatabase initialized`);
+      } catch (err) {
+        console.error(`[archive-server] Failed to initialize EmbeddingDatabase:`, err);
+      }
+
       resolve(url);
     });
 

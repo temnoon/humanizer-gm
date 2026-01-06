@@ -118,5 +118,11 @@ export {
   useCuratorPersona,
 } from './persona-store';
 
+// Context Builder - Bridge between React contexts and AUI tools - ADDED Dec 31, 2025
+export {
+  buildAUIContext,
+  buildMinimalAUIContext,
+} from './context-builder';
+
 // Re-export PinnedContent for convenience
 export type { PinnedContent } from '../buffer/pins';

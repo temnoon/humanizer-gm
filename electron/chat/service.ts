@@ -443,9 +443,15 @@ export class ChatService {
       });
     }
 
-    // Add conversation history (excluding tool messages and current input)
-    for (const msg of storedMessages) {
+    // Add conversation history (excluding tool messages)
+    // Skip the LAST message if it matches current input (to avoid duplication)
+    // The current input will be added by buildMessages() as request.input
+    const lastStoredIdx = storedMessages.length - 1;
+    for (let i = 0; i < storedMessages.length; i++) {
+      const msg = storedMessages[i];
       if (msg.role === 'tool') continue;
+      // Skip the last message if it's the current user input (already stored before callLLM)
+      if (i === lastStoredIdx && msg.role === 'user' && msg.content === userContent) continue;
       conversationHistory.push({
         role: msg.role as 'user' | 'assistant' | 'system',
         content: msg.content,

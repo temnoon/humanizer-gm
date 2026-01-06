@@ -98,6 +98,9 @@ export interface ElectronAPI {
 
   // AgentMaster (LLM abstraction with tiered prompts)
   agentMaster: AgentMasterAPI;
+
+  // Xanadu Unified Storage (books, personas, styles, passages, chapters)
+  xanadu: XanaduAPI;
 }
 
 export interface CloudDrive {
@@ -440,6 +443,174 @@ export interface AgentMasterAPI {
 }
 
 // ============================================================
+// XANADU UNIFIED STORAGE TYPES
+// ============================================================
+
+export type CurationStatus = 'candidate' | 'approved' | 'rejected' | 'gem' | 'needs-work';
+export type BookStatus = 'harvesting' | 'drafting' | 'revising' | 'mastering' | 'complete';
+export type ChapterStatus = 'outline' | 'draft' | 'revision' | 'final';
+
+export interface XanaduBook {
+  id: string;
+  uri: string;
+  name: string;
+  subtitle?: string;
+  author?: string;
+  description?: string;
+  status: BookStatus;
+  personaRefs?: string[];
+  styleRefs?: string[];
+  sourceRefs?: unknown[];
+  threads?: unknown[];
+  harvestConfig?: unknown;
+  editorial?: unknown;
+  thinking?: unknown;
+  pyramidId?: string;
+  stats?: unknown;
+  profile?: unknown;
+  tags?: string[];
+  isLibrary?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface XanaduPersona {
+  id: string;
+  uri: string;
+  name: string;
+  description?: string;
+  author?: string;
+  voice?: unknown;
+  vocabulary?: unknown;
+  derivedFrom?: unknown[];
+  influences?: unknown[];
+  exemplars?: unknown[];
+  systemPrompt?: string;
+  embedding?: ArrayBuffer;
+  embeddingModel?: string;
+  tags?: string[];
+  isLibrary?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface XanaduStyle {
+  id: string;
+  uri: string;
+  name: string;
+  description?: string;
+  author?: string;
+  characteristics?: unknown;
+  structure?: unknown;
+  stylePrompt?: string;
+  derivedFrom?: unknown[];
+  embedding?: ArrayBuffer;
+  embeddingModel?: string;
+  tags?: string[];
+  isLibrary?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface XanaduPassage {
+  id: string;
+  bookId: string;
+  sourceRef?: unknown;
+  text: string;
+  wordCount?: number;
+  role?: string;
+  harvestedBy?: string;
+  threadId?: string;
+  curationStatus: CurationStatus;
+  curationNote?: string;
+  chapterId?: string;
+  tags?: string[];
+  embedding?: ArrayBuffer;
+  embeddingModel?: string;
+  createdAt: number;
+}
+
+export interface XanaduChapter {
+  id: string;
+  bookId: string;
+  number: number;
+  title: string;
+  content?: string;
+  wordCount?: number;
+  version?: number;
+  status: ChapterStatus;
+  epigraph?: string;
+  sections?: unknown[];
+  marginalia?: unknown[];
+  metadata?: unknown;
+  passageRefs?: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface XanaduChapterVersion {
+  id: string;
+  chapterId: string;
+  version: number;
+  content: string;
+  wordCount?: number;
+  changes?: string;
+  createdBy?: string;
+  createdAt: number;
+}
+
+export interface XanaduAPI {
+  // Book operations
+  books: {
+    list: (includeLibrary?: boolean) => Promise<XanaduBook[]>;
+    get: (idOrUri: string) => Promise<XanaduBook | null>;
+    upsert: (book: Partial<XanaduBook> & { id: string; uri: string; name: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  // Persona operations
+  personas: {
+    list: (includeLibrary?: boolean) => Promise<XanaduPersona[]>;
+    get: (idOrUri: string) => Promise<XanaduPersona | null>;
+    upsert: (persona: Partial<XanaduPersona> & { id: string; uri: string; name: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  // Style operations
+  styles: {
+    list: (includeLibrary?: boolean) => Promise<XanaduStyle[]>;
+    get: (idOrUri: string) => Promise<XanaduStyle | null>;
+    upsert: (style: Partial<XanaduStyle> & { id: string; uri: string; name: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  // Passage operations
+  passages: {
+    list: (bookId: string, curationStatus?: CurationStatus) => Promise<XanaduPassage[]>;
+    upsert: (passage: Partial<XanaduPassage> & { id: string; bookId: string; text: string }) => Promise<{ success: boolean; id: string }>;
+    curate: (id: string, status: CurationStatus, note?: string) => Promise<{ success: boolean }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  // Chapter operations
+  chapters: {
+    list: (bookId: string) => Promise<XanaduChapter[]>;
+    get: (id: string) => Promise<XanaduChapter | null>;
+    upsert: (chapter: Partial<XanaduChapter> & { id: string; bookId: string; number: number; title: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  // Version operations
+  versions: {
+    list: (chapterId: string) => Promise<XanaduChapterVersion[]>;
+    save: (chapterId: string, version: number, content: string, changes?: string, createdBy?: string) => Promise<{ success: boolean }>;
+  };
+
+  // Library seeding
+  seedLibrary: () => Promise<{ success: boolean; alreadySeeded?: boolean; error?: string }>;
+}
+
+// ============================================================
 // EXPOSE API
 // ============================================================
 
@@ -662,6 +833,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clearOverride: () => ipcRenderer.invoke('agent-master:clear-override'),
     getTierInfo: (tier: MemoryTier) => ipcRenderer.invoke('agent-master:tier-info', tier),
     getCapabilities: () => ipcRenderer.invoke('agent-master:capabilities'),
+  },
+
+  // Xanadu Unified Storage
+  xanadu: {
+    books: {
+      list: (includeLibrary?: boolean) => ipcRenderer.invoke('xanadu:book:list', includeLibrary),
+      get: (idOrUri: string) => ipcRenderer.invoke('xanadu:book:get', idOrUri),
+      upsert: (book) => ipcRenderer.invoke('xanadu:book:upsert', book),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:book:delete', id),
+    },
+    personas: {
+      list: (includeLibrary?: boolean) => ipcRenderer.invoke('xanadu:persona:list', includeLibrary),
+      get: (idOrUri: string) => ipcRenderer.invoke('xanadu:persona:get', idOrUri),
+      upsert: (persona) => ipcRenderer.invoke('xanadu:persona:upsert', persona),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:persona:delete', id),
+    },
+    styles: {
+      list: (includeLibrary?: boolean) => ipcRenderer.invoke('xanadu:style:list', includeLibrary),
+      get: (idOrUri: string) => ipcRenderer.invoke('xanadu:style:get', idOrUri),
+      upsert: (style) => ipcRenderer.invoke('xanadu:style:upsert', style),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:style:delete', id),
+    },
+    passages: {
+      list: (bookId: string, curationStatus?: string) => ipcRenderer.invoke('xanadu:passage:list', bookId, curationStatus),
+      upsert: (passage) => ipcRenderer.invoke('xanadu:passage:upsert', passage),
+      curate: (id: string, status: string, note?: string) => ipcRenderer.invoke('xanadu:passage:curate', id, status, note),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:passage:delete', id),
+    },
+    chapters: {
+      list: (bookId: string) => ipcRenderer.invoke('xanadu:chapter:list', bookId),
+      get: (id: string) => ipcRenderer.invoke('xanadu:chapter:get', id),
+      upsert: (chapter) => ipcRenderer.invoke('xanadu:chapter:upsert', chapter),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:chapter:delete', id),
+    },
+    versions: {
+      list: (chapterId: string) => ipcRenderer.invoke('xanadu:version:list', chapterId),
+      save: (chapterId: string, version: number, content: string, changes?: string, createdBy?: string) =>
+        ipcRenderer.invoke('xanadu:version:save', chapterId, version, content, changes, createdBy),
+    },
+    seedLibrary: () => ipcRenderer.invoke('xanadu:seed-library'),
   },
 } as ElectronAPI);
 

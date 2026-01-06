@@ -96,6 +96,9 @@ export interface SourceReference {
 
   /** Conversation ID if from conversation */
   conversationId?: string;
+
+  /** Conversation folder name (for API calls) */
+  conversationFolder?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════

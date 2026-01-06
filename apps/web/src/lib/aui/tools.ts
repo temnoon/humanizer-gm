@@ -14,7 +14,7 @@ import type { BookProject, DraftChapter, SourcePassage } from '../../components/
 
 // Import harvest bucket service for Phase 3 AUI tools
 import { harvestBucketService } from '../bookshelf/HarvestBucketService';
-import type { HarvestBucket, NarrativeArc, ArcType } from '@humanizer/core';
+import type { HarvestBucket, NarrativeArc, ArcType, ArchiveContainer } from '@humanizer/core';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from '../../components/archive/types';
 import type { PinnedContent } from '../buffer/pins';
 
@@ -90,17 +90,20 @@ export interface WorkspaceState {
   bufferContent: string | null;
   /** Buffer name/title */
   bufferName: string | null;
-  /** Selected Facebook media (if viewing media) */
+  /** Selected Facebook media (if viewing media) - legacy */
   selectedMedia: SelectedFacebookMedia | null;
-  /** Selected Facebook content (if viewing post/comment) */
+  /** Selected Facebook content (if viewing post/comment) - legacy */
   selectedContent: SelectedFacebookContent | null;
   /** Current view mode */
   viewMode: 'text' | 'media' | 'content' | 'graph' | 'book';
+  /** Currently selected content container (unified) */
+  selectedContainer: ArchiveContainer | null;
 }
 
 export interface AUIContext {
   // Book operations
   activeProject: BookProject | null;
+  createProject?: (name: string, subtitle?: string) => BookProject;
   updateChapter: (chapterId: string, content: string, changes?: string) => void;
   createChapter: (title: string, content?: string) => DraftChapter | null;
   deleteChapter: (chapterId: string) => void;
@@ -232,13 +235,58 @@ export function cleanToolsFromResponse(response: string): string {
 /**
  * Execute a single tool
  */
+/**
+ * Normalize tool names to handle AUI variations:
+ * - Lowercase (CREATE_BOOK → create_book)
+ * - Remove _workspace suffix (book_workspace → book)
+ * - Convert new_ prefix to create_ (new_book → create_book)
+ */
+function normalizeToolName(rawName: string): string {
+  let name = rawName.toLowerCase();
+
+  // Remove _workspace suffix
+  if (name.endsWith('_workspace')) {
+    name = name.replace(/_workspace$/, '');
+  }
+
+  // Convert new_ prefix to create_
+  if (name.startsWith('new_')) {
+    name = name.replace(/^new_/, 'create_');
+  }
+
+  // Common semantic aliases (AUI sometimes invents creative names)
+  const aliases: Record<string, string> = {
+    'book': 'create_book',
+    'book_create': 'create_book',      // Reversed order
+    'book_builder': 'create_book',     // Creative invention
+    'book_new': 'create_book',         // Another variant
+    'new_book_project': 'create_book', // Verbose variant
+    'project': 'create_project',
+    'project_create': 'create_project', // Reversed order
+    'text_analysis': 'analyze_text',
+    'qbism': 'quantum_read',
+    'explore': 'search_archive',
+    'search': 'search_archive',
+    'trace_narrative': 'trace_arc',
+    'arc_search': 'trace_arc',
+  };
+
+  return aliases[name] || name;
+}
+
 export async function executeTool(
   toolUse: ParsedToolUse,
   context: AUIContext
 ): Promise<AUIToolResult> {
-  const { name, params } = toolUse;
+  const { params } = toolUse;
+  const name = normalizeToolName(toolUse.name);
 
   switch (name) {
+    // Book project tools
+    case 'create_book':
+    case 'create_project':
+      return executeCreateBook(params, context);
+
     // Book chapter tools
     case 'update_chapter':
       return executeUpdateChapter(params, context);
@@ -404,6 +452,9 @@ export async function executeTool(
     case 'detect_narrative_gaps':
       return executeDetectNarrativeGaps(params, context);
 
+    case 'trace_arc':
+      return executeTraceNarrativeArc(params, context);
+
     default:
       return {
         success: false,
@@ -438,6 +489,72 @@ export async function executeAllTools(
 // ═══════════════════════════════════════════════════════════════════
 // TOOL IMPLEMENTATIONS
 // ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Create a new book project
+ */
+function executeCreateBook(
+  params: Record<string, unknown>,
+  context: AUIContext
+): AUIToolResult {
+  const { name, title, subtitle, description } = params as {
+    name?: string;
+    title?: string;  // Alias for name
+    subtitle?: string;
+    description?: string;
+  };
+
+  const bookName = name || title || 'Untitled Book';
+  const bookSubtitle = subtitle || description;
+
+  if (!context.createProject) {
+    return {
+      success: false,
+      error: 'Book creation not available. Please create a book manually using Archive > Books > + New Project',
+    };
+  }
+
+  try {
+    console.log('[AUI] Creating book project:', bookName, bookSubtitle);
+    const project = context.createProject(bookName, bookSubtitle);
+
+    if (!project) {
+      console.error('[AUI] createProject returned null/undefined');
+      return {
+        success: false,
+        error: 'Book creation failed - no project returned. Please create manually via Archive > Books > + New Project',
+      };
+    }
+
+    console.log('[AUI] Book project created:', project.id, project.name);
+
+    return {
+      success: true,
+      message: `Created book project "${project.name}"${project.subtitle ? ` (${project.subtitle})` : ''} - Click BOOKS tab to view`,
+      data: {
+        projectId: project.id,
+        name: project.name,
+        subtitle: project.subtitle,
+      },
+      teaching: {
+        whatHappened: `Created new book project "${project.name}"${project.subtitle ? ` - ${project.subtitle}` : ''}`,
+        guiPath: [
+          'Archive panel (left)',
+          'Books tab',
+          '+ New Project button',
+          'Enter name and subtitle',
+        ],
+        why: 'Book projects organize your harvested passages, thinking notes, and chapter drafts in one place.',
+      },
+    };
+  } catch (e) {
+    console.error('[AUI] Failed to create book project:', e);
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Failed to create book project',
+    };
+  }
+}
 
 function executeUpdateChapter(
   params: Record<string, unknown>,
@@ -786,6 +903,48 @@ function executeSaveToChapter(
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * Filter out JSON noise and system markers from search results
+ * These get embedded but aren't useful search results
+ */
+function isValidSearchResult(content: string | undefined): boolean {
+  if (!content || content.length < 20) return false;
+
+  const trimmed = content.trim();
+
+  // Skip JSON-like content
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return false;
+  if (trimmed.startsWith('"') && trimmed.includes('":')) return false;
+
+  // Skip content that's mostly JSON field patterns
+  const jsonPatterns = [
+    /^"?documents"?\s*:/i,
+    /^"?queries"?\s*:/i,
+    /^"?query"?\s*:/i,
+    /^"?text"?\s*:/i,
+    /^"?filter"?\s*:/i,
+    /^"?source"?\s*:/i,
+    /^"?metadata"?\s*:/i,
+    /^"?content"?\s*:/i,
+    /^"?messages"?\s*:/i,
+  ];
+  if (jsonPatterns.some(p => p.test(trimmed))) return false;
+
+  // Skip system markers
+  if (trimmed.includes('<ImageDisplayed>')) return false;
+  if (trimmed.includes('ResponseTooLargeError')) return false;
+
+  // Skip if it looks like mostly code/JSON (high bracket ratio)
+  const bracketCount = (trimmed.match(/[{}\[\]]/g) || []).length;
+  if (bracketCount > trimmed.length * 0.1) return false;
+
+  // Skip if too many colons (likely key-value pairs)
+  const colonCount = (trimmed.match(/:/g) || []).length;
+  if (colonCount > 5 && colonCount > trimmed.split(/\s+/).length * 0.3) return false;
+
+  return true;
+}
+
+/**
  * Search ChatGPT archive semantically
  */
 async function executeSearchArchive(
@@ -799,10 +958,12 @@ async function executeSearchArchive(
 
   try {
     const archiveServer = await getArchiveServerUrl();
+    // Request more results than needed since we'll filter out JSON noise
+    const fetchLimit = Math.min(limit * 3, 50);
     const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit }),
+      body: JSON.stringify({ query, limit: fetchLimit }),
     });
 
     if (!response.ok) {
@@ -847,8 +1008,13 @@ async function executeSearchArchive(
 
     const data = await response.json();
 
-    const resultCount = data.results?.length || 0;
-    const mappedResults = (data.results || []).map((r: { message_id: string; conversation_id: string; content: string; similarity: number; role: string }) => ({
+    // Filter out JSON noise and system markers, then limit to requested amount
+    const filteredResults = (data.results || [])
+      .filter((r: { content: string }) => isValidSearchResult(r.content))
+      .slice(0, limit);
+
+    const resultCount = filteredResults.length;
+    const mappedResults = filteredResults.map((r: { message_id: string; conversation_id: string; content: string; similarity: number; role: string }) => ({
       messageId: r.message_id,
       conversationId: r.conversation_id,
       content: r.content?.slice(0, 200),
@@ -2731,10 +2897,30 @@ function executeSearchPyramid(
 async function executeListConversations(
   params: Record<string, unknown>
 ): Promise<AUIToolResult> {
-  const { limit = 20, search, hasImages } = params as {
+  const {
+    limit = 20,
+    search,
+    sortBy,
+    minWords,
+    maxWords,
+    hideEmpty,
+    hideTrivial,
+    hasMedia,
+    hasImages,
+    hasAudio,
+    hasCode,
+  } = params as {
     limit?: number;
     search?: string;
+    sortBy?: 'recent' | 'oldest' | 'messages-desc' | 'length-desc' | 'length-asc' | 'words-desc' | 'words-asc';
+    minWords?: number;
+    maxWords?: number;
+    hideEmpty?: boolean;
+    hideTrivial?: boolean;
+    hasMedia?: boolean;
     hasImages?: boolean;
+    hasAudio?: boolean;
+    hasCode?: boolean;
   };
 
   try {
@@ -2743,7 +2929,12 @@ async function executeListConversations(
     const queryParams = new URLSearchParams();
     queryParams.set('limit', String(limit));
     if (search) queryParams.set('search', search);
+    if (sortBy) queryParams.set('sortBy', sortBy);
+    if (hideEmpty) queryParams.set('minMessages', '1');
+    if (hasMedia !== undefined) queryParams.set('hasMedia', String(hasMedia));
     if (hasImages !== undefined) queryParams.set('hasImages', String(hasImages));
+    if (hasAudio !== undefined) queryParams.set('hasAudio', String(hasAudio));
+    // Note: hasCode and word filters are applied client-side after fetch
 
     const response = await fetch(`${archiveServer}/api/conversations?${queryParams}`);
 
@@ -2752,17 +2943,61 @@ async function executeListConversations(
     }
 
     const data = await response.json();
-    const conversations = data.conversations || [];
+    let conversations = data.conversations || [];
+
+    // Estimate word count from text_length (avg ~5 chars per word)
+    const estimateWords = (textLength: number) => Math.round(textLength / 5);
+
+    // Apply client-side filters
+    if (hideTrivial) {
+      conversations = conversations.filter((c: { text_length?: number }) =>
+        estimateWords(c.text_length || 0) > 5
+      );
+    }
+    if (minWords !== undefined) {
+      conversations = conversations.filter((c: { text_length?: number }) =>
+        estimateWords(c.text_length || 0) >= minWords
+      );
+    }
+    if (maxWords !== undefined) {
+      conversations = conversations.filter((c: { text_length?: number }) =>
+        estimateWords(c.text_length || 0) <= maxWords
+      );
+    }
+    // hasCode would require content inspection - note in response if requested
+    const codeFilterNote = hasCode ? ' (code filter requires content inspection - showing all)' : '';
+
+    // Apply word-based sorting if requested
+    if (sortBy === 'words-desc') {
+      conversations.sort((a: { text_length?: number }, b: { text_length?: number }) =>
+        (b.text_length || 0) - (a.text_length || 0)
+      );
+    } else if (sortBy === 'words-asc') {
+      conversations.sort((a: { text_length?: number }, b: { text_length?: number }) =>
+        (a.text_length || 0) - (b.text_length || 0)
+      );
+    }
+
+    // Build filter description for teaching
+    const filterParts: string[] = [];
+    if (sortBy) filterParts.push(`sorted by ${sortBy}`);
+    if (minWords) filterParts.push(`min ${minWords} words`);
+    if (maxWords) filterParts.push(`max ${maxWords} words`);
+    if (hideTrivial) filterParts.push('hiding trivial');
+    if (hasImages) filterParts.push('with images');
+    if (hasAudio) filterParts.push('with audio');
+    const filterDesc = filterParts.length > 0 ? ` (${filterParts.join(', ')})` : '';
 
     return {
       success: true,
-      message: `Found ${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}`,
+      message: `Found ${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}${filterDesc}${codeFilterNote}`,
       data: {
         conversations: conversations.slice(0, limit).map((c: {
           id: string;
           title: string;
           folder?: string;
           message_count?: number;
+          text_length?: number;
           created_at?: number;
           updated_at?: number;
         }) => ({
@@ -2770,19 +3005,21 @@ async function executeListConversations(
           title: c.title || 'Untitled',
           folder: c.folder,
           messageCount: c.message_count,
+          wordCount: estimateWords(c.text_length || 0),
           createdAt: c.created_at,
           updatedAt: c.updated_at,
         })),
         total: data.total || conversations.length,
+        appliedFilters: filterParts,
       },
       teaching: {
-        whatHappened: `Listed ${conversations.length} conversations from your ChatGPT archive${search ? ` matching "${search}"` : ''}`,
+        whatHappened: `Listed ${conversations.length} conversations from your archive${filterDesc}`,
         guiPath: [
           'Click Archive panel (left side)',
           'Select "Conversations" tab',
-          search ? `Use search box to filter by "${search}"` : 'Browse the full list',
+          filterParts.length > 0 ? 'Use the filter dropdowns and inputs to apply filters' : 'Browse the full list',
         ],
-        why: 'Your archive contains your AI conversation history - the raw material for your book.',
+        why: 'Filters help you find the most meaningful conversations - longer ones often contain deeper discussions.',
       },
     };
   } catch (e) {
@@ -3882,6 +4119,242 @@ async function executeProposeNarrativeArc(
     return {
       success: false,
       error: e instanceof Error ? e.message : 'Failed to propose narrative arc',
+    };
+  }
+}
+
+/**
+ * Trace a narrative arc through the archive
+ * Uses semantic search to find chronological progression of a theme
+ *
+ * This tool helps find:
+ * - How an idea evolved over time
+ * - The progressive revelation of a theme
+ * - Chronological story threads
+ */
+async function executeTraceNarrativeArc(
+  params: Record<string, unknown>,
+  context: AUIContext
+): Promise<AUIToolResult> {
+  const {
+    theme,
+    start_date,
+    end_date,
+    arc_type = 'progressive',
+    limit = 20,
+    save_to_harvest = false,
+  } = params as {
+    theme: string;
+    start_date?: string;
+    end_date?: string;
+    arc_type?: 'progressive' | 'chronological' | 'thematic' | 'dialectic';
+    limit?: number;
+    save_to_harvest?: boolean;
+  };
+
+  if (!theme) {
+    return {
+      success: false,
+      error: 'Provide a theme to trace through the archive.',
+    };
+  }
+
+  try {
+    const archiveServer = await getArchiveServerUrl();
+
+    // Build search queries based on arc type
+    const queries: string[] = [];
+    switch (arc_type) {
+      case 'progressive':
+        // Find how understanding evolved
+        queries.push(theme);
+        queries.push(`early thoughts on ${theme}`);
+        queries.push(`realization about ${theme}`);
+        queries.push(`understanding ${theme}`);
+        queries.push(`conclusion about ${theme}`);
+        break;
+      case 'chronological':
+        // Just search the theme, will sort by date
+        queries.push(theme);
+        break;
+      case 'thematic':
+        // Find variations on the theme
+        queries.push(theme);
+        queries.push(`${theme} and its implications`);
+        queries.push(`different aspects of ${theme}`);
+        break;
+      case 'dialectic':
+        // Find thesis, antithesis, synthesis
+        queries.push(`${theme} thesis argument for`);
+        queries.push(`${theme} counterpoint against critique`);
+        queries.push(`${theme} synthesis resolution integration`);
+        break;
+    }
+
+    // Collect results from all queries
+    const allResults: Array<{
+      id: string;
+      content: string;
+      similarity: number;
+      conversation_id: string;
+      message_id?: string;
+      created_at?: number;
+      title?: string;
+      query_phase: string;
+    }> = [];
+
+    for (let i = 0; i < queries.length; i++) {
+      const query = queries[i];
+      const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          limit: Math.ceil(limit / queries.length) * 2,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const results = data.results || [];
+
+        for (const r of results) {
+          // Skip duplicates
+          if (!allResults.some(ar => ar.message_id === r.message_id)) {
+            allResults.push({
+              id: r.id || r.message_id,
+              content: r.content,
+              similarity: r.similarity,
+              conversation_id: r.conversation_id,
+              message_id: r.message_id,
+              created_at: r.created_at,
+              title: r.metadata?.title || r.conversation_title,
+              query_phase: arc_type === 'progressive' ?
+                ['beginning', 'early', 'middle', 'development', 'conclusion'][i] || 'middle' :
+                arc_type === 'dialectic' ?
+                  ['thesis', 'antithesis', 'synthesis'][i] || 'thesis' :
+                  'thematic',
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by date for chronological arc, or by query phase for progressive
+    if (arc_type === 'chronological') {
+      allResults.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+    }
+
+    // Limit results
+    const arcResults = allResults.slice(0, limit);
+
+    // Group by phase for progressive/dialectic arcs
+    const phases = new Map<string, typeof arcResults>();
+    for (const r of arcResults) {
+      const phase = r.query_phase;
+      if (!phases.has(phase)) {
+        phases.set(phase, []);
+      }
+      phases.get(phase)!.push(r);
+    }
+
+    // Optionally save to harvest bucket
+    let bucketId: string | undefined;
+    if (save_to_harvest && context.activeProject) {
+      const { harvestBucketService } = await import('../bookshelf/HarvestBucketService');
+      harvestBucketService.initialize();
+
+      const bookUri = (context.activeProject as BookProject & { uri?: string })?.uri;
+      if (bookUri) {
+        const bucket = harvestBucketService.createBucket(bookUri, [theme], {
+          initiatedBy: 'aui',
+        });
+        bucketId = bucket.id;
+
+        // Add results as candidates
+        for (const r of arcResults) {
+          const passage: SourcePassage = {
+            id: r.message_id || crypto.randomUUID(),
+            text: r.content,
+            wordCount: r.content?.split(/\s+/).length || 0,
+            sourceRef: {
+              uri: `source://chatgpt/${r.conversation_id}` as `${string}://${string}`,
+              sourceType: 'chatgpt',
+              conversationId: r.conversation_id,
+              conversationTitle: r.title || 'Arc Trace',
+            },
+            similarity: r.similarity,
+            curation: {
+              status: 'candidate',
+            },
+            tags: ['arc-trace', r.query_phase, theme.split(' ')[0]],
+          };
+          harvestBucketService.addCandidate(bucket.id, passage);
+        }
+
+        harvestBucketService.finishCollecting(bucket.id);
+        dispatchOpenPanel('tools', 'harvest');
+      }
+    }
+
+    // Format arc structure for response
+    const arcStructure = Array.from(phases.entries()).map(([phase, passages]) => ({
+      phase,
+      count: passages.length,
+      samples: passages.slice(0, 2).map(p => ({
+        preview: p.content.slice(0, 150) + '...',
+        source: p.title,
+        date: p.created_at ? new Date(p.created_at).toLocaleDateString() : undefined,
+      })),
+    }));
+
+    // Dispatch to GUI
+    dispatchSearchResults({
+      results: arcResults.map(r => ({
+        id: r.id,
+        content: r.content,
+        similarity: r.similarity,
+        conversationId: r.conversation_id,
+        title: r.title,
+      })),
+      query: theme,
+      searchType: 'semantic',
+      total: arcResults.length,
+    }, theme);
+    dispatchOpenPanel('archives', 'explore');
+
+    return {
+      success: true,
+      message: `Traced "${theme}" arc: found ${arcResults.length} passages across ${phases.size} phases`,
+      data: {
+        theme,
+        arcType: arc_type,
+        totalPassages: arcResults.length,
+        phases: arcStructure,
+        bucketId,
+        dateRange: arcResults.length > 0 ? {
+          earliest: arcResults.find(r => r.created_at)?.created_at,
+          latest: [...arcResults].reverse().find(r => r.created_at)?.created_at,
+        } : undefined,
+      },
+      teaching: {
+        whatHappened: `Found ${arcResults.length} passages tracing the "${arc_type}" arc of "${theme}"`,
+        guiPath: [
+          'Results shown in Archive → Explore tab',
+          save_to_harvest ? 'Also saved to Tools → Harvest for curation' : 'Use save_to_harvest: true to save for curation',
+          'Click any result to see full context',
+        ],
+        why: arc_type === 'progressive' ?
+          'Progressive arcs show how understanding evolved over time - the journey of an idea.' :
+          arc_type === 'dialectic' ?
+            'Dialectic arcs show thesis/antithesis/synthesis - the resolution of tensions.' :
+            'Chronological arcs reveal when ideas emerged and how they relate in time.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Failed to trace narrative arc',
     };
   }
 }
