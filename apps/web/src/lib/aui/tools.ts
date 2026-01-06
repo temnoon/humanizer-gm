@@ -11,6 +11,10 @@
  */
 
 import type { BookProject, DraftChapter, SourcePassage } from '../../components/archive/book-project/types';
+
+// Import harvest bucket service for Phase 3 AUI tools
+import { harvestBucketService } from '../bookshelf/HarvestBucketService';
+import type { HarvestBucket, NarrativeArc, ArcType, ArchiveContainer } from '@humanizer/core';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from '../../components/archive/types';
 import type { PinnedContent } from '../buffer/pins';
 
@@ -45,9 +49,12 @@ import {
 
 // Import agent bridge
 import { getAgentBridge } from './agent-bridge';
+import { getArchiveServerUrl } from '../platform';
 
-// Archive server for API calls
-const ARCHIVE_SERVER = 'http://localhost:3002';
+// Import GUI Bridge for "Show Don't Tell" - dispatch results to Archive pane
+import { dispatchSearchResults, dispatchOpenPanel } from './gui-bridge';
+
+// NPE API base URL
 const NPE_API_BASE = import.meta.env.VITE_API_URL || 'https://npe-api.tem-527.workers.dev';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -83,17 +90,20 @@ export interface WorkspaceState {
   bufferContent: string | null;
   /** Buffer name/title */
   bufferName: string | null;
-  /** Selected Facebook media (if viewing media) */
+  /** Selected Facebook media (if viewing media) - legacy */
   selectedMedia: SelectedFacebookMedia | null;
-  /** Selected Facebook content (if viewing post/comment) */
+  /** Selected Facebook content (if viewing post/comment) - legacy */
   selectedContent: SelectedFacebookContent | null;
   /** Current view mode */
   viewMode: 'text' | 'media' | 'content' | 'graph' | 'book';
+  /** Currently selected content container (unified) */
+  selectedContainer: ArchiveContainer | null;
 }
 
 export interface AUIContext {
   // Book operations
   activeProject: BookProject | null;
+  createProject?: (name: string, subtitle?: string) => BookProject;
   updateChapter: (chapterId: string, content: string, changes?: string) => void;
   createChapter: (title: string, content?: string) => DraftChapter | null;
   deleteChapter: (chapterId: string) => void;
@@ -130,27 +140,71 @@ export interface ParsedToolUse {
 
 /**
  * Parse USE_TOOL invocations from AUI response
+ * Handles nested JSON objects properly
  */
 export function parseToolUses(response: string): ParsedToolUse[] {
   const uses: ParsedToolUse[] = [];
 
-  // Pattern: USE_TOOL(name, {json params}) or USE_TOOL(name, {})
-  const pattern = /USE_TOOL\s*\(\s*(\w+)\s*,\s*(\{[^}]*\})\s*\)/g;
+  // Find all USE_TOOL occurrences and extract JSON with brace matching
+  // Accept "USE_TOOL" or "USE TOOL" (LLMs sometimes use space instead of underscore)
+  // Comma between tool name and JSON is optional (LLMs sometimes omit it)
+  const toolPattern = /USE[_\s]TOOL\s*\(\s*(\w+)\s*,?\s*/gi;
 
   let match;
-  while ((match = pattern.exec(response)) !== null) {
-    try {
-      const name = match[1];
-      const paramsStr = match[2];
-      const params = JSON.parse(paramsStr);
+  while ((match = toolPattern.exec(response)) !== null) {
+    const name = match[1];
+    const startIdx = match.index + match[0].length;
 
-      uses.push({
-        name,
-        params,
-        raw: match[0],
-      });
-    } catch (e) {
-      console.warn('Failed to parse tool use:', match[0], e);
+    // Find matching closing brace for JSON object
+    let braceCount = 0;
+    let inString = false;
+    let escape = false;
+    let jsonEnd = -1;
+
+    for (let i = startIdx; i < response.length; i++) {
+      const char = response[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (char === '\\' && inString) {
+        escape = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') braceCount++;
+        if (char === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            jsonEnd = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
+    if (jsonEnd > startIdx) {
+      const paramsStr = response.slice(startIdx, jsonEnd);
+      try {
+        const params = JSON.parse(paramsStr);
+        const raw = response.slice(match.index, jsonEnd + 1); // Include closing paren
+
+        uses.push({
+          name,
+          params,
+          raw,
+        });
+      } catch (e) {
+        console.warn('Failed to parse tool JSON:', paramsStr, e);
+      }
     }
   }
 
@@ -159,10 +213,19 @@ export function parseToolUses(response: string): ParsedToolUse[] {
 
 /**
  * Remove tool invocations from response for clean display
- * (Optional - you might want to keep them visible)
+ * Uses the same brace-matching logic as parseToolUses
  */
 export function cleanToolsFromResponse(response: string): string {
-  return response.replace(/USE_TOOL\s*\(\s*\w+\s*,\s*\{[^}]*\}\s*\)/g, '').trim();
+  const toolUses = parseToolUses(response);
+
+  // Remove each tool use from the response
+  let cleaned = response;
+  for (const use of toolUses) {
+    cleaned = cleaned.replace(use.raw, '');
+  }
+
+  // Clean up extra whitespace and newlines
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -172,13 +235,58 @@ export function cleanToolsFromResponse(response: string): string {
 /**
  * Execute a single tool
  */
+/**
+ * Normalize tool names to handle AUI variations:
+ * - Lowercase (CREATE_BOOK → create_book)
+ * - Remove _workspace suffix (book_workspace → book)
+ * - Convert new_ prefix to create_ (new_book → create_book)
+ */
+function normalizeToolName(rawName: string): string {
+  let name = rawName.toLowerCase();
+
+  // Remove _workspace suffix
+  if (name.endsWith('_workspace')) {
+    name = name.replace(/_workspace$/, '');
+  }
+
+  // Convert new_ prefix to create_
+  if (name.startsWith('new_')) {
+    name = name.replace(/^new_/, 'create_');
+  }
+
+  // Common semantic aliases (AUI sometimes invents creative names)
+  const aliases: Record<string, string> = {
+    'book': 'create_book',
+    'book_create': 'create_book',      // Reversed order
+    'book_builder': 'create_book',     // Creative invention
+    'book_new': 'create_book',         // Another variant
+    'new_book_project': 'create_book', // Verbose variant
+    'project': 'create_project',
+    'project_create': 'create_project', // Reversed order
+    'text_analysis': 'analyze_text',
+    'qbism': 'quantum_read',
+    'explore': 'search_archive',
+    'search': 'search_archive',
+    'trace_narrative': 'trace_arc',
+    'arc_search': 'trace_arc',
+  };
+
+  return aliases[name] || name;
+}
+
 export async function executeTool(
   toolUse: ParsedToolUse,
   context: AUIContext
 ): Promise<AUIToolResult> {
-  const { name, params } = toolUse;
+  const { params } = toolUse;
+  const name = normalizeToolName(toolUse.name);
 
   switch (name) {
+    // Book project tools
+    case 'create_book':
+    case 'create_project':
+      return executeCreateBook(params, context);
+
     // Book chapter tools
     case 'update_chapter':
       return executeUpdateChapter(params, context);
@@ -211,6 +319,12 @@ export async function executeTool(
 
     case 'search_facebook':
       return executeSearchFacebook(params);
+
+    case 'check_archive_health':
+      return executeCheckArchiveHealth();
+
+    case 'build_embeddings':
+      return executeBuildEmbeddings(params);
 
     case 'list_conversations':
       return executeListConversations(params);
@@ -325,6 +439,22 @@ export async function executeTool(
     case 'start_book_workflow':
       return executeStartBookWorkflow(params, context);
 
+    // Phase 3: Harvest bucket tools
+    case 'harvest_for_thread':
+      return executeHarvestForThread(params, context);
+
+    case 'propose_narrative_arc':
+      return executeProposeNarrativeArc(params, context);
+
+    case 'find_resonant_mirrors':
+      return executeFindResonantMirrors(params, context);
+
+    case 'detect_narrative_gaps':
+      return executeDetectNarrativeGaps(params, context);
+
+    case 'trace_arc':
+      return executeTraceNarrativeArc(params, context);
+
     default:
       return {
         success: false,
@@ -359,6 +489,72 @@ export async function executeAllTools(
 // ═══════════════════════════════════════════════════════════════════
 // TOOL IMPLEMENTATIONS
 // ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Create a new book project
+ */
+function executeCreateBook(
+  params: Record<string, unknown>,
+  context: AUIContext
+): AUIToolResult {
+  const { name, title, subtitle, description } = params as {
+    name?: string;
+    title?: string;  // Alias for name
+    subtitle?: string;
+    description?: string;
+  };
+
+  const bookName = name || title || 'Untitled Book';
+  const bookSubtitle = subtitle || description;
+
+  if (!context.createProject) {
+    return {
+      success: false,
+      error: 'Book creation not available. Please create a book manually using Archive > Books > + New Project',
+    };
+  }
+
+  try {
+    console.log('[AUI] Creating book project:', bookName, bookSubtitle);
+    const project = context.createProject(bookName, bookSubtitle);
+
+    if (!project) {
+      console.error('[AUI] createProject returned null/undefined');
+      return {
+        success: false,
+        error: 'Book creation failed - no project returned. Please create manually via Archive > Books > + New Project',
+      };
+    }
+
+    console.log('[AUI] Book project created:', project.id, project.name);
+
+    return {
+      success: true,
+      message: `Created book project "${project.name}"${project.subtitle ? ` (${project.subtitle})` : ''} - Click BOOKS tab to view`,
+      data: {
+        projectId: project.id,
+        name: project.name,
+        subtitle: project.subtitle,
+      },
+      teaching: {
+        whatHappened: `Created new book project "${project.name}"${project.subtitle ? ` - ${project.subtitle}` : ''}`,
+        guiPath: [
+          'Archive panel (left)',
+          'Books tab',
+          '+ New Project button',
+          'Enter name and subtitle',
+        ],
+        why: 'Book projects organize your harvested passages, thinking notes, and chapter drafts in one place.',
+      },
+    };
+  } catch (e) {
+    console.error('[AUI] Failed to create book project:', e);
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Failed to create book project',
+    };
+  }
+}
 
 function executeUpdateChapter(
   params: Record<string, unknown>,
@@ -707,6 +903,48 @@ function executeSaveToChapter(
 // ═══════════════════════════════════════════════════════════════════
 
 /**
+ * Filter out JSON noise and system markers from search results
+ * These get embedded but aren't useful search results
+ */
+function isValidSearchResult(content: string | undefined): boolean {
+  if (!content || content.length < 20) return false;
+
+  const trimmed = content.trim();
+
+  // Skip JSON-like content
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return false;
+  if (trimmed.startsWith('"') && trimmed.includes('":')) return false;
+
+  // Skip content that's mostly JSON field patterns
+  const jsonPatterns = [
+    /^"?documents"?\s*:/i,
+    /^"?queries"?\s*:/i,
+    /^"?query"?\s*:/i,
+    /^"?text"?\s*:/i,
+    /^"?filter"?\s*:/i,
+    /^"?source"?\s*:/i,
+    /^"?metadata"?\s*:/i,
+    /^"?content"?\s*:/i,
+    /^"?messages"?\s*:/i,
+  ];
+  if (jsonPatterns.some(p => p.test(trimmed))) return false;
+
+  // Skip system markers
+  if (trimmed.includes('<ImageDisplayed>')) return false;
+  if (trimmed.includes('ResponseTooLargeError')) return false;
+
+  // Skip if it looks like mostly code/JSON (high bracket ratio)
+  const bracketCount = (trimmed.match(/[{}\[\]]/g) || []).length;
+  if (bracketCount > trimmed.length * 0.1) return false;
+
+  // Skip if too many colons (likely key-value pairs)
+  const colonCount = (trimmed.match(/:/g) || []).length;
+  if (colonCount > 5 && colonCount > trimmed.split(/\s+/).length * 0.3) return false;
+
+  return true;
+}
+
+/**
  * Search ChatGPT archive semantically
  */
 async function executeSearchArchive(
@@ -719,31 +957,47 @@ async function executeSearchArchive(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/embeddings/search/messages`, {
+    const archiveServer = await getArchiveServerUrl();
+    // Request more results than needed since we'll filter out JSON noise
+    const fetchLimit = Math.min(limit * 3, 50);
+    const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit }),
+      body: JSON.stringify({ query, limit: fetchLimit }),
     });
 
     if (!response.ok) {
       // Fallback to text search if embeddings not available
       const fallbackResponse = await fetch(
-        `${ARCHIVE_SERVER}/api/conversations?search=${encodeURIComponent(query)}&limit=${limit}`
+        `${archiveServer}/api/conversations?search=${encodeURIComponent(query)}&limit=${limit}`
       );
 
       if (fallbackResponse.ok) {
         const data = await fallbackResponse.json();
+        const textResults = (data.conversations || []).slice(0, limit).map((c: { id: string; title: string; folder: string; message_count: number; created_at: number }) => ({
+          id: c.id,
+          conversationId: c.id,
+          title: c.title,
+          folder: c.folder,
+          messageCount: c.message_count,
+          created: c.created_at,
+        }));
+
+        // GUI Bridge: Dispatch text search results
+        dispatchSearchResults({
+          results: textResults,
+          query: query,
+          searchType: 'text',
+          total: textResults.length,
+        }, 'search_archive');
+
+        dispatchOpenPanel('archives', 'explore');
+
         return {
           success: true,
           message: `Found ${data.conversations?.length || 0} conversations (text search)`,
           data: {
-            results: (data.conversations || []).slice(0, limit).map((c: { id: string; title: string; folder: string; message_count: number; created_at: number }) => ({
-              id: c.id,
-              title: c.title,
-              folder: c.folder,
-              messageCount: c.message_count,
-              created: c.created_at,
-            })),
+            results: textResults,
             searchType: 'text',
           },
         };
@@ -754,19 +1008,36 @@ async function executeSearchArchive(
 
     const data = await response.json();
 
-    const resultCount = data.results?.length || 0;
+    // Filter out JSON noise and system markers, then limit to requested amount
+    const filteredResults = (data.results || [])
+      .filter((r: { content: string }) => isValidSearchResult(r.content))
+      .slice(0, limit);
+
+    const resultCount = filteredResults.length;
+    const mappedResults = filteredResults.map((r: { message_id: string; conversation_id: string; content: string; similarity: number; role: string }) => ({
+      messageId: r.message_id,
+      conversationId: r.conversation_id,
+      content: r.content?.slice(0, 200),
+      similarity: r.similarity,
+      role: r.role,
+    }));
+
+    // GUI Bridge: Dispatch results to Archive pane (Show Don't Tell)
+    dispatchSearchResults({
+      results: mappedResults,
+      query: query,
+      searchType: 'semantic',
+      total: resultCount,
+    }, 'search_archive');
+
+    // Also open the Archive panel to Explore tab
+    dispatchOpenPanel('archives', 'explore');
 
     return {
       success: true,
       message: `Found ${resultCount} messages (semantic search)`,
       data: {
-        results: (data.results || []).map((r: { message_id: string; conversation_id: string; content: string; similarity: number; role: string }) => ({
-          messageId: r.message_id,
-          conversationId: r.conversation_id,
-          content: r.content?.slice(0, 200),
-          similarity: r.similarity,
-          role: r.role,
-        })),
+        results: mappedResults,
         searchType: 'semantic',
       },
       teaching: {
@@ -789,6 +1060,138 @@ async function executeSearchArchive(
 }
 
 /**
+ * Check archive health and readiness
+ */
+async function executeCheckArchiveHealth(): Promise<AUIToolResult> {
+  try {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/embeddings/health`);
+
+    if (!response.ok) {
+      return { success: false, error: 'Health check failed' };
+    }
+
+    const health = await response.json();
+
+    // Format the health status for the user
+    const statusParts: string[] = [];
+
+    if (health.ready) {
+      statusParts.push('Archive is ready for semantic search.');
+    } else {
+      statusParts.push('Archive needs setup.');
+    }
+
+    statusParts.push(`${health.stats.conversations} conversations, ${health.stats.messages} embeddings.`);
+
+    if (health.issues.length > 0) {
+      statusParts.push(`Issues: ${health.issues.join('; ')}`);
+    }
+
+    if (health.services.indexing) {
+      const progress = health.indexingProgress;
+      statusParts.push(`Currently indexing: ${progress.phase} (${progress.progress}%)`);
+    }
+
+    return {
+      success: true,
+      message: statusParts.join(' '),
+      data: health,
+      teaching: {
+        whatHappened: 'Checked archive health status',
+        guiPath: [
+          'Open the Archive panel (left side)',
+          'Click the "Explore" tab',
+          'Setup status shown if embeddings are missing',
+        ],
+        why: 'The health check shows if embeddings need to be built for semantic search to work.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Health check failed',
+    };
+  }
+}
+
+/**
+ * Build embeddings for the archive
+ */
+async function executeBuildEmbeddings(
+  params: Record<string, unknown>
+): Promise<AUIToolResult> {
+  const { includeParagraphs = false } = params as { includeParagraphs?: boolean };
+
+  try {
+    const archiveServer = await getArchiveServerUrl();
+
+    // First check if Ollama is available
+    const healthResponse = await fetch(`${archiveServer}/api/embeddings/health`);
+    if (healthResponse.ok) {
+      const health = await healthResponse.json();
+      if (!health.services.ollama) {
+        return {
+          success: false,
+          error: 'Ollama is not running. Start it with: ollama serve',
+          teaching: {
+            whatHappened: 'Embedding build cannot start without Ollama',
+            guiPath: [
+              'Open Terminal',
+              'Run: ollama serve',
+              'Then try building embeddings again',
+            ],
+            why: 'Ollama provides the local embedding model (nomic-embed-text) required for semantic search.',
+          },
+        };
+      }
+
+      if (health.services.indexing) {
+        return {
+          success: false,
+          error: 'Embedding build is already in progress',
+          data: health.indexingProgress,
+        };
+      }
+    }
+
+    // Start the build
+    const response = await fetch(`${archiveServer}/api/embeddings/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ includeParagraphs }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      return { success: false, error: data.error || 'Build failed to start' };
+    }
+
+    // Open the Explore tab to show progress
+    dispatchOpenPanel('archives', 'explore');
+
+    return {
+      success: true,
+      message: 'Embedding build started. Progress is shown in the Explore tab.',
+      teaching: {
+        whatHappened: 'Started building embeddings for your archive',
+        guiPath: [
+          'Archive panel > Explore tab shows progress',
+          'Build runs in background',
+          'Search will work when complete',
+        ],
+        why: 'Embeddings convert your conversations into semantic vectors, enabling search by meaning rather than just keywords.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Build failed',
+    };
+  }
+}
+
+/**
  * Search Facebook archive
  */
 async function executeSearchFacebook(
@@ -805,6 +1208,7 @@ async function executeSearchFacebook(
   }
 
   try {
+    const archiveServer = await getArchiveServerUrl();
     const searchParams = new URLSearchParams({
       source: 'facebook',
       limit: String(limit),
@@ -815,7 +1219,7 @@ async function executeSearchFacebook(
     }
 
     const response = await fetch(
-      `${ARCHIVE_SERVER}/api/content/items?${searchParams}`
+      `${archiveServer}/api/content/items?${searchParams}`
     );
 
     if (!response.ok) {
@@ -1091,7 +1495,8 @@ async function executeDescribeImage(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/describe`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/describe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: targetPath }),
@@ -1141,7 +1546,8 @@ async function executeSearchImages(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/search`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, mode, limit, source }),
@@ -1192,7 +1598,8 @@ async function executeClassifyImage(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/classify`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/classify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: targetPath }),
@@ -1241,7 +1648,8 @@ async function executeFindSimilarImages(
   }
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/similar`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/similar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: targetPath, limit }),
@@ -1285,7 +1693,8 @@ async function executeClusterImages(
   };
 
   try {
-    const response = await fetch(`${ARCHIVE_SERVER}/api/vision/cluster`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/vision/cluster`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ method, source }),
@@ -1345,7 +1754,8 @@ async function executeAddImagePassage(
 
   try {
     // Get image description from vision API
-    const descResponse = await fetch(`${ARCHIVE_SERVER}/api/vision/describe`, {
+    const archiveServer = await getArchiveServerUrl();
+    const descResponse = await fetch(`${archiveServer}/api/vision/describe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imagePath: ws.selectedMedia.file_path }),
@@ -2487,37 +2897,107 @@ function executeSearchPyramid(
 async function executeListConversations(
   params: Record<string, unknown>
 ): Promise<AUIToolResult> {
-  const { limit = 20, search, hasImages } = params as {
+  const {
+    limit = 20,
+    search,
+    sortBy,
+    minWords,
+    maxWords,
+    hideEmpty,
+    hideTrivial,
+    hasMedia,
+    hasImages,
+    hasAudio,
+    hasCode,
+  } = params as {
     limit?: number;
     search?: string;
+    sortBy?: 'recent' | 'oldest' | 'messages-desc' | 'length-desc' | 'length-asc' | 'words-desc' | 'words-asc';
+    minWords?: number;
+    maxWords?: number;
+    hideEmpty?: boolean;
+    hideTrivial?: boolean;
+    hasMedia?: boolean;
     hasImages?: boolean;
+    hasAudio?: boolean;
+    hasCode?: boolean;
   };
 
   try {
     // Build query params
+    const archiveServer = await getArchiveServerUrl();
     const queryParams = new URLSearchParams();
     queryParams.set('limit', String(limit));
     if (search) queryParams.set('search', search);
+    if (sortBy) queryParams.set('sortBy', sortBy);
+    if (hideEmpty) queryParams.set('minMessages', '1');
+    if (hasMedia !== undefined) queryParams.set('hasMedia', String(hasMedia));
     if (hasImages !== undefined) queryParams.set('hasImages', String(hasImages));
+    if (hasAudio !== undefined) queryParams.set('hasAudio', String(hasAudio));
+    // Note: hasCode and word filters are applied client-side after fetch
 
-    const response = await fetch(`${ARCHIVE_SERVER}/api/conversations?${queryParams}`);
+    const response = await fetch(`${archiveServer}/api/conversations?${queryParams}`);
 
     if (!response.ok) {
       return { success: false, error: 'Failed to fetch conversations' };
     }
 
     const data = await response.json();
-    const conversations = data.conversations || [];
+    let conversations = data.conversations || [];
+
+    // Estimate word count from text_length (avg ~5 chars per word)
+    const estimateWords = (textLength: number) => Math.round(textLength / 5);
+
+    // Apply client-side filters
+    if (hideTrivial) {
+      conversations = conversations.filter((c: { text_length?: number }) =>
+        estimateWords(c.text_length || 0) > 5
+      );
+    }
+    if (minWords !== undefined) {
+      conversations = conversations.filter((c: { text_length?: number }) =>
+        estimateWords(c.text_length || 0) >= minWords
+      );
+    }
+    if (maxWords !== undefined) {
+      conversations = conversations.filter((c: { text_length?: number }) =>
+        estimateWords(c.text_length || 0) <= maxWords
+      );
+    }
+    // hasCode would require content inspection - note in response if requested
+    const codeFilterNote = hasCode ? ' (code filter requires content inspection - showing all)' : '';
+
+    // Apply word-based sorting if requested
+    if (sortBy === 'words-desc') {
+      conversations.sort((a: { text_length?: number }, b: { text_length?: number }) =>
+        (b.text_length || 0) - (a.text_length || 0)
+      );
+    } else if (sortBy === 'words-asc') {
+      conversations.sort((a: { text_length?: number }, b: { text_length?: number }) =>
+        (a.text_length || 0) - (b.text_length || 0)
+      );
+    }
+
+    // Build filter description for teaching
+    const filterParts: string[] = [];
+    if (sortBy) filterParts.push(`sorted by ${sortBy}`);
+    if (minWords) filterParts.push(`min ${minWords} words`);
+    if (maxWords) filterParts.push(`max ${maxWords} words`);
+    if (hideTrivial) filterParts.push('hiding trivial');
+    if (hasImages) filterParts.push('with images');
+    if (hasAudio) filterParts.push('with audio');
+    const filterDesc = filterParts.length > 0 ? ` (${filterParts.join(', ')})` : '';
 
     return {
       success: true,
-      message: `Found ${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}`,
+      message: `Found ${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}${filterDesc}${codeFilterNote}`,
       data: {
         conversations: conversations.slice(0, limit).map((c: {
           id: string;
           title: string;
           folder?: string;
           message_count?: number;
+          text_length?: number;
           created_at?: number;
           updated_at?: number;
         }) => ({
@@ -2525,19 +3005,21 @@ async function executeListConversations(
           title: c.title || 'Untitled',
           folder: c.folder,
           messageCount: c.message_count,
+          wordCount: estimateWords(c.text_length || 0),
           createdAt: c.created_at,
           updatedAt: c.updated_at,
         })),
         total: data.total || conversations.length,
+        appliedFilters: filterParts,
       },
       teaching: {
-        whatHappened: `Listed ${conversations.length} conversations from your ChatGPT archive${search ? ` matching "${search}"` : ''}`,
+        whatHappened: `Listed ${conversations.length} conversations from your archive${filterDesc}`,
         guiPath: [
           'Click Archive panel (left side)',
           'Select "Conversations" tab',
-          search ? `Use search box to filter by "${search}"` : 'Browse the full list',
+          filterParts.length > 0 ? 'Use the filter dropdowns and inputs to apply filters' : 'Browse the full list',
         ],
-        why: 'Your archive contains your AI conversation history - the raw material for your book.',
+        why: 'Filters help you find the most meaningful conversations - longer ones often contain deeper discussions.',
       },
     };
   } catch (e) {
@@ -2576,7 +3058,8 @@ async function executeHarvestArchive(
 
   try {
     // First, search the archive
-    const response = await fetch(`${ARCHIVE_SERVER}/api/embeddings/search/messages`, {
+    const archiveServer = await getArchiveServerUrl();
+    const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit: limit * 2 }), // Get more, filter by similarity
@@ -3344,6 +3827,758 @@ async function executeStartBookWorkflow(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PHASE 3: HARVEST BUCKET TOOLS
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Harvest passages from archive into a HarvestBucket for review
+ * Creates a staging area where users can approve/reject/gem passages
+ */
+async function executeHarvestForThread(
+  params: Record<string, unknown>,
+  context: AUIContext
+): Promise<AUIToolResult> {
+  const { book_uri, queries, config } = params as {
+    book_uri?: string;
+    queries?: string[];
+    config?: {
+      min_similarity?: number;
+      max_results?: number;
+      sources?: string[];
+    };
+  };
+
+  // Get book URI from params or active project
+  const bookUri = book_uri || (context.activeProject as BookProject & { uri?: string })?.uri;
+
+  if (!bookUri) {
+    return {
+      success: false,
+      error: 'No book URI provided and no active book project. Create or select a book first.',
+    };
+  }
+
+  if (!queries || queries.length === 0) {
+    return {
+      success: false,
+      error: 'Missing queries parameter. Provide at least one search query.',
+    };
+  }
+
+  const minSimilarity = config?.min_similarity || 0.65;
+  const maxResults = config?.max_results || 50;
+
+  try {
+    // Initialize harvest bucket service
+    harvestBucketService.initialize();
+
+    // Create a harvest bucket for this search
+    const bucket = harvestBucketService.createBucket(bookUri, queries, {
+      config: {
+        minSimilarity,
+        dedupeByContent: true,
+        dedupeThreshold: 0.9,
+      },
+      initiatedBy: 'aui',
+    });
+
+    // Search archive for each query
+    const archiveServer = await getArchiveServerUrl();
+    let totalCandidates = 0;
+    const resultsPerQuery = Math.ceil(maxResults / queries.length);
+
+    for (const query of queries) {
+      try {
+        const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, limit: resultsPerQuery * 2 }),
+        });
+
+        if (!response.ok) continue;
+
+        const data = await response.json();
+        const results = (data.results || [])
+          .filter((r: { similarity: number }) => r.similarity >= minSimilarity)
+          .slice(0, resultsPerQuery);
+
+        // Convert to SourcePassage format and add as candidates
+        for (const result of results as Array<{
+          message_id: string;
+          content: string;
+          conversation_id: string;
+          role: string;
+          similarity: number;
+          metadata?: { title?: string };
+        }>) {
+          const passage: SourcePassage = {
+            id: result.message_id || crypto.randomUUID(),
+            text: result.content,
+            wordCount: result.content?.split(/\s+/).length || 0,
+            sourceRef: {
+              uri: `source://chatgpt/${result.conversation_id}` as `${string}://${string}`,
+              sourceType: 'chatgpt',
+              conversationId: result.conversation_id,
+              conversationTitle: result.metadata?.title || `Harvested: ${query}`,
+            },
+            similarity: result.similarity,
+            curation: {
+              status: 'candidate',
+            },
+            tags: ['harvested', query.split(' ')[0]],
+            harvestedBy: query,
+          };
+
+          harvestBucketService.addCandidate(bucket.id, passage);
+          totalCandidates++;
+        }
+      } catch (e) {
+        console.warn(`[harvest_for_thread] Query "${query}" failed:`, e);
+      }
+    }
+
+    // Mark bucket as ready for review
+    harvestBucketService.finishCollecting(bucket.id);
+
+    // Get updated bucket with stats
+    const updatedBucket = harvestBucketService.getBucket(bucket.id);
+
+    // GUI Bridge: Open Tools panel → Harvest tab to show results
+    dispatchOpenPanel('tools', 'harvest');
+
+    return {
+      success: true,
+      message: `Harvested ${totalCandidates} passages from ${queries.length} queries`,
+      data: {
+        bucketId: bucket.id,
+        candidateCount: totalCandidates,
+        queries,
+        status: 'reviewing',
+        stats: updatedBucket?.stats,
+      },
+      teaching: {
+        whatHappened: `Created a harvest bucket with ${totalCandidates} passages for review`,
+        guiPath: [
+          'Open the Tools panel (right side)',
+          'Click the "Harvest" tab',
+          'Review each passage - approve, reject, or mark as gem',
+          'Stage when ready, then commit to book',
+        ],
+        why: 'The harvest bucket is a staging area. Review passages before they become part of your book.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Harvest failed',
+    };
+  }
+}
+
+/**
+ * Propose a narrative arc based on approved passages
+ * Clusters passages by theme and suggests chapter structure
+ */
+async function executeProposeNarrativeArc(
+  params: Record<string, unknown>,
+  context: AUIContext
+): Promise<AUIToolResult> {
+  const { book_uri, arc_type, thesis } = params as {
+    book_uri?: string;
+    arc_type?: ArcType;
+    thesis?: string;
+  };
+
+  const bookUri = book_uri || (context.activeProject as BookProject & { uri?: string })?.uri;
+
+  if (!bookUri) {
+    return {
+      success: false,
+      error: 'No book URI provided and no active book project.',
+    };
+  }
+
+  // Get passages from context
+  const passages = context.getPassages?.() || [];
+  const approvedPassages = passages.filter(
+    (p: SourcePassage) => p.curation?.status === 'approved' || p.curation?.status === 'gem'
+  );
+
+  if (approvedPassages.length < 3) {
+    return {
+      success: false,
+      error: `Need at least 3 approved passages to propose a narrative arc. Currently have ${approvedPassages.length}.`,
+    };
+  }
+
+  try {
+    harvestBucketService.initialize();
+
+    // Simple theme extraction (keyword clustering)
+    const themeMap = new Map<string, string[]>();
+    const commonWords = new Set(['about', 'which', 'their', 'there', 'would', 'could', 'should', 'where', 'these', 'those', 'being', 'having', 'making', 'during', 'through', 'because', 'while', 'after', 'before', 'between', 'within', 'without', 'something', 'anything', 'everything', 'nothing']);
+
+    for (const passage of approvedPassages) {
+      const text = typeof passage.content === 'string' ? passage.content : '';
+      const words = text.toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w: string) => w.length >= 5 && !commonWords.has(w));
+
+      // Count frequencies
+      const wordFreq = new Map<string, number>();
+      for (const word of words) {
+        wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
+      }
+
+      // Top keywords
+      const topKeywords = Array.from(wordFreq.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([w]) => w);
+
+      for (const kw of topKeywords) {
+        if (!themeMap.has(kw)) themeMap.set(kw, []);
+        themeMap.get(kw)!.push(passage.id);
+      }
+    }
+
+    // Find major themes (appearing in 2+ passages)
+    const themes = Array.from(themeMap.entries())
+      .filter(([, ids]) => ids.length >= 2)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 5);
+
+    // Build ArcTheme structures
+    const arcThemes = themes.map(([name, passageIds], index) => ({
+      id: `theme-${index + 1}`,
+      name,
+      description: `Theme appearing in ${passageIds.length} passages`,
+      passageIds,
+      coherence: passageIds.length / approvedPassages.length,
+      relationships: [] as Array<{ targetThemeId: string; type: 'depends-on' | 'contrasts-with' | 'leads-to' | 'part-of'; strength: number }>,
+    }));
+
+    // Build ChapterOutline structures
+    const chapters = themes.map(([theme, passageIds], index) => ({
+      number: index + 1,
+      title: theme.charAt(0).toUpperCase() + theme.slice(1),
+      purpose: `Explore the theme of ${theme}`,
+      primaryThemeId: `theme-${index + 1}`,
+      passageIds,
+      estimatedWordCount: passageIds.reduce((sum, id) => {
+        const p = approvedPassages.find((p: SourcePassage) => p.id === id);
+        return sum + (p?.wordCount || 0);
+      }, 0),
+    }));
+
+    // Create narrative arc
+    const arc = harvestBucketService.createArc(
+      bookUri,
+      thesis || `A ${arc_type || 'linear'} narrative exploring ${themes.map(([t]) => t).join(', ')}`,
+      {
+        arcType: arc_type || 'linear',
+        proposedBy: 'aui',
+      }
+    );
+
+    // Update arc with themes and chapters
+    harvestBucketService.updateArc(arc.id, {
+      themes: arcThemes,
+      chapters,
+    });
+
+    return {
+      success: true,
+      message: `Proposed ${chapters.length}-chapter arc with ${themes.length} themes`,
+      data: {
+        arcId: arc.id,
+        arcType: arc_type || 'linear',
+        thesis: arc.thesis,
+        chapters: chapters.map(c => ({
+          title: c.title,
+          passageCount: c.passageIds.length,
+          estimatedWords: c.estimatedWordCount,
+        })),
+        themes: themes.map(([name, ids]) => ({
+          name,
+          passageCount: ids.length,
+        })),
+      },
+      teaching: {
+        whatHappened: `Analyzed ${approvedPassages.length} passages and proposed a ${chapters.length}-chapter structure`,
+        guiPath: [
+          'Archive → Books → [project] → Thinking tab',
+          'Review proposed arc',
+          'Approve or provide feedback',
+        ],
+        why: 'Narrative arcs help organize passages into a coherent story. Review and adjust the proposed structure.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Failed to propose narrative arc',
+    };
+  }
+}
+
+/**
+ * Trace a narrative arc through the archive
+ * Uses semantic search to find chronological progression of a theme
+ *
+ * This tool helps find:
+ * - How an idea evolved over time
+ * - The progressive revelation of a theme
+ * - Chronological story threads
+ */
+async function executeTraceNarrativeArc(
+  params: Record<string, unknown>,
+  context: AUIContext
+): Promise<AUIToolResult> {
+  const {
+    theme,
+    start_date,
+    end_date,
+    arc_type = 'progressive',
+    limit = 20,
+    save_to_harvest = false,
+  } = params as {
+    theme: string;
+    start_date?: string;
+    end_date?: string;
+    arc_type?: 'progressive' | 'chronological' | 'thematic' | 'dialectic';
+    limit?: number;
+    save_to_harvest?: boolean;
+  };
+
+  if (!theme) {
+    return {
+      success: false,
+      error: 'Provide a theme to trace through the archive.',
+    };
+  }
+
+  try {
+    const archiveServer = await getArchiveServerUrl();
+
+    // Build search queries based on arc type
+    const queries: string[] = [];
+    switch (arc_type) {
+      case 'progressive':
+        // Find how understanding evolved
+        queries.push(theme);
+        queries.push(`early thoughts on ${theme}`);
+        queries.push(`realization about ${theme}`);
+        queries.push(`understanding ${theme}`);
+        queries.push(`conclusion about ${theme}`);
+        break;
+      case 'chronological':
+        // Just search the theme, will sort by date
+        queries.push(theme);
+        break;
+      case 'thematic':
+        // Find variations on the theme
+        queries.push(theme);
+        queries.push(`${theme} and its implications`);
+        queries.push(`different aspects of ${theme}`);
+        break;
+      case 'dialectic':
+        // Find thesis, antithesis, synthesis
+        queries.push(`${theme} thesis argument for`);
+        queries.push(`${theme} counterpoint against critique`);
+        queries.push(`${theme} synthesis resolution integration`);
+        break;
+    }
+
+    // Collect results from all queries
+    const allResults: Array<{
+      id: string;
+      content: string;
+      similarity: number;
+      conversation_id: string;
+      message_id?: string;
+      created_at?: number;
+      title?: string;
+      query_phase: string;
+    }> = [];
+
+    for (let i = 0; i < queries.length; i++) {
+      const query = queries[i];
+      const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          limit: Math.ceil(limit / queries.length) * 2,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const results = data.results || [];
+
+        for (const r of results) {
+          // Skip duplicates
+          if (!allResults.some(ar => ar.message_id === r.message_id)) {
+            allResults.push({
+              id: r.id || r.message_id,
+              content: r.content,
+              similarity: r.similarity,
+              conversation_id: r.conversation_id,
+              message_id: r.message_id,
+              created_at: r.created_at,
+              title: r.metadata?.title || r.conversation_title,
+              query_phase: arc_type === 'progressive' ?
+                ['beginning', 'early', 'middle', 'development', 'conclusion'][i] || 'middle' :
+                arc_type === 'dialectic' ?
+                  ['thesis', 'antithesis', 'synthesis'][i] || 'thesis' :
+                  'thematic',
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by date for chronological arc, or by query phase for progressive
+    if (arc_type === 'chronological') {
+      allResults.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+    }
+
+    // Limit results
+    const arcResults = allResults.slice(0, limit);
+
+    // Group by phase for progressive/dialectic arcs
+    const phases = new Map<string, typeof arcResults>();
+    for (const r of arcResults) {
+      const phase = r.query_phase;
+      if (!phases.has(phase)) {
+        phases.set(phase, []);
+      }
+      phases.get(phase)!.push(r);
+    }
+
+    // Optionally save to harvest bucket
+    let bucketId: string | undefined;
+    if (save_to_harvest && context.activeProject) {
+      const { harvestBucketService } = await import('../bookshelf/HarvestBucketService');
+      harvestBucketService.initialize();
+
+      const bookUri = (context.activeProject as BookProject & { uri?: string })?.uri;
+      if (bookUri) {
+        const bucket = harvestBucketService.createBucket(bookUri, [theme], {
+          initiatedBy: 'aui',
+        });
+        bucketId = bucket.id;
+
+        // Add results as candidates
+        for (const r of arcResults) {
+          const passage: SourcePassage = {
+            id: r.message_id || crypto.randomUUID(),
+            text: r.content,
+            wordCount: r.content?.split(/\s+/).length || 0,
+            sourceRef: {
+              uri: `source://chatgpt/${r.conversation_id}` as `${string}://${string}`,
+              sourceType: 'chatgpt',
+              conversationId: r.conversation_id,
+              conversationTitle: r.title || 'Arc Trace',
+            },
+            similarity: r.similarity,
+            curation: {
+              status: 'candidate',
+            },
+            tags: ['arc-trace', r.query_phase, theme.split(' ')[0]],
+          };
+          harvestBucketService.addCandidate(bucket.id, passage);
+        }
+
+        harvestBucketService.finishCollecting(bucket.id);
+        dispatchOpenPanel('tools', 'harvest');
+      }
+    }
+
+    // Format arc structure for response
+    const arcStructure = Array.from(phases.entries()).map(([phase, passages]) => ({
+      phase,
+      count: passages.length,
+      samples: passages.slice(0, 2).map(p => ({
+        preview: p.content.slice(0, 150) + '...',
+        source: p.title,
+        date: p.created_at ? new Date(p.created_at).toLocaleDateString() : undefined,
+      })),
+    }));
+
+    // Dispatch to GUI
+    dispatchSearchResults({
+      results: arcResults.map(r => ({
+        id: r.id,
+        content: r.content,
+        similarity: r.similarity,
+        conversationId: r.conversation_id,
+        title: r.title,
+      })),
+      query: theme,
+      searchType: 'semantic',
+      total: arcResults.length,
+    }, theme);
+    dispatchOpenPanel('archives', 'explore');
+
+    return {
+      success: true,
+      message: `Traced "${theme}" arc: found ${arcResults.length} passages across ${phases.size} phases`,
+      data: {
+        theme,
+        arcType: arc_type,
+        totalPassages: arcResults.length,
+        phases: arcStructure,
+        bucketId,
+        dateRange: arcResults.length > 0 ? {
+          earliest: arcResults.find(r => r.created_at)?.created_at,
+          latest: [...arcResults].reverse().find(r => r.created_at)?.created_at,
+        } : undefined,
+      },
+      teaching: {
+        whatHappened: `Found ${arcResults.length} passages tracing the "${arc_type}" arc of "${theme}"`,
+        guiPath: [
+          'Results shown in Archive → Explore tab',
+          save_to_harvest ? 'Also saved to Tools → Harvest for curation' : 'Use save_to_harvest: true to save for curation',
+          'Click any result to see full context',
+        ],
+        why: arc_type === 'progressive' ?
+          'Progressive arcs show how understanding evolved over time - the journey of an idea.' :
+          arc_type === 'dialectic' ?
+            'Dialectic arcs show thesis/antithesis/synthesis - the resolution of tensions.' :
+            'Chronological arcs reveal when ideas emerged and how they relate in time.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Failed to trace narrative arc',
+    };
+  }
+}
+
+/**
+ * Find passages that resonate semantically with a given passage
+ * Uses embedding similarity to discover connections
+ */
+async function executeFindResonantMirrors(
+  params: Record<string, unknown>,
+  _context: AUIContext
+): Promise<AUIToolResult> {
+  const { passage_id, passage_text, search_scope, limit = 10 } = params as {
+    passage_id?: string;
+    passage_text?: string;
+    search_scope?: 'book' | 'archive' | 'all';
+    limit?: number;
+  };
+
+  if (!passage_text && !passage_id) {
+    return {
+      success: false,
+      error: 'Provide either passage_text or passage_id to find resonant mirrors.',
+    };
+  }
+
+  try {
+    const archiveServer = await getArchiveServerUrl();
+    const query = passage_text || '';
+
+    // Search for similar messages
+    const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, limit: limit * 2 }),
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: 'Semantic search failed. Ensure embeddings are built.',
+      };
+    }
+
+    const data = await response.json();
+    let results = data.results || [];
+
+    // Filter by scope if book scope requested (would need book context)
+    if (search_scope === 'book') {
+      // For book scope, we'd need to filter by book passages
+      // For now, just limit results
+      results = results.slice(0, limit);
+    } else {
+      results = results.slice(0, limit);
+    }
+
+    const mirrors = results.map((r: {
+      message_id: string;
+      content: string;
+      similarity: number;
+      conversation_id: string;
+      metadata?: { title?: string };
+    }) => ({
+      id: r.message_id,
+      text: r.content?.slice(0, 200) + (r.content?.length > 200 ? '...' : ''),
+      similarity: Math.round(r.similarity * 1000) / 1000,
+      conversationId: r.conversation_id,
+      conversationTitle: r.metadata?.title || 'Unknown',
+    }));
+
+    return {
+      success: true,
+      message: `Found ${mirrors.length} resonant passages`,
+      data: {
+        sourcePassageId: passage_id,
+        sourceText: passage_text?.slice(0, 100) + '...',
+        scope: search_scope || 'archive',
+        mirrors,
+      },
+      teaching: {
+        whatHappened: `Found ${mirrors.length} passages that resonate semantically with the source`,
+        guiPath: [
+          'Archive → Explore → Semantic Search',
+          'Paste your passage text',
+          'Results ranked by meaning similarity',
+        ],
+        why: 'Resonant mirrors reveal thematic connections across your archive. Use them to build richer narratives.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Failed to find resonant mirrors',
+    };
+  }
+}
+
+/**
+ * Detect narrative gaps in a book's chapter structure
+ * Analyzes transitions and identifies missing content
+ */
+async function executeDetectNarrativeGaps(
+  params: Record<string, unknown>,
+  context: AUIContext
+): Promise<AUIToolResult> {
+  const { book_uri, arc_id } = params as {
+    book_uri?: string;
+    arc_id?: string;
+  };
+
+  const bookUri = book_uri || (context.activeProject as BookProject & { uri?: string })?.uri;
+
+  if (!bookUri) {
+    return {
+      success: false,
+      error: 'No book URI provided and no active book project.',
+    };
+  }
+
+  try {
+    harvestBucketService.initialize();
+
+    // Get arcs for this book
+    const arcs = harvestBucketService.getArcsForBook(bookUri);
+    const arc = arc_id ? arcs.find(a => a.id === arc_id) : arcs[0];
+
+    if (!arc) {
+      return {
+        success: false,
+        error: 'No narrative arc found. Use propose_narrative_arc first.',
+      };
+    }
+
+    // Analyze chapters for gaps
+    const chapters = (arc as NarrativeArc & { chapters?: Array<{ id: string; title: string; passageCount?: number; estimatedWordCount?: number }> }).chapters || [];
+    const gaps: Array<{
+      type: 'conceptual' | 'transitional' | 'emotional' | 'structural';
+      location: string;
+      description: string;
+      suggestion: string;
+    }> = [];
+
+    // Check for structural gaps
+    if (chapters.length < 3) {
+      gaps.push({
+        type: 'structural',
+        location: 'book',
+        description: 'Book has fewer than 3 chapters',
+        suggestion: 'Consider breaking content into more chapters for better pacing.',
+      });
+    }
+
+    // Check for thin chapters
+    for (let i = 0; i < chapters.length; i++) {
+      const chapter = chapters[i];
+      if ((chapter.passageCount || 0) < 2) {
+        gaps.push({
+          type: 'conceptual',
+          location: `Chapter ${i + 1}: ${chapter.title}`,
+          description: `Only ${chapter.passageCount || 0} passages`,
+          suggestion: `Search archive for more content about "${chapter.title}".`,
+        });
+      }
+      if ((chapter.estimatedWordCount || 0) < 500) {
+        gaps.push({
+          type: 'structural',
+          location: `Chapter ${i + 1}: ${chapter.title}`,
+          description: `Very short (~${chapter.estimatedWordCount || 0} words)`,
+          suggestion: 'Consider merging with adjacent chapter or adding content.',
+        });
+      }
+    }
+
+    // Check for transitional gaps (no content between distinct themes)
+    for (let i = 0; i < chapters.length - 1; i++) {
+      const current = chapters[i];
+      const next = chapters[i + 1];
+      // Simple heuristic: if titles share no keywords, might need transition
+      const currentWords = new Set(current.title.toLowerCase().split(/\s+/));
+      const nextWords = new Set(next.title.toLowerCase().split(/\s+/));
+      const overlap = [...currentWords].filter(w => nextWords.has(w)).length;
+
+      if (overlap === 0 && currentWords.size > 0 && nextWords.size > 0) {
+        gaps.push({
+          type: 'transitional',
+          location: `Between "${current.title}" and "${next.title}"`,
+          description: 'Distinct themes with no obvious bridge',
+          suggestion: `Look for passages that connect ${current.title} to ${next.title}.`,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      message: `Found ${gaps.length} potential gaps in narrative`,
+      data: {
+        arcId: arc.id,
+        chapterCount: chapters.length,
+        gaps,
+        summary: {
+          conceptual: gaps.filter(g => g.type === 'conceptual').length,
+          transitional: gaps.filter(g => g.type === 'transitional').length,
+          structural: gaps.filter(g => g.type === 'structural').length,
+        },
+      },
+      teaching: {
+        whatHappened: `Analyzed ${chapters.length} chapters and found ${gaps.length} areas for improvement`,
+        guiPath: [
+          'Archive → Books → [project] → Thinking tab → Gaps',
+          'Review each gap',
+          'Use harvest_for_thread to fill conceptual gaps',
+        ],
+        why: 'Narrative gaps break reader flow. Filling them creates a more cohesive book.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Failed to detect narrative gaps',
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT
 // ═══════════════════════════════════════════════════════════════════
 
@@ -3404,7 +4639,18 @@ You can help users with their book projects, search their archives, and curate c
     \`USE_TOOL(search_facebook, {"query": "family gathering", "type": "post", "limit": 20})\`
     - type: "post", "comment", or "all"
 
-11. **list_conversations** - List all conversations from ChatGPT archive
+11. **check_archive_health** - Check if archive is ready for semantic search
+    \`USE_TOOL(check_archive_health, {})\`
+    - Returns: conversation count, embedding count, issues, and suggested actions
+    - Use this to diagnose search problems
+
+12. **build_embeddings** - Build embeddings for semantic search
+    \`USE_TOOL(build_embeddings, {})\`
+    - Requires Ollama to be running (ollama serve)
+    - Progress shown in Archive > Explore tab
+    - Use when "check_archive_health" shows missing embeddings
+
+13. **list_conversations** - List all conversations from ChatGPT archive
     \`USE_TOOL(list_conversations, {"limit": 20, "search": "philosophy"})\`
     - Returns: conversation list with titles, message counts, dates
     - Opens Archive panel to show results
@@ -3796,6 +5042,61 @@ User: "Just help me curate my existing passages"
 AUI: "I'll start a curation workflow:
 \`USE_TOOL(start_book_workflow, {"workflowType": "curate"})\`
 Starting curation workflow with 2 steps: Assess Quality → Organize Content. The curator will review passages for book-worthiness."
+
+---
+
+## HARVEST BUCKET TOOLS
+
+These tools provide a staging workflow for collecting and curating passages before committing them to your book.
+
+44. **harvest_for_thread** - Search archives and stage passages for review
+    \`USE_TOOL(harvest_for_thread, {"queries": ["consciousness", "phenomenology"], "config": {"min_similarity": 0.65, "max_results": 30}})\`
+    - Creates a HarvestBucket with search results as candidates
+    - Candidates must be reviewed (approved/rejected/gem) before committing
+    - Auto-deduplicates by content similarity
+    - Returns: bucketId, candidate count, status
+
+45. **propose_narrative_arc** - Suggest chapter structure from approved passages
+    \`USE_TOOL(propose_narrative_arc, {"arc_type": "linear", "thesis": "Consciousness as lived experience"})\`
+    - arc_type: "linear" | "spiral" | "dialectic" | "mosaic" | "monomyth"
+    - Clusters approved passages by theme
+    - Proposes chapter structure with passage assignments
+    - Returns: arcId, chapters, themes
+
+46. **find_resonant_mirrors** - Find semantically similar passages
+    \`USE_TOOL(find_resonant_mirrors, {"passage_text": "The body knows before the mind...", "limit": 10})\`
+    - Search by passage_text or passage_id
+    - search_scope: "book" | "archive" | "all"
+    - Returns: mirrors with similarity scores
+    - Great for finding thematic connections
+
+47. **detect_narrative_gaps** - Analyze narrative structure for missing content
+    \`USE_TOOL(detect_narrative_gaps, {})\`
+    - Requires a narrative arc (use propose_narrative_arc first)
+    - Identifies: conceptual gaps, transitional gaps, structural gaps
+    - Returns: gaps with locations and suggestions
+    - Use harvest_for_thread to fill conceptual gaps
+
+### Working with harvest buckets:
+User: "Search my archive for passages about consciousness and phenomenology"
+AUI: "I'll create a harvest bucket with passages from those topics:
+\`USE_TOOL(harvest_for_thread, {"queries": ["consciousness", "phenomenology", "lived experience"]})\`
+Created bucket with 24 passages! Check the Harvest tab in Tools to review and approve passages."
+
+User: "Now organize my approved passages into chapters"
+AUI: "I'll propose a narrative structure based on your approved passages:
+\`USE_TOOL(propose_narrative_arc, {"arc_type": "linear", "thesis": "Exploring consciousness through phenomenology"})\`
+Proposed a 4-chapter arc: Foundations → Perception → Embodiment → Synthesis. Review in the Thinking tab."
+
+User: "Find passages similar to this one about embodiment"
+AUI: "I'll search for resonant mirrors across your archive:
+\`USE_TOOL(find_resonant_mirrors, {"passage_text": "The body knows before the mind can articulate..."})\`
+Found 8 passages that resonate with this theme of embodied knowledge."
+
+User: "Are there any gaps in my book structure?"
+AUI: "I'll analyze the narrative arc for gaps:
+\`USE_TOOL(detect_narrative_gaps, {})\`
+Found 3 gaps: Chapter 2 needs more content (only 2 passages), transition needed between Perception and Embodiment, and the conclusion chapter is thin."
 
 ---
 

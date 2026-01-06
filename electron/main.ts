@@ -9,7 +9,7 @@
 
 import { app, BrowserWindow, shell, ipcMain, dialog, protocol, net } from 'electron';
 import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import { createServer } from 'net';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
@@ -27,10 +27,31 @@ import { getCouncilOrchestrator, type CouncilOrchestrator, type ProposedAction, 
 import { getAgentRegistry } from './agents/runtime/registry';
 
 // Embedded Archive Server
-import { startArchiveServer as startEmbeddedArchiveServer, stopArchiveServer as stopEmbeddedArchiveServer, isArchiveServerRunning } from './archive-server';
+import {
+  startArchiveServer as startEmbeddedArchiveServer,
+  stopArchiveServer as stopEmbeddedArchiveServer,
+  isArchiveServerRunning,
+  getEmbeddingDatabase,
+  areServicesInitialized,
+  waitForServices,
+} from './archive-server';
 
 // Embedded NPE-Local Server (AI Detection, Transformations)
 import { startNpeLocalServer, stopNpeLocalServer, isNpeLocalServerRunning, getNpeLocalPort } from './npe-local';
+
+// Whisper (local speech-to-text)
+import { initWhisper, registerWhisperHandlers } from './whisper/whisper-manager';
+
+// AgentMaster (unified LLM abstraction)
+import {
+  getAgentMasterService,
+  setDeviceProfile,
+  clearDeviceOverride,
+  getDeviceProfile,
+  getTierDescription,
+  getRecommendedModels,
+  type MemoryTier,
+} from './agent-master';
 
 // Set app name for macOS menu bar (development mode)
 // In production, this comes from electron-builder.json productName
@@ -45,17 +66,18 @@ const store = new Store({
   name: 'humanizer-desktop',
   defaults: {
     windowBounds: { width: 1400, height: 900, x: undefined, y: undefined },
-    archiveServerEnabled: false,
+    archiveServerEnabled: true,  // Auto-start for seamless local archives
     archivePath: null,
     ollamaEnabled: false,
-    ollamaModel: 'llama3.2:3b',
+    whisperEnabled: true,
+    whisperModel: 'ggml-base.en.bin',
+    ollamaModel: 'qwen3:14b',  // Larger model for better tool-following
     firstRunComplete: false,
   },
 });
 
 // Keep references to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
-let archiveServerProcess: ChildProcess | null = null;
 let archiveServerPort: number | null = null;
 let npeLocalPort: number | null = null;
 
@@ -193,12 +215,6 @@ async function stopArchiveServer() {
     await stopEmbeddedArchiveServer();
     archiveServerPort = null;
   }
-  // Legacy cleanup for spawned process
-  if (archiveServerProcess) {
-    archiveServerProcess.kill();
-    archiveServerProcess = null;
-    archiveServerPort = null;
-  }
 }
 
 // ============================================================
@@ -319,6 +335,9 @@ function registerIPCHandlers() {
 
   // NPE-Local (AI Detection, Transformations)
   ipcMain.handle('npe:port', () => npeLocalPort);
+
+  // OAuth callback port (for development mode localhost server)
+  ipcMain.handle('auth:callback-port', () => oauthCallbackPort);
   ipcMain.handle('npe:status', async () => {
     if (!npeLocalPort) {
       return { running: false, port: null };
@@ -356,6 +375,16 @@ function registerIPCHandlers() {
       // Not running
     }
     return { installed: false, running: false };
+  });
+
+  // Shell - open URLs in external browser
+  ipcMain.handle('shell:open-external', async (_e, url: string) => {
+    // Only allow http/https URLs for security
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      await shell.openExternal(url);
+      return { success: true };
+    }
+    return { success: false, error: 'Invalid URL protocol' };
   });
 
   // Cloud drives - stubs
@@ -429,7 +458,7 @@ function registerIPCHandlers() {
     dbPath: chatDbPath,
     llm: {
       provider: 'ollama',
-      model: store.get('ollamaModel') || 'llama3.2',
+      model: store.get('ollamaModel') || 'qwen3:14b',
       baseUrl: 'http://localhost:11434',
     },
     archiveUrl: archiveServerPort ? `http://localhost:${archiveServerPort}` : undefined,
@@ -692,6 +721,326 @@ function registerIPCHandlers() {
 }
 
 // ============================================================
+// AGENT MASTER IPC HANDLERS
+// ============================================================
+
+function registerAgentMasterHandlers() {
+  // Get current device profile
+  ipcMain.handle('agent-master:get-profile', () => {
+    return getDeviceProfile();
+  });
+
+  // Set tier override (for testing different device tiers)
+  ipcMain.handle('agent-master:set-tier', (_e, tier: MemoryTier) => {
+    setDeviceProfile({ tier });
+    const profile = getDeviceProfile();
+    console.log(`[AgentMaster] Tier override set to: ${tier}`);
+    return {
+      tier,
+      description: getTierDescription(tier),
+      recommendedModels: getRecommendedModels(tier),
+      profile,
+    };
+  });
+
+  // Clear tier override (use auto-detection)
+  ipcMain.handle('agent-master:clear-override', () => {
+    clearDeviceOverride();
+    const profile = getDeviceProfile();
+    console.log('[AgentMaster] Tier override cleared, using auto-detection');
+    return {
+      tier: profile.tier,
+      description: getTierDescription(profile.tier),
+      recommendedModels: getRecommendedModels(profile.tier),
+      profile,
+    };
+  });
+
+  // Get tier info
+  ipcMain.handle('agent-master:tier-info', (_e, tier: MemoryTier) => {
+    return {
+      tier,
+      description: getTierDescription(tier),
+      recommendedModels: getRecommendedModels(tier),
+    };
+  });
+
+  // List available capabilities
+  ipcMain.handle('agent-master:capabilities', () => {
+    const agentMaster = getAgentMasterService();
+    return agentMaster.listCapabilities();
+  });
+
+  console.log('AgentMaster IPC handlers registered');
+}
+
+// ============================================================
+// XANADU UNIFIED STORAGE IPC HANDLERS
+// ============================================================
+
+function registerXanaduHandlers() {
+  // Check if services are ready before any operation
+  const ensureDb = () => {
+    if (!areServicesInitialized()) {
+      throw new Error('Archive services not initialized. Start archive server first.');
+    }
+    return getEmbeddingDatabase();
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // BOOK OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:book:list', (_e, includeLibrary = true) => {
+    const db = ensureDb();
+    return db.getAllBooks(includeLibrary);
+  });
+
+  ipcMain.handle('xanadu:book:get', (_e, idOrUri: string) => {
+    const db = ensureDb();
+    return db.getBook(idOrUri);
+  });
+
+  ipcMain.handle('xanadu:book:upsert', (_e, book: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertBook(book as Parameters<typeof db.upsertBook>[0]);
+    return { success: true, id: book.id };
+  });
+
+  ipcMain.handle('xanadu:book:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteBook(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // PERSONA OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:persona:list', (_e, includeLibrary = true) => {
+    const db = ensureDb();
+    return db.getAllPersonas(includeLibrary);
+  });
+
+  ipcMain.handle('xanadu:persona:get', (_e, idOrUri: string) => {
+    const db = ensureDb();
+    return db.getPersona(idOrUri);
+  });
+
+  ipcMain.handle('xanadu:persona:upsert', (_e, persona: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertPersona(persona as Parameters<typeof db.upsertPersona>[0]);
+    return { success: true, id: persona.id };
+  });
+
+  ipcMain.handle('xanadu:persona:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deletePersona(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // STYLE OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:style:list', (_e, includeLibrary = true) => {
+    const db = ensureDb();
+    return db.getAllStyles(includeLibrary);
+  });
+
+  ipcMain.handle('xanadu:style:get', (_e, idOrUri: string) => {
+    const db = ensureDb();
+    return db.getStyle(idOrUri);
+  });
+
+  ipcMain.handle('xanadu:style:upsert', (_e, style: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertStyle(style as Parameters<typeof db.upsertStyle>[0]);
+    return { success: true, id: style.id };
+  });
+
+  ipcMain.handle('xanadu:style:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteStyle(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // PASSAGE OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:passage:list', (_e, bookId: string, curationStatus?: string) => {
+    const db = ensureDb();
+    return db.getBookPassages(bookId, curationStatus);
+  });
+
+  ipcMain.handle('xanadu:passage:upsert', (_e, passage: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertBookPassage(passage as Parameters<typeof db.upsertBookPassage>[0]);
+    return { success: true, id: passage.id };
+  });
+
+  ipcMain.handle('xanadu:passage:curate', (_e, id: string, status: string, note?: string) => {
+    const db = ensureDb();
+    db.updatePassageCuration(id, status, note);
+    return { success: true };
+  });
+
+  ipcMain.handle('xanadu:passage:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteBookPassage(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // CHAPTER OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:chapter:list', (_e, bookId: string) => {
+    const db = ensureDb();
+    return db.getBookChapters(bookId);
+  });
+
+  ipcMain.handle('xanadu:chapter:get', (_e, id: string) => {
+    const db = ensureDb();
+    return db.getBookChapter(id);
+  });
+
+  ipcMain.handle('xanadu:chapter:upsert', (_e, chapter: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertBookChapter(chapter as Parameters<typeof db.upsertBookChapter>[0]);
+    return { success: true, id: chapter.id };
+  });
+
+  ipcMain.handle('xanadu:chapter:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteBookChapter(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // CHAPTER VERSION OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:version:list', (_e, chapterId: string) => {
+    const db = ensureDb();
+    return db.getChapterVersions(chapterId);
+  });
+
+  ipcMain.handle('xanadu:version:save', (
+    _e,
+    chapterId: string,
+    version: number,
+    content: string,
+    changes?: string,
+    createdBy?: string
+  ) => {
+    const db = ensureDb();
+    db.saveChapterVersion(chapterId, version, content, changes, createdBy);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // SEED LIBRARY DATA (First Run)
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:seed-library', async () => {
+    // Wait for services to be ready (handles race condition on startup)
+    const ready = await waitForServices(15000); // 15 second timeout
+    if (!ready) {
+      console.warn('[Xanadu] Timed out waiting for services to initialize');
+      return { success: false, error: 'Services not ready after 15s timeout' };
+    }
+
+    const db = ensureDb();
+
+    // Check if library already seeded (look for a known library persona)
+    const existingPersona = db.getPersona('persona://tem-noon/marginalia-voice');
+    if (existingPersona) {
+      console.log('[Xanadu] Library already seeded');
+      return { success: true, alreadySeeded: true };
+    }
+
+    console.log('[Xanadu] Seeding library data...');
+
+    // Import library data from BookshelfService pattern
+    // NOTE: In production, this would read from the LIBRARY_* constants
+    // For now we import them dynamically to avoid circular deps
+
+    try {
+      // Seed library personas (createdAt/updatedAt generated by upsert)
+      const libraryPersonas = await import('./xanadu/library-seed').then(m => m.LIBRARY_PERSONAS);
+      for (const persona of libraryPersonas) {
+        db.upsertPersona({
+          id: persona.id,
+          uri: persona.uri,
+          name: persona.name,
+          description: persona.description,
+          author: persona.author,
+          voice: persona.voice,
+          vocabulary: persona.vocabulary,
+          derivedFrom: persona.derivedFrom,
+          influences: persona.influences,
+          exemplars: persona.exemplars,
+          systemPrompt: persona.systemPrompt,
+          tags: persona.tags,
+          isLibrary: true,
+        });
+      }
+
+      // Seed library styles (createdAt/updatedAt generated by upsert)
+      const libraryStyles = await import('./xanadu/library-seed').then(m => m.LIBRARY_STYLES);
+      for (const style of libraryStyles) {
+        db.upsertStyle({
+          id: style.id,
+          uri: style.uri,
+          name: style.name,
+          description: style.description,
+          author: style.author,
+          characteristics: style.characteristics,
+          structure: style.structure,
+          stylePrompt: style.stylePrompt,
+          derivedFrom: style.derivedFrom,
+          tags: style.tags,
+          isLibrary: true,
+        });
+      }
+
+      // Seed library books (createdAt/updatedAt generated by upsert)
+      const libraryBooks = await import('./xanadu/library-seed').then(m => m.LIBRARY_BOOKS);
+      for (const book of libraryBooks) {
+        db.upsertBook({
+          id: book.id,
+          uri: book.uri,
+          name: book.name,
+          subtitle: book.subtitle,
+          description: book.description,
+          author: book.author,
+          status: book.status,
+          personaRefs: book.personaRefs,
+          styleRefs: book.styleRefs,
+          sourceRefs: book.sourceRefs,
+          threads: book.threads,
+          harvestConfig: book.harvestConfig,
+          editorial: book.editorial,
+          stats: book.stats,
+          tags: book.tags,
+          isLibrary: true,
+        });
+      }
+
+      console.log('[Xanadu] Library seed complete');
+      return { success: true, alreadySeeded: false };
+    } catch (err) {
+      console.error('[Xanadu] Failed to seed library:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  console.log('Xanadu unified storage IPC handlers registered');
+}
+
+// ============================================================
 // CUSTOM PROTOCOL FOR LOCAL MEDIA
 // ============================================================
 
@@ -780,7 +1129,154 @@ function registerLocalMediaProtocol() {
 }
 
 // ============================================================
-// APP LIFECYCLE
+// OAUTH CALLBACK SERVER (Development Mode)
+// ============================================================
+
+import * as http from 'http';
+
+let oauthCallbackServer: http.Server | null = null;
+let oauthCallbackPort: number | null = null;
+
+/**
+ * Start a local HTTP server to receive OAuth callbacks in development mode.
+ * In production, the custom protocol (humanizer://) works correctly.
+ */
+async function startOAuthCallbackServer(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url || '/', `http://localhost`);
+
+      if (url.pathname === '/auth/callback') {
+        const token = url.searchParams.get('token');
+        const isNewUser = url.searchParams.get('isNewUser') === 'true';
+
+        if (token && mainWindow) {
+          console.log('[OAuth] Token received via localhost callback');
+          mainWindow.webContents.send('auth:oauth-callback', { token, isNewUser });
+
+          // Focus the app window
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+
+          // Send success page to browser
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`
+            <!DOCTYPE html>
+            <html>
+            <head><title>Login Successful</title></head>
+            <body style="font-family: system-ui; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #1a1918; color: #fff;">
+              <div style="text-align: center;">
+                <h1 style="color: #4a90d9;">Login Successful!</h1>
+                <p>You can close this tab and return to Humanizer.</p>
+                <script>setTimeout(() => window.close(), 2000);</script>
+              </div>
+            </body>
+            </html>
+          `);
+        } else {
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end('<h1>Login failed</h1><p>No token received or app window not ready.</p>');
+        }
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+    });
+
+    // Find a free port
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (addr && typeof addr === 'object') {
+        oauthCallbackPort = addr.port;
+        oauthCallbackServer = server;
+        console.log(`[OAuth] Callback server listening on http://127.0.0.1:${oauthCallbackPort}`);
+        resolve(addr.port);
+      } else {
+        reject(new Error('Failed to get server address'));
+      }
+    });
+
+    server.on('error', reject);
+  });
+}
+
+function stopOAuthCallbackServer() {
+  if (oauthCallbackServer) {
+    oauthCallbackServer.close();
+    oauthCallbackServer = null;
+    oauthCallbackPort = null;
+  }
+}
+
+// ============================================================
+// APP LIFECYCLE - SINGLE INSTANCE LOCK
+// ============================================================
+
+// Store deep link URL to process after window is ready
+let pendingDeepLinkUrl: string | null = null;
+
+// Helper to handle deep link URL (OAuth callback - for production)
+function handleDeepLinkUrl(url: string) {
+  console.log('[OAuth] Processing deep link:', url);
+
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol === 'humanizer:' && parsedUrl.host === 'auth' && parsedUrl.pathname === '/callback') {
+      const token = parsedUrl.searchParams.get('token');
+      const isNewUser = parsedUrl.searchParams.get('isNewUser') === 'true';
+
+      if (token && mainWindow) {
+        console.log('[OAuth] Token received, sending to renderer');
+        mainWindow.webContents.send('auth:oauth-callback', { token, isNewUser });
+        // Focus the app window
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      } else if (token && !mainWindow) {
+        // Window not ready yet, store for later
+        pendingDeepLinkUrl = url;
+        console.log('[OAuth] Window not ready, storing URL for later');
+      } else if (!token) {
+        console.error('[OAuth] No token in callback URL');
+      }
+    }
+  } catch (err) {
+    console.error('[OAuth] Failed to parse deep link:', err);
+  }
+}
+
+// Request single instance lock - ensures only one instance runs
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  console.log('Another instance is running, quitting...');
+  app.quit();
+} else {
+  // Handle second instance (receives deep link URL on Windows/Linux)
+  app.on('second-instance', (_event, commandLine, _workingDirectory) => {
+    console.log('[OAuth] Second instance detected');
+    const deepLinkUrl = commandLine.find(arg => arg.startsWith('humanizer://'));
+    if (deepLinkUrl) {
+      handleDeepLinkUrl(deepLinkUrl);
+    }
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  // Register custom protocol (works in production, fallback in development)
+  if (!app.isPackaged) {
+    // Development: rely on localhost callback server instead
+    console.log('[OAuth] Development mode - will use localhost callback server');
+  } else {
+    // Production: register custom protocol
+    app.setAsDefaultProtocolClient('humanizer');
+    console.log('[OAuth] Production mode - registered humanizer:// protocol');
+  }
+}
+
+// ============================================================
+// APP LIFECYCLE - READY
 // ============================================================
 
 app.whenReady().then(async () => {
@@ -790,21 +1286,59 @@ app.whenReady().then(async () => {
   registerLocalMediaProtocol();
 
   registerIPCHandlers();
+  registerAgentMasterHandlers();
 
-  if (store.get('archiveServerEnabled')) {
-    await startArchiveServer();
+  // Start OAuth callback server in development mode
+  if (!app.isPackaged) {
+    try {
+      await startOAuthCallbackServer();
+    } catch (err) {
+      console.error('[OAuth] Failed to start callback server:', err);
+    }
   }
+
+  // Initialize whisper for speech-to-text
+  if (store.get('whisperEnabled')) {
+    const whisperAvailable = await initWhisper();
+    if (whisperAvailable) {
+      registerWhisperHandlers();
+      console.log('Whisper speech-to-text initialized');
+    } else {
+      console.log('Whisper module not available - install @kutalia/whisper-node-addon');
+    }
+  }
+
+  // Always start archive server for local archive access
+  // Set flag BEFORE calling startArchiveServer since it checks this
+  store.set('archiveServerEnabled', true);
+  await startArchiveServer();
+
+  // Register Xanadu handlers (after archive server to ensure DB is ready)
+  registerXanaduHandlers();
 
   // Always start npe-local server for AI detection and transformations
   await startNpeLocal();
 
   await createWindow();
 
+  // Process any pending deep link URL that arrived before window was ready
+  if (pendingDeepLinkUrl) {
+    console.log('[OAuth] Processing pending deep link URL');
+    handleDeepLinkUrl(pendingDeepLinkUrl);
+    pendingDeepLinkUrl = null;
+  }
+
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
     }
   });
+});
+
+// Handle OAuth deep link callback (macOS - when app is already running)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLinkUrl(url);
 });
 
 app.on('window-all-closed', () => {

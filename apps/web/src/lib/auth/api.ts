@@ -11,6 +11,7 @@ import type {
   RegisterRequest,
   OAuthProvider,
 } from './types';
+import { isElectron, getElectronAPI } from '../platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -18,25 +19,21 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://npe-api.tem-527.workers.dev';
 const TOKEN_KEY = 'humanizer-auth-token';
-const TOKEN_KEY_COMPAT = 'narrative-studio-auth-token'; // Cross-app compatibility
 
 // ═══════════════════════════════════════════════════════════════════
 // TOKEN MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════
 
 export function getStoredToken(): string | null {
-  // Check both keys for cross-app compatibility
-  return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY_COMPAT);
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setStoredToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(TOKEN_KEY_COMPAT, token); // Keep in sync
 }
 
 export function clearStoredToken(): void {
   localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TOKEN_KEY_COMPAT);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -145,13 +142,70 @@ export function logout(): void {
 // OAUTH
 // ═══════════════════════════════════════════════════════════════════
 
+// Cache for OAuth callback port (fetched once from Electron)
+let cachedOAuthCallbackPort: number | null = null;
+
+/**
+ * Get OAuth callback port from Electron (for development localhost server)
+ */
+async function getOAuthCallbackPort(): Promise<number | null> {
+  if (cachedOAuthCallbackPort !== null) return cachedOAuthCallbackPort;
+  if (!isElectron) return null;
+
+  const electronWindow = window as unknown as {
+    electronAPI?: { auth?: { getCallbackPort: () => Promise<number | null> } }
+  };
+  const authAPI = electronWindow.electronAPI?.auth;
+  if (!authAPI?.getCallbackPort) return null;
+
+  cachedOAuthCallbackPort = await authAPI.getCallbackPort();
+  return cachedOAuthCallbackPort;
+}
+
 /**
  * Get OAuth login URL for a provider
  */
-export function getOAuthLoginUrl(provider: OAuthProvider): string {
-  // Note: backend expects 'redirect' not 'redirect_uri'
-  const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
-  return `${API_BASE}/auth/oauth/${provider}/login?redirect=${redirectUri}`;
+export function getOAuthLoginUrl(provider: OAuthProvider, callbackPort?: number | null): string {
+  let redirectUri: string;
+
+  if (isElectron) {
+    if (callbackPort) {
+      // Development: use localhost callback server
+      redirectUri = `http://127.0.0.1:${callbackPort}/auth/callback`;
+    } else {
+      // Production: use custom protocol
+      redirectUri = 'humanizer://auth/callback';
+    }
+  } else {
+    // Web: use origin
+    redirectUri = `${window.location.origin}/auth/callback`;
+  }
+
+  return `${API_BASE}/auth/oauth/${provider}/login?redirect=${encodeURIComponent(redirectUri)}`;
+}
+
+/**
+ * Get OAuth login URL async (fetches callback port if needed)
+ */
+export async function getOAuthLoginUrlAsync(provider: OAuthProvider): Promise<string> {
+  const callbackPort = await getOAuthCallbackPort();
+  return getOAuthLoginUrl(provider, callbackPort);
+}
+
+/**
+ * Open OAuth in external browser (for Electron)
+ * Returns true if handled by Electron, false if should use normal flow
+ */
+export async function openOAuthExternal(provider: OAuthProvider): Promise<boolean> {
+  if (!isElectron) return false;
+
+  const api = getElectronAPI();
+  if (!api?.shell) return false;
+
+  // Get the OAuth URL (with correct callback for dev/prod)
+  const url = await getOAuthLoginUrlAsync(provider);
+  await api.shell.openExternal(url);
+  return true;
 }
 
 /**

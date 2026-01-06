@@ -1,36 +1,56 @@
 /**
- * EmbeddingGenerator - Generate embeddings using transformers.js
+ * EmbeddingGenerator - Generate embeddings using Ollama
  *
- * Uses the all-MiniLM-L6-v2 model (384 dimensions) for sentence embeddings.
- * Runs locally via ONNX runtime - no external API calls needed.
+ * Uses nomic-embed-text model (768 dimensions) for high-quality sentence embeddings.
+ * Runs locally via Ollama - no external API calls needed.
  */
 
-import { pipeline, env } from 'chromadb-default-embed';
-import * as path from 'path';
-import * as os from 'os';
-
-// Configure transformers.js environment for Node.js
-env.allowLocalModels = true;   // Allow loading from local cache
-env.useBrowserCache = false;   // Disable browser cache (not available in Node.js)
-
-// Set a local cache directory for models
-const cacheDir = path.join(os.homedir(), '.cache', 'humanizer', 'models');
-env.cacheDir = cacheDir;
-env.localModelPath = cacheDir;
-
 // Model configuration
-const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';
-const EMBEDDING_DIM = 384;
+const OLLAMA_ENDPOINT = 'http://localhost:11434';
+const EMBEDDING_MODEL = 'nomic-embed-text';
+const EMBEDDING_DIM = 768;
 
-// Singleton pipeline instance
-let embeddingPipeline: any = null;
+// Initialization state
+let ollamaValidated = false;
 let initPromise: Promise<void> | null = null;
 
 /**
- * Initialize the embedding pipeline (downloads model on first use)
+ * Validate Ollama is running with the required model
+ */
+export async function validateOllama(): Promise<void> {
+  try {
+    const response = await fetch(`${OLLAMA_ENDPOINT}/api/tags`);
+    if (!response.ok) {
+      throw new Error(`Ollama not responding: ${response.status}`);
+    }
+    const data = await response.json();
+    const hasModel = data.models?.some((m: { name: string }) =>
+      m.name.includes('nomic-embed-text')
+    );
+    if (!hasModel) {
+      throw new Error(
+        'nomic-embed-text model not found.\n' +
+        'Run: ollama pull nomic-embed-text'
+      );
+    }
+    console.log(`[embeddings] Ollama validated with ${EMBEDDING_MODEL}`);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('nomic-embed-text')) {
+      throw error;
+    }
+    throw new Error(
+      'Ollama not running.\n' +
+      'Start Ollama: ollama serve\n' +
+      'Then pull model: ollama pull nomic-embed-text'
+    );
+  }
+}
+
+/**
+ * Initialize the embedding system (validates Ollama on first use)
  */
 export async function initializeEmbedding(): Promise<void> {
-  if (embeddingPipeline) return;
+  if (ollamaValidated) return;
 
   if (initPromise) {
     await initPromise;
@@ -38,22 +58,24 @@ export async function initializeEmbedding(): Promise<void> {
   }
 
   initPromise = (async () => {
-    console.log(`Loading embedding model: ${EMBEDDING_MODEL}...`);
+    console.log(`[embeddings] Initializing with ${EMBEDDING_MODEL}...`);
     const startTime = Date.now();
 
-    embeddingPipeline = await pipeline('feature-extraction', EMBEDDING_MODEL, {
-      quantized: true,  // Use quantized model for faster inference
-    });
+    await validateOllama();
+    ollamaValidated = true;
 
     const elapsed = Date.now() - startTime;
-    console.log(`Embedding model loaded in ${elapsed}ms`);
+    console.log(`[embeddings] Ready in ${elapsed}ms`);
   })();
 
   await initPromise;
 }
 
+// Maximum characters to embed (nomic-embed-text has ~8k token context)
+const MAX_TEXT_LENGTH = 24000;
+
 /**
- * Generate embedding for a single text
+ * Generate embedding for a single text using Ollama API
  */
 export async function embed(text: string): Promise<number[]> {
   await initializeEmbedding();
@@ -63,18 +85,37 @@ export async function embed(text: string): Promise<number[]> {
     return new Array(EMBEDDING_DIM).fill(0);
   }
 
-  // Run inference
-  const result = await embeddingPipeline(text, {
-    pooling: 'mean',      // Mean pooling over tokens
-    normalize: true,      // L2 normalize the output
+  // Truncate very long texts to avoid API errors
+  let inputText = text;
+  if (text.length > MAX_TEXT_LENGTH) {
+    inputText = text.slice(0, MAX_TEXT_LENGTH);
+  }
+
+  // Call Ollama embedding API
+  const response = await fetch(`${OLLAMA_ENDPOINT}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: inputText
+    })
   });
 
-  // Extract the embedding array
-  const embedding = Array.from(result.data as Float32Array);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'unknown');
+    throw new Error(`Ollama embedding failed: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const embedding = data.embeddings?.[0];
+
+  if (!embedding || !Array.isArray(embedding)) {
+    throw new Error('Invalid embedding response from Ollama');
+  }
 
   // Verify dimensions
   if (embedding.length !== EMBEDDING_DIM) {
-    console.warn(`Expected ${EMBEDDING_DIM} dimensions, got ${embedding.length}`);
+    console.warn(`[embeddings] Expected ${EMBEDDING_DIM} dimensions, got ${embedding.length}`);
   }
 
   return embedding;
@@ -82,6 +123,7 @@ export async function embed(text: string): Promise<number[]> {
 
 /**
  * Generate embeddings for multiple texts in batch
+ * Handles individual failures gracefully by returning zero vectors
  */
 export async function embedBatch(
   texts: string[],
@@ -94,13 +136,26 @@ export async function embedBatch(
 
   const { batchSize = 32, onProgress } = options;
   const embeddings: number[][] = [];
+  let failureCount = 0;
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
 
-    // Process batch
+    // Process batch with individual error handling
     const batchEmbeddings = await Promise.all(
-      batch.map(text => embed(text))
+      batch.map(async (text) => {
+        try {
+          return await embed(text);
+        } catch (error) {
+          failureCount++;
+          if (failureCount <= 5) {
+            console.warn(`[embeddings] Failed to embed text (${text.length} chars):`,
+              error instanceof Error ? error.message : error);
+          }
+          // Return zero vector on failure
+          return new Array(EMBEDDING_DIM).fill(0);
+        }
+      })
     );
 
     embeddings.push(...batchEmbeddings);
@@ -108,6 +163,10 @@ export async function embedBatch(
     if (onProgress) {
       onProgress(Math.min(i + batchSize, texts.length), texts.length);
     }
+  }
+
+  if (failureCount > 0) {
+    console.warn(`[embeddings] ${failureCount} embeddings failed and were replaced with zero vectors`);
   }
 
   return embeddings;
@@ -128,10 +187,10 @@ export function getModelName(): string {
 }
 
 /**
- * Check if the embedding pipeline is initialized
+ * Check if the embedding system is initialized
  */
 export function isInitialized(): boolean {
-  return embeddingPipeline !== null;
+  return ollamaValidated;
 }
 
 /**

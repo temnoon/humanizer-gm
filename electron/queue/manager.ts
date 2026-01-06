@@ -25,7 +25,13 @@ import type {
   CreateJobResult,
   JobQueryOptions,
   ImageAnalysisResult,
+  PdfExtractionResult,
+  AudioTranscriptionResult,
+  HumanizationResult,
 } from './types';
+import { extractPdf } from './handlers/pdf';
+import { transcribeAudio } from './handlers/audio';
+import { humanizeText } from './handlers/humanize';
 import {
   VisionProviderFactory,
   initVisionProviders,
@@ -448,6 +454,23 @@ export class QueueManager {
           case 'image-embedding':
             data = await this.generateEmbedding(file.path);
             break;
+          case 'extract':
+            data = await extractPdf(file.path, job.spec.options);
+            break;
+          case 'transform':
+            data = await humanizeText(file.path, {
+              intensity: (job.spec.options?.intensity as 'light' | 'moderate' | 'aggressive') || 'moderate',
+              model: job.spec.options?.model as string | undefined,
+              voiceSamples: job.spec.options?.voiceSamples as string[] | undefined,
+            });
+            break;
+          case 'summarize':
+            // Audio transcription (repurposing summarize for now, could add dedicated type)
+            data = await transcribeAudio(file.path, {
+              model: job.spec.options?.model as string | undefined,
+              language: job.spec.options?.language as string | undefined,
+            });
+            break;
           default:
             throw new Error(`Unsupported job type: ${job.spec.type}`);
         }
@@ -563,14 +586,16 @@ export class QueueManager {
   }
 
   /**
-   * Sync successful analysis results to archive server for searchability
+   * Sync successful analysis results to archive server for searchability.
+   * Also embeds descriptions for semantic image search.
    */
   private async syncResultsToArchive(results: QueueFileResult[]): Promise<void> {
     const successfulResults = results.filter(r => r.success && r.data);
     if (successfulResults.length === 0) return;
 
     try {
-      const response = await fetch(`${ARCHIVE_API}/api/images/analysis/batch`, {
+      // Sync to archive server (stores in image_analysis table)
+      const response = await fetch(`${ARCHIVE_API}/api/gallery/analysis/batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -588,9 +613,55 @@ export class QueueManager {
         const data = await response.json();
         console.log(`[QueueManager] Synced ${data.added} new, ${data.updated} updated analyses to archive`);
       }
+
+      // Embed descriptions for semantic search (non-blocking)
+      this.embedDescriptionsInBackground(successfulResults);
     } catch (error) {
       // Non-fatal - archive server might not be running
       console.warn('[QueueManager] Could not sync to archive server:', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  /**
+   * Embed image descriptions in the background for semantic search.
+   * Uses Ollama nomic-embed-text via the archive server endpoint.
+   */
+  private async embedDescriptionsInBackground(results: QueueFileResult[]): Promise<void> {
+    // Process descriptions that have text
+    const withDescriptions = results.filter(r => {
+      const data = r.data as ImageAnalysisResult | undefined;
+      return data?.description && data.description.length > 0;
+    });
+
+    if (withDescriptions.length === 0) return;
+
+    console.log(`[QueueManager] Embedding ${withDescriptions.length} descriptions for semantic search...`);
+
+    let embedded = 0;
+    for (const result of withDescriptions) {
+      try {
+        const data = result.data as ImageAnalysisResult;
+
+        // Use the archive server's embedding endpoint which handles the embedding + storage
+        const response = await fetch(`${ARCHIVE_API}/api/embeddings/embed-image-description`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filePath: result.filePath,
+            description: data.description,
+          }),
+        });
+
+        if (response.ok) {
+          embedded++;
+        }
+      } catch {
+        // Non-fatal - continue with other descriptions
+      }
+    }
+
+    if (embedded > 0) {
+      console.log(`[QueueManager] Embedded ${embedded}/${withDescriptions.length} descriptions`);
     }
   }
 

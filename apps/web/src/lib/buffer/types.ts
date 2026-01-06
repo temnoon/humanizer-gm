@@ -52,6 +52,14 @@ export interface ContentNodeMetadata {
   // Computed stats (for display)
   itemCount?: number;
   avgSicScore?: number;
+
+  // Book project metadata (when content is from a book)
+  type?: string;
+  bookProjectId?: string;
+  itemId?: string;
+
+  // Allow additional properties
+  [key: string]: unknown;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -90,6 +98,8 @@ export type ArchiveSourceType =
   | 'book-thinking'
   | 'passage'
   | 'filesystem'
+  | 'gutenberg'
+  | 'transform'
   | 'manual';
 
 export interface ArchiveSource {
@@ -105,6 +115,9 @@ export interface ArchiveSource {
   // Book-specific fields
   bookProjectId?: string;
   itemId?: string;
+  // Transform-specific fields
+  original?: string;                 // Original content before transformation
+  transformType?: string;            // Type of transformation applied
 }
 
 // ═══════════════════════════════════════════════════════════════════

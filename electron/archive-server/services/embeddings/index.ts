@@ -18,6 +18,8 @@ export {
   type ExtractedConversation,
   type WalkOptions,
 } from './ConversationWalker.js';
+export { ContentAnalyzer } from './ContentAnalyzer.js';
+export { ContentChunker, chunkContent, type ChunkResult, type ChunkerOptions } from './ContentChunker.js';
 export {
   initializeEmbedding,
   embed,

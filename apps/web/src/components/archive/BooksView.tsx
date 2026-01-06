@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useBuffers } from '../../lib/buffer/BufferContext';
 import { useAuthenticatedFetch } from '../../lib/auth';
-import { useBook } from '../../lib/book';
+// useBook removed - consolidated into useBookshelf (Phase 4.2)
 import { useBookshelf, type BookProject as BookshelfBookProject } from '../../lib/bookshelf';
 import {
   type BookProject,
@@ -98,6 +98,8 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProjectTab>('sources');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [renamingBookId, setRenamingBookId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // Buffer system - for loading content to workspace
   const { importText } = useBuffers();
@@ -105,10 +107,8 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
   // Authenticated fetch - handles 401 gracefully with login prompt
   const { authGet, isAuthenticated } = useAuthenticatedFetch();
 
-  // Book context - for persistence and active project
-  const book = useBook();
-
-  // Bookshelf context - library books, personas, styles
+  // Bookshelf context - unified storage for books, personas, styles
+  // (BookContext removed - consolidated in Phase 4.2)
   const bookshelf = useBookshelf();
 
   // Convert bookshelf book to internal BookProject format
@@ -182,29 +182,19 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
     return converted;
   }, []);
 
-  // Combine localStorage projects with bookshelf library books
+  // Get book projects from unified bookshelf storage
+  // (localStorage projects migrated to Xanadu - see Phase 3 migration)
   const bookProjects = useMemo(() => {
     // Convert bookshelf books to internal format
     const libraryBooks = bookshelf.books.map(convertBookshelfBook);
 
-    // Get user projects from BookContext
-    const userProjects = book.projects;
-
-    // Merge: library books first, then user projects (deduplicated by id)
-    const allProjects = [...libraryBooks];
-    for (const proj of userProjects) {
-      if (!allProjects.some(p => p.id === proj.id)) {
-        allProjects.push(proj);
-      }
-    }
-
     // Add demo if not present
-    if (!allProjects.some(p => p.id === DEMO_BOOK_PROJECT.id)) {
-      allProjects.unshift(DEMO_BOOK_PROJECT);
+    if (!libraryBooks.some(p => p.id === DEMO_BOOK_PROJECT.id)) {
+      libraryBooks.unshift(DEMO_BOOK_PROJECT);
     }
 
-    return allProjects;
-  }, [book.projects, bookshelf.books, convertBookshelfBook]);
+    return libraryBooks;
+  }, [bookshelf.books, convertBookshelfBook]);
 
   // Load books when authenticated or on mount
   useEffect(() => {
@@ -248,31 +238,59 @@ Start writing here...
   };
 
   // Create a new book project with persistence
-  const handleNewProject = useCallback(() => {
-    const project = book.createProject('Untitled Project', 'A new book project');
+  const handleNewProject = useCallback(async () => {
+    const name = window.prompt('Enter book project name:', 'My Book Project');
+    if (!name || !name.trim()) return; // User cancelled or empty name
+
+    const subtitle = window.prompt('Enter subtitle (optional):', '') || undefined;
+
+    // Create via bookshelf (unified storage)
+    const now = Date.now();
+    const project = await bookshelf.createBook({
+      id: `book-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      name: name.trim(),
+      subtitle: subtitle?.trim(),
+      createdAt: now,
+      updatedAt: now,
+      tags: [],
+      bookType: 'book',
+      chapters: [],
+      passages: [],
+      threads: [],
+      sourceRefs: [],
+      personaRefs: [],
+      styleRefs: [],
+      stats: { totalSources: 0, totalPassages: 0, approvedPassages: 0, gems: 0, chapters: 0, wordCount: 0 },
+      status: 'drafting',
+    });
+
     setSelectedProjectId(project.id);
     setViewMode('navigation');
-  }, [book]);
+  }, [bookshelf]);
 
   // Open book project in navigation view
   const handleOpenProject = useCallback((projectId: string) => {
     setSelectedProjectId(projectId);
     setViewMode('navigation');
 
-    // Set active project in book context for persistence
+    // Set active book in bookshelf context
     const project = bookProjects.find(p => p.id === projectId);
     if (project) {
-      book.setActiveProject(project);
+      // Get URI from converted project or construct it
+      const bookUri = (project as unknown as { _uri?: string })?._uri
+        || (project as unknown as { uri?: string })?.uri
+        || `book://${project.id}`;
+      bookshelf.setActiveBookUri(bookUri as `${string}://${string}`);
     }
-  }, [bookProjects, book]);
+  }, [bookProjects, bookshelf]);
 
   // Go back to list view
   const handleBackToList = useCallback(() => {
     setSelectedProjectId(null);
     setViewMode('list');
     setExpandedItems(new Set());
-    book.setActiveProject(null);
-  }, [book]);
+    bookshelf.setActiveBookUri(null);
+  }, [bookshelf]);
 
   // Handle legacy book selection (load into buffer)
   const handleSelectLegacyBook = useCallback((book: Book) => {
@@ -280,6 +298,37 @@ Start writing here...
       importText(book.content, book.title, { type: 'book' });
     }
   }, [importText]);
+
+  // Start renaming a book
+  const handleStartRename = useCallback((e: React.MouseEvent, project: BookProject) => {
+    e.stopPropagation(); // Don't trigger card click
+    setRenamingBookId(project.id);
+    setRenameValue(project.name);
+  }, []);
+
+  // Save the new name
+  const handleSaveRename = useCallback((projectId: string) => {
+    if (!renameValue.trim()) {
+      setRenamingBookId(null);
+      return;
+    }
+
+    // Find the book URI
+    const project = bookProjects.find(p => p.id === projectId);
+    if (project) {
+      const bookUri = (project as unknown as { _uri?: string })?._uri
+        || (project as unknown as { uri?: string })?.uri
+        || `book://${project.id}`;
+      bookshelf.updateBook(bookUri as `${string}://${string}`, { name: renameValue.trim() });
+    }
+    setRenamingBookId(null);
+  }, [renameValue, bookProjects, bookshelf]);
+
+  // Cancel renaming
+  const handleCancelRename = useCallback(() => {
+    setRenamingBookId(null);
+    setRenameValue('');
+  }, []);
 
   // Toggle expanded state for a conversation or section
   const toggleExpanded = useCallback((id: string) => {
@@ -330,11 +379,15 @@ Start writing here...
     const project = bookProjects.find(p => p.id === selectedProjectId);
     if (!project) return;
 
+    // Get content from either direct property or from versions array
+    const chapterContent = chapter.content ?? chapter.versions?.[0]?.content ?? '';
+    const chapterNumber = chapter.number ?? 1;
+
     if (onSelectBookContent) {
       onSelectBookContent({
         type: 'chapter',
-        title: `Chapter ${chapter.number}: ${chapter.title}`,
-        content: chapter.content,
+        title: `Chapter ${chapterNumber}: ${chapter.title}`,
+        content: chapterContent,
         marginalia: chapter.marginalia,
         source: {
           bookProjectId: project.id,
@@ -345,7 +398,7 @@ Start writing here...
       }, project);
     } else {
       // Fallback to buffer system
-      importText(chapter.content, `Ch${chapter.number}: ${chapter.title}`, {
+      importText(chapterContent, `Ch${chapterNumber}: ${chapter.title}`, {
         type: 'book-chapter',
         bookProjectId: project.id,
         itemId: chapter.id,
@@ -354,11 +407,12 @@ Start writing here...
   }, [bookProjects, selectedProjectId, onSelectBookContent, importText]);
 
   // Create a new chapter
-  const handleNewChapter = useCallback(() => {
+  const handleNewChapter = useCallback(async () => {
     const title = window.prompt('Chapter title:');
     if (!title) return;
 
-    const chapter = book.createChapter(title);
+    // Create chapter via bookshelf (unified storage)
+    const chapter = await bookshelf.createChapterSimple(title);
     if (chapter && onSelectBookContent) {
       const project = bookProjects.find(p => p.id === selectedProjectId);
       if (project) {
@@ -376,7 +430,101 @@ Start writing here...
         }, project);
       }
     }
-  }, [book, bookProjects, selectedProjectId, onSelectBookContent]);
+  }, [bookshelf, bookProjects, selectedProjectId, onSelectBookContent]);
+
+  // Start a harvest for the current project - runs semantic search immediately
+  const handleStartHarvest = useCallback(async () => {
+    if (!selectedProjectId) return;
+
+    const project = bookProjects.find(p => p.id === selectedProjectId);
+    if (!project) return;
+
+    // Create a harvest bucket with queries based on project name
+    const queries = [project.name];
+    if (project.subtitle) {
+      queries.push(project.subtitle);
+    }
+
+    // Get book URI from library book or construct one
+    const bookUri = (project as unknown as { _uri?: string })?._uri
+      || (project as unknown as { uri?: string })?.uri
+      || `book://${project.id}`;
+
+    console.log('[BooksView] Starting harvest for book:', bookUri, 'queries:', queries);
+
+    // Set as active book in bookshelf context
+    bookshelf.setActiveBookUri(bookUri);
+
+    // Create the harvest bucket
+    const bucket = bookshelf.createHarvestBucket(bookUri, queries);
+    console.log('[BooksView] Created harvest bucket:', bucket.id);
+
+    // Import services needed
+    const { getArchiveServerUrl } = await import('../../lib/platform');
+    const { harvestBucketService } = await import('../../lib/bookshelf/HarvestBucketService');
+
+    // Run semantic search immediately
+    try {
+      const archiveServer = await getArchiveServerUrl();
+      let totalResults = 0;
+
+      for (const query of queries) {
+        try {
+          const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, limit: 20 }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.results && data.results.length > 0) {
+              for (const result of data.results) {
+                const passage = {
+                  id: result.id || `harvest-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  text: result.content,
+                  wordCount: result.content?.split(/\s+/).length || 0,
+                  similarity: result.similarity,
+                  timestamp: Date.now(),
+                  sourceRef: {
+                    uri: `source://chatgpt/${result.conversationId}` as `${string}://${string}`,
+                    sourceType: 'chatgpt' as const,
+                    conversationId: result.conversationId,
+                    conversationTitle: result.conversationTitle,
+                  },
+                  curation: {
+                    status: 'candidate' as const,
+                    curatedAt: Date.now(),
+                  },
+                  tags: [],
+                };
+                harvestBucketService.addCandidate(bucket.id, passage);
+                totalResults++;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[BooksView] Search failed for query "${query}":`, err);
+        }
+      }
+
+      // Transition to reviewing if we got results
+      if (totalResults > 0) {
+        harvestBucketService.finishCollecting(bucket.id);
+        console.log(`[BooksView] Harvest complete: ${totalResults} candidates`);
+
+        // Refresh bucket state in context to trigger UI update
+        bookshelf.refreshBuckets();
+
+        alert(`Harvest complete!\n\n${totalResults} candidates found.\n\nGo to Tools → Harvest to review them.`);
+      } else {
+        alert(`No results found for queries: ${queries.join(', ')}\n\nMake sure embeddings are built (Import tab).`);
+      }
+    } catch (err) {
+      console.error('[BooksView] Harvest failed:', err);
+      alert('Harvest failed. Make sure the archive server is running and embeddings are built.');
+    }
+  }, [selectedProjectId, bookProjects, bookshelf]);
 
   // Handle thinking click - send to main workspace
   const handleThinkingClick = useCallback(() => {
@@ -454,7 +602,7 @@ Start writing here...
       <div className="book-nav">
         {/* Header */}
         <header className="book-nav__header">
-          <button className="book-nav__back" onClick={handleBackToList}>
+          <button className="book-nav__back" onClick={handleBackToList} aria-label="Back to projects list">
             ← Projects
           </button>
           <div className="book-nav__title">
@@ -498,6 +646,14 @@ Start writing here...
         <div className="book-nav__content">
           {activeTab === 'sources' && (
             <div className="book-nav__sources">
+              {/* Start Harvest button */}
+              <button
+                className="book-nav__harvest-btn"
+                onClick={handleStartHarvest}
+              >
+                🌾 Start Harvest
+              </button>
+
               {/* Gems */}
               {passagesByStatus.gems.length > 0 && (
                 <div className="book-nav__group">
@@ -663,27 +819,32 @@ Start writing here...
                 const chapters = selectedProject.chapters || selectedProject.drafts?.chapters || [];
                 return chapters.length > 0 ? (
                   <div className="book-nav__chapters">
-                    {chapters.map(chapter => (
-                      <button
-                        key={chapter.id}
-                        className="book-nav__chapter"
-                        onClick={() => handleChapterClick(chapter)}
-                      >
-                        <span className="book-nav__chapter-number">Ch {chapter.number}</span>
-                        <div className="book-nav__chapter-info">
-                          <span className="book-nav__chapter-title">{chapter.title}</span>
-                          <span className="book-nav__chapter-meta">
-                            {chapter.wordCount.toLocaleString()} words · {chapter.status}
-                            {chapter.marginalia?.length > 0 && (
-                              <> · {chapter.marginalia.length} notes</>
-                            )}
+                    {chapters.map((chapter, index) => {
+                      const wordCount = chapter.wordCount ?? chapter.versions?.[0]?.content?.split(/\s+/).length ?? 0;
+                      const status = chapter.status ?? 'draft';
+                      const number = chapter.number ?? index + 1;
+                      return (
+                        <button
+                          key={chapter.id}
+                          className="book-nav__chapter"
+                          onClick={() => handleChapterClick(chapter)}
+                        >
+                          <span className="book-nav__chapter-number">Ch {number}</span>
+                          <div className="book-nav__chapter-info">
+                            <span className="book-nav__chapter-title">{chapter.title}</span>
+                            <span className="book-nav__chapter-meta">
+                              {wordCount.toLocaleString()} words · {status}
+                              {chapter.marginalia?.length > 0 && (
+                                <> · {chapter.marginalia.length} notes</>
+                              )}
+                            </span>
+                          </div>
+                          <span className={`book-nav__chapter-status book-nav__chapter-status--${status}`}>
+                            {status === 'complete' ? '✓' : '○'}
                           </span>
-                        </div>
-                        <span className={`book-nav__chapter-status book-nav__chapter-status--${chapter.status}`}>
-                          {chapter.status === 'complete' ? '✓' : '○'}
-                        </span>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="book-nav__empty">
@@ -734,39 +895,93 @@ Start writing here...
       {bookProjects.length > 0 && (
         <div className="books-section">
           <h3 className="books-section__title">📚 Book Projects</h3>
-          {bookProjects.map(project => (
+          {bookProjects.map(project => {
+            // Check if this is the active book
+            const projectUri = (project as unknown as { _uri?: string })?._uri
+              || (project as unknown as { uri?: string })?.uri
+              || `book://${project.id}`;
+            const isActive = bookshelf.activeBookUri === projectUri;
+
+            const isPaper = project.bookType === 'paper';
+
+            return (
             <div
               key={project.id}
-              className="book-card book-card--project"
+              className={`book-card book-card--project ${isActive ? 'book-card--active' : ''} ${isPaper ? 'book-card--paper' : ''}`}
               onClick={() => handleOpenProject(project.id)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && handleOpenProject(project.id)}
             >
-              <div className="book-card__cover">📖</div>
+              <div className="book-card__cover">{isPaper ? '📝' : '📖'}</div>
               <div className="book-card__info">
-                <div className="book-card__title">{project.name}</div>
+                {renamingBookId === project.id ? (
+                  <div className="book-card__rename" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      className="book-card__rename-input"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveRename(project.id);
+                        if (e.key === 'Escape') handleCancelRename();
+                      }}
+                      autoFocus
+                    />
+                    <button
+                      className="book-card__rename-btn book-card__rename-btn--save"
+                      onClick={() => handleSaveRename(project.id)}
+                      title="Save"
+                      aria-label="Save new name"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className="book-card__rename-btn book-card__rename-btn--cancel"
+                      onClick={handleCancelRename}
+                      title="Cancel"
+                      aria-label="Cancel renaming"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div className="book-card__title-row">
+                    <div className="book-card__title">{project.name}</div>
+                    <button
+                      className="book-card__edit-btn"
+                      onClick={(e) => handleStartRename(e, project)}
+                      title="Rename book"
+                      aria-label="Rename book"
+                    >
+                      ✎
+                    </button>
+                  </div>
+                )}
                 {project.subtitle && (
                   <div className="book-card__meta">{project.subtitle}</div>
                 )}
                 <div className="book-card__meta">
-                  {project.stats.totalPassages} passages ·{' '}
-                  {project.stats.gems} gems ·{' '}
-                  {project.stats.chapters} chapters
+                  {project.stats?.totalPassages ?? project.passages?.length ?? 0} passages ·{' '}
+                  {project.stats?.gems ?? 0} gems
+                  {!isPaper && (
+                    <> · {project.stats?.chapters ?? project.chapters?.length ?? 0} chapters</>
+                  )}
                 </div>
                 <div className="book-card__pipeline">
-                  <span className="pipeline-step" title="Sources">📚 {project.stats.totalSources || project.stats.totalConversations || 0}</span>
+                  <span className="pipeline-step" title="Sources">📚 {project.stats?.totalSources || project.stats?.totalConversations || project.sourceRefs?.length || 0}</span>
                   <span className="pipeline-arrow">→</span>
-                  <span className="pipeline-step" title="Approved">✓ {project.stats.approvedPassages}</span>
+                  <span className="pipeline-step" title="Approved">✓ {project.stats?.approvedPassages ?? project.passages?.filter((p: { curation?: { status?: string } }) => p.curation?.status === 'approved' || p.curation?.status === 'gem').length ?? 0}</span>
                   <span className="pipeline-arrow">→</span>
-                  <span className="pipeline-step" title="Words">{project.stats.wordCount}</span>
+                  <span className="pipeline-step" title="Words">{project.stats?.wordCount ?? 0}</span>
                 </div>
               </div>
               <span className={`book-card__status book-card__status--${project.status}`}>
                 {project.status}
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

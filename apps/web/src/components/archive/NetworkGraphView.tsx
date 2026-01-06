@@ -21,6 +21,7 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force';
+import { getArchiveServerUrl } from '../../lib/platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -60,8 +61,6 @@ interface RelationshipStats {
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
-
-const ARCHIVE_SERVER = 'http://localhost:3002';
 
 // Relationship type colors using CSS custom properties where possible
 const RELATIONSHIP_COLORS: Record<string, string> = {
@@ -112,9 +111,10 @@ export function NetworkGraphView() {
     setError(null);
 
     try {
+      const archiveServer = await getArchiveServerUrl();
       const [connectionsRes, statsRes] = await Promise.all([
-        fetch(`${ARCHIVE_SERVER}/api/facebook/graph/top-connections?limit=${maxNodes}`),
-        fetch(`${ARCHIVE_SERVER}/api/facebook/graph/relationships/stats`),
+        fetch(`${archiveServer}/api/facebook/graph/top-connections?limit=${maxNodes}`),
+        fetch(`${archiveServer}/api/facebook/graph/relationships/stats`),
       ]);
 
       if (!connectionsRes.ok) throw new Error('Failed to fetch connections');

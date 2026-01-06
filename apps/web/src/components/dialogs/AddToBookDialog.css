@@ -1,0 +1,225 @@
+/**
+ * AddToBookDialog Styles
+ * Uses theme variables - no hardcoded colors
+ */
+
+.add-to-book-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-medium);
+}
+
+.add-to-book-dialog {
+  background: var(--color-surface-elevated, var(--studio-panel-bg));
+  border: 1px solid var(--color-border-default, var(--studio-border));
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-xlarge);
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.add-to-book-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-medium);
+  border-bottom: 1px solid var(--color-border-subtle, var(--studio-border));
+}
+
+.add-to-book-dialog__header h2 {
+  margin: 0;
+  font-size: var(--text-size-large);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary, var(--studio-text));
+}
+
+.add-to-book-dialog__close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-small);
+  font-size: 1.5rem;
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.add-to-book-dialog__close:hover {
+  background: var(--color-surface-tertiary, var(--studio-hover));
+  color: var(--color-text-primary, var(--studio-text));
+}
+
+.add-to-book-dialog__content {
+  padding: var(--space-medium);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.add-to-book-dialog__preview {
+  padding: var(--space-small) var(--space-medium);
+  background: var(--color-surface-secondary, var(--studio-quote-bg));
+  border-radius: var(--radius-small);
+  margin-bottom: var(--space-medium);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tiny);
+}
+
+.add-to-book-dialog__preview-label {
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+}
+
+.add-to-book-dialog__preview-text {
+  font-size: var(--text-size-small);
+  color: var(--color-text-primary, var(--studio-text));
+  font-style: italic;
+}
+
+.add-to-book-dialog__preview-stats {
+  font-size: var(--text-size-small);
+  color: var(--color-text-tertiary, var(--studio-text-tertiary));
+}
+
+.add-to-book-dialog__field {
+  margin-bottom: var(--space-medium);
+}
+
+.add-to-book-dialog__field label {
+  display: block;
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+  margin-bottom: var(--space-small);
+}
+
+.add-to-book-dialog__field input[type="text"],
+.add-to-book-dialog__field select {
+  width: 100%;
+  padding: var(--space-small) var(--space-medium);
+  font-size: var(--text-size-body);
+  color: var(--color-text-primary, var(--studio-text));
+  background: var(--color-surface-primary, var(--studio-bg));
+  border: 1px solid var(--color-border-default, var(--studio-border));
+  border-radius: var(--radius-small);
+  transition: border-color 0.15s ease;
+}
+
+.add-to-book-dialog__field input[type="text"]:focus,
+.add-to-book-dialog__field select:focus {
+  outline: none;
+  border-color: var(--color-primary, var(--studio-accent));
+  box-shadow: 0 0 0 3px var(--shadow-focus, rgba(139, 105, 20, 0.2));
+}
+
+.add-to-book-dialog__create-book {
+  display: flex;
+  gap: var(--space-small);
+  flex-wrap: wrap;
+}
+
+.add-to-book-dialog__create-book input {
+  flex: 1;
+  min-width: 150px;
+}
+
+.add-to-book-dialog__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.add-to-book-dialog__action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  padding: var(--space-small) var(--space-medium);
+  background: var(--color-surface-secondary, var(--studio-quote-bg));
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.add-to-book-dialog__action:hover {
+  background: var(--color-surface-tertiary, var(--studio-hover));
+}
+
+.add-to-book-dialog__action input[type="radio"] {
+  accent-color: var(--color-primary, var(--studio-accent));
+}
+
+.add-to-book-dialog__action span {
+  font-size: var(--text-size-body);
+  color: var(--color-text-primary, var(--studio-text));
+}
+
+.add-to-book-dialog__warning {
+  margin-top: var(--space-small);
+  padding: var(--space-small) var(--space-medium);
+  background: var(--color-status-warning-subtle, #fef3c7);
+  border-left: 3px solid var(--color-status-warning, #f59e0b);
+  border-radius: var(--radius-small);
+  font-size: var(--text-size-small);
+  color: var(--color-text-primary, var(--studio-text));
+}
+
+.add-to-book-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-small);
+  padding: var(--space-medium);
+  border-top: 1px solid var(--color-border-subtle, var(--studio-border));
+  background: var(--color-surface-secondary, var(--studio-quote-bg));
+}
+
+.add-to-book-dialog__btn {
+  padding: var(--space-small) var(--space-medium);
+  font-size: var(--text-size-body);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: var(--touch-target, 44px);
+  background: transparent;
+  border: 1px solid var(--color-border-default, var(--studio-border));
+  color: var(--color-text-primary, var(--studio-text));
+}
+
+.add-to-book-dialog__btn:hover:not(:disabled) {
+  background: var(--color-surface-tertiary, var(--studio-hover));
+}
+
+.add-to-book-dialog__btn--primary {
+  background: var(--color-primary, var(--studio-accent));
+  border-color: var(--color-primary, var(--studio-accent));
+  color: var(--color-text-inverse, white);
+}
+
+.add-to-book-dialog__btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover, var(--studio-accent));
+  filter: brightness(0.9);
+}
+
+.add-to-book-dialog__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.add-to-book-dialog__btn:focus-visible {
+  outline: 3px solid var(--color-focus, var(--studio-accent));
+  outline-offset: 2px;
+}

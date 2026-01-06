@@ -10,9 +10,34 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from './types';
+import { getArchiveServerUrl, isElectron } from '../../lib/platform';
 
-const ARCHIVE_SERVER = 'http://localhost:3002';
 const ITEMS_PER_PAGE = 50;
+
+/**
+ * Normalize file path to a URL for media serving
+ * - In Electron: Uses local-media:// protocol for direct file access
+ * - In browser: Uses HTTP archive server with URL encoding (dynamic port)
+ * @param filePath The raw file path
+ * @param archiveServerUrl The archive server base URL (required for browser mode)
+ */
+function normalizeMediaPath(filePath: string, archiveServerUrl: string | null): string {
+  if (!filePath) return filePath;
+  // Already a URL, return as-is
+  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('local-media://')) {
+    return filePath;
+  }
+  // In Electron, use the local-media:// protocol for direct file serving
+  if (isElectron) {
+    return `local-media://serve${filePath}`;
+  }
+  // In browser, use archive server with URL encoding (dynamic port)
+  if (!archiveServerUrl) {
+    console.warn('Archive server URL not available');
+    return filePath;
+  }
+  return `${archiveServerUrl}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -139,6 +164,9 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
   // Error state
   const [error, setError] = useState<string | null>(null);
 
+  // Archive server URL (initialized on mount)
+  const [archiveServerUrl, setArchiveServerUrl] = useState<string | null>(null);
+
   // Refs
   const feedObserverRef = useRef<HTMLDivElement>(null);
   const mediaObserverRef = useRef<HTMLDivElement>(null);
@@ -147,8 +175,9 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
   // DATA LOADING
   // ═══════════════════════════════════════════════════════════════════
 
-  // Load periods on mount
+  // Initialize archive server URL on mount
   useEffect(() => {
+    getArchiveServerUrl().then(setArchiveServerUrl);
     loadPeriods();
     loadMediaStats();
   }, []);
@@ -162,7 +191,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
   const loadPeriods = async () => {
     try {
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/periods`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/periods`);
       if (res.ok) {
         const data = await res.json();
         setPeriods(data.periods || []);
@@ -174,7 +204,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
   const loadMediaStats = async () => {
     try {
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media-stats`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/media-stats`);
       if (res.ok) {
         const data = await res.json();
         setMediaStats(data);
@@ -205,7 +236,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
         params.append('period', selectedPeriod);
       }
 
-      const res = await fetch(`${ARCHIVE_SERVER}/api/content/items?${params}`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/content/items?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
@@ -264,7 +296,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
         params.append('period', selectedPeriod);
       }
 
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media-gallery?${params}`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/media-gallery?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
@@ -291,7 +324,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
     setMediaContext(null);
 
     try {
-      const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media/${mediaId}/context`);
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/media/${mediaId}/context`);
       if (res.ok) {
         const data = await res.json();
         // Transform API response to expected format
@@ -413,9 +447,8 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
     if (typeof window !== 'undefined' && (window as unknown as { isElectron?: boolean }).isElectron) {
       return `local-media://serve${item.file_path}`;
     }
-    // In browser, use archive server with base64 encoding
-    const encoded = btoa(item.file_path);
-    return `${ARCHIVE_SERVER}/api/facebook/image?path=${encoded}`;
+    // In browser, use serve-media with URL encoding (more efficient than base64)
+    return normalizeMediaPath(item.file_path, archiveServerUrl);
   };
 
   const formatDate = (ts: number) => {
@@ -449,14 +482,16 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       let relatedMedia: Array<{ id: string; file_path: string; media_type: 'image' | 'video'; created_at?: number }> = [];
       let linkedContent: Array<{ id: string; type: 'post' | 'comment'; title?: string; text?: string; created_at: number; author_name?: string }> = [];
       try {
-        const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/media/${item.id}/context`);
+        const archiveServer = await getArchiveServerUrl();
+        const res = await fetch(`${archiveServer}/api/facebook/media/${item.id}/context`);
         if (res.ok) {
           const data = await res.json();
           // Get related media (already sorted by created_at ASC in API)
+          // Normalize paths to HTTP URLs
           if (data.relatedMedia && data.relatedMedia.length > 0) {
             relatedMedia = data.relatedMedia.map((m: { id: string; file_path: string; media_type: string; created_at?: number }) => ({
               id: m.id,
-              file_path: m.file_path,
+              file_path: normalizeMediaPath(m.file_path, archiveServerUrl),
               media_type: m.media_type as 'image' | 'video',
               created_at: m.created_at,
             }));
@@ -481,7 +516,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       if (relatedMedia.length === 0) {
         relatedMedia = [{
           id: item.id,
-          file_path: item.file_path,
+          file_path: normalizeMediaPath(item.file_path, archiveServerUrl),
           media_type: item.media_type as 'image' | 'video',
           created_at: item.created_at,
         }];
@@ -489,7 +524,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
       onSelectMedia({
         id: item.id,
-        file_path: item.file_path,
+        file_path: normalizeMediaPath(item.file_path, archiveServerUrl),
         filename: item.filename,
         media_type: item.media_type as 'image' | 'video',
         file_size: item.file_size,
@@ -519,12 +554,13 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
           // Fetch media details if we have refs
           if (refs.length > 0) {
             try {
-              const res = await fetch(`${ARCHIVE_SERVER}/api/facebook/content/${item.id}/media`);
+              const archiveServer = await getArchiveServerUrl();
+              const res = await fetch(`${archiveServer}/api/facebook/content/${item.id}/media`);
               if (res.ok) {
                 const data = await res.json();
                 mediaItems = (data.media || []).map((m: { id: string; file_path: string; media_type: string }) => ({
                   id: m.id,
-                  file_path: m.file_path,
+                  file_path: normalizeMediaPath(m.file_path, archiveServerUrl),
                   media_type: m.media_type as 'image' | 'video',
                 }));
               }

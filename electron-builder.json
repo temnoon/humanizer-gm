@@ -8,23 +8,24 @@
   },
   "files": [
     "dist-electron/**/*",
-    "apps/web/dist/**/*"
+    "apps/web/dist/**/*",
+    "node_modules/sqlite-vec/**/*",
+    "node_modules/sqlite-vec-darwin-arm64/**/*"
   ],
-  "extraResources": [
-    {
-      "from": "../narrative-studio/archive-server.js",
-      "to": "archive-server.js"
-    }
+  "asarUnpack": [
+    "node_modules/sqlite-vec-darwin-arm64/**/*",
+    "node_modules/better-sqlite3/**/*"
   ],
+  "afterSign": "scripts/notarize.js",
   "mac": {
     "target": [
       {
         "target": "dmg",
-        "arch": ["universal"]
+        "arch": ["arm64"]
       },
       {
         "target": "zip",
-        "arch": ["universal"]
+        "arch": ["arm64"]
       }
     ],
     "category": "public.app-category.productivity",
@@ -33,9 +34,13 @@
     "gatekeeperAssess": false,
     "entitlements": "build-resources/entitlements.mac.plist",
     "entitlementsInherit": "build-resources/entitlements.mac.plist",
-    "notarize": false
+    "identity": null,
+    "signIgnore": [
+      "better_sqlite3.node"
+    ]
   },
   "dmg": {
+    "sign": false,
     "contents": [
       {
         "x": 130,

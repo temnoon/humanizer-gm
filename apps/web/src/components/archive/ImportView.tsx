@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { getArchiveServerUrl } from '../../lib/platform';
 
 interface ImportType {
   id: string;
@@ -11,6 +12,22 @@ interface ImportType {
   label: string;
   description: string;
   accept?: string;
+  useFolderPicker?: boolean;  // Use Electron folder picker instead of file upload
+}
+
+// Facebook import progress state
+interface FacebookImportProgress {
+  importId: string;
+  status: 'running' | 'completed' | 'failed';
+  stage: string;
+  message: string;
+  result?: {
+    posts_imported: number;
+    comments_imported: number;
+    reactions_imported: number;
+    media_indexed: number;
+  };
+  error?: string;
 }
 
 interface ImportJob {
@@ -59,13 +76,11 @@ function saveCurrentArchive(path: string) {
 const IMPORT_TYPES: ImportType[] = [
   { id: 'chatgpt', icon: '💬', label: 'ChatGPT', description: 'OpenAI export ZIP', accept: '.zip' },
   { id: 'claude', icon: '🤖', label: 'Claude', description: 'Anthropic conversations', accept: '.json' },
-  { id: 'facebook', icon: '👤', label: 'Facebook', description: 'Full archive export', accept: '.zip' },
-  { id: 'folder', icon: '📁', label: 'Folder', description: 'Local documents folder' },
+  { id: 'facebook', icon: '👤', label: 'Facebook', description: 'Select export folder', useFolderPicker: true },
+  { id: 'folder', icon: '📁', label: 'Folder', description: 'Local documents folder', useFolderPicker: true },
   { id: 'json', icon: '📄', label: 'JSON', description: 'Conversation JSON file', accept: '.json' },
   { id: 'paste', icon: '📋', label: 'Paste', description: 'Paste text or JSON' },
 ];
-
-const ARCHIVE_SERVER = 'http://localhost:3002';
 
 export function ImportView() {
   const [dragActive, setDragActive] = useState(false);
@@ -84,6 +99,10 @@ export function ImportView() {
   const [loadingArchives, setLoadingArchives] = useState(false);
   const [switchingArchive, setSwitchingArchive] = useState(false);
 
+  // Facebook import state
+  const [facebookProgress, setFacebookProgress] = useState<FacebookImportProgress | null>(null);
+  const facebookPollRef = useRef<number | null>(null);
+
   // Fetch current archive info on mount
   useEffect(() => {
     fetchCurrentArchive();
@@ -92,7 +111,8 @@ export function ImportView() {
 
   const fetchCurrentArchive = async () => {
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/archives/current`);
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/archives/current`);
       if (response.ok) {
         const data = await response.json();
         setCurrentArchive({
@@ -131,7 +151,8 @@ export function ImportView() {
   const fetchAvailableArchives = async () => {
     setLoadingArchives(true);
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/archives`);
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/archives`);
       if (response.ok) {
         const data = await response.json();
         // Merge with persisted archives
@@ -161,7 +182,8 @@ export function ImportView() {
 
     setSwitchingArchive(true);
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/archives/switch`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/archives/switch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ archiveName: archive.name }),
@@ -209,7 +231,8 @@ export function ImportView() {
   // Poll for job status
   const pollJobStatus = useCallback(async (jobId: string) => {
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/archive/status/${jobId}`);
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/archive/status/${jobId}`);
       if (!response.ok) throw new Error('Failed to check status');
 
       const job: ImportJob = await response.json();
@@ -252,6 +275,9 @@ export function ImportView() {
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
+      }
+      if (facebookPollRef.current) {
+        clearInterval(facebookPollRef.current);
       }
     };
   }, []);
@@ -298,7 +324,8 @@ export function ImportView() {
       const formData = new FormData();
       formData.append('archive', file);
 
-      const uploadResponse = await fetch(`${ARCHIVE_SERVER}/api/import/archive/upload`, {
+      const archiveServer = await getArchiveServerUrl();
+      const uploadResponse = await fetch(`${archiveServer}/api/import/archive/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -312,7 +339,7 @@ export function ImportView() {
       setImportStatus(`Uploaded ${filename}. Starting parse...`);
 
       // Start parsing
-      const parseResponse = await fetch(`${ARCHIVE_SERVER}/api/import/archive/parse`, {
+      const parseResponse = await fetch(`${archiveServer}/api/import/archive/parse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId }),
@@ -345,7 +372,8 @@ export function ImportView() {
     setImportStatus('Applying import...');
 
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/archive/apply/${currentJob.id}`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/archive/apply/${currentJob.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -376,11 +404,23 @@ export function ImportView() {
       return;
     }
 
+    // Facebook uses dedicated import flow with folder picker
+    if (type.id === 'facebook') {
+      handleFacebookImport();
+      return;
+    }
+
+    // Generic folder import (non-Facebook)
     if (type.id === 'folder') {
-      // Folder import requires entering a path
-      const folderPath = prompt('Enter the folder path to import:');
-      if (folderPath) {
-        handleFolderImport(folderPath);
+      // Use Electron folder picker or fallback to prompt
+      const electronAPI = (window as { electronAPI?: { selectFolder: () => Promise<string | null> } }).electronAPI;
+      if (electronAPI?.selectFolder) {
+        electronAPI.selectFolder().then(folderPath => {
+          if (folderPath) handleFolderImport(folderPath);
+        });
+      } else {
+        const folderPath = prompt('Enter the folder path to import:');
+        if (folderPath) handleFolderImport(folderPath);
       }
       return;
     }
@@ -398,7 +438,8 @@ export function ImportView() {
     setImportStatus('Scanning folder...');
 
     try {
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/archive/folder`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/archive/folder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folderPath }),
@@ -422,6 +463,111 @@ export function ImportView() {
       setImportStatus(`Error: ${err instanceof Error ? err.message : 'Folder import failed'}`);
       setImporting(false);
     }
+  };
+
+  // Facebook-specific import with Electron folder picker
+  const handleFacebookImport = async () => {
+    // Use Electron's folder picker
+    const electronAPI = (window as { electronAPI?: { selectFolder: () => Promise<string | null> } }).electronAPI;
+    if (!electronAPI?.selectFolder) {
+      // Fallback to prompt in browser dev mode
+      const folderPath = prompt('Enter Facebook export folder path:');
+      if (!folderPath) return;
+      await startFacebookImport(folderPath);
+      return;
+    }
+
+    const folderPath = await electronAPI.selectFolder();
+    if (!folderPath) return;
+    await startFacebookImport(folderPath);
+  };
+
+  const startFacebookImport = async (folderPath: string) => {
+    setImporting(true);
+    setImportStatus('Starting Facebook import...');
+    setFacebookProgress(null);
+
+    try {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/facebook/graph/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exportPath: folderPath }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Facebook import failed');
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        setImportStatus('Facebook import started. This may take several minutes...');
+        setFacebookProgress({
+          importId: result.importId || 'current',
+          status: 'running',
+          stage: 'starting',
+          message: 'Processing Facebook export...',
+        });
+
+        // Start polling for progress (check logs periodically)
+        // Note: Full progress polling requires backend status endpoint
+        // For now, just show running status
+        facebookPollRef.current = window.setInterval(async () => {
+          try {
+            // Check if Facebook data is appearing
+            const periodsRes = await fetch(`${archiveServer}/api/facebook/periods`);
+            if (periodsRes.ok) {
+              const periodsData = await periodsRes.json();
+              if (periodsData.periods && periodsData.periods.length > 0) {
+                // Import is producing data
+                setFacebookProgress(prev => prev ? {
+                  ...prev,
+                  stage: 'indexing',
+                  message: `${periodsData.periods.length} periods indexed...`,
+                } : null);
+              }
+            }
+          } catch {
+            // Ignore polling errors
+          }
+        }, 5000);
+
+        // Auto-stop polling after 10 minutes
+        setTimeout(() => {
+          if (facebookPollRef.current) {
+            clearInterval(facebookPollRef.current);
+            facebookPollRef.current = null;
+            setImporting(false);
+            setFacebookProgress(prev => prev ? {
+              ...prev,
+              status: 'completed',
+              stage: 'done',
+              message: 'Import completed. Refresh to see Facebook data.',
+            } : null);
+            setImportStatus('Facebook import completed! Switch to Facebook tab to see your data.');
+          }
+        }, 600000);  // 10 minutes max
+
+      } else {
+        throw new Error(result.error || 'Import failed to start');
+      }
+    } catch (err) {
+      console.error('Facebook import error:', err);
+      setImportStatus(`Error: ${err instanceof Error ? err.message : 'Facebook import failed'}`);
+      setImporting(false);
+      setFacebookProgress(null);
+    }
+  };
+
+  const cancelFacebookImport = () => {
+    if (facebookPollRef.current) {
+      clearInterval(facebookPollRef.current);
+      facebookPollRef.current = null;
+    }
+    setFacebookProgress(null);
+    setImportStatus(null);
+    setImporting(false);
   };
 
   const handlePasteImport = async () => {
@@ -453,7 +599,8 @@ export function ImportView() {
         };
       }
 
-      const response = await fetch(`${ARCHIVE_SERVER}/api/import/conversation`, {
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/import/conversation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversation: conversationData }),
@@ -566,6 +713,38 @@ export function ImportView() {
         <div className={`import-status ${currentJob?.status === 'error' ? 'import-status--error' : ''}`}>
           {importing && <span className="import-status__spinner">⏳</span>}
           <span className="import-status__text">{importStatus}</span>
+        </div>
+      )}
+
+      {/* Facebook import progress */}
+      {facebookProgress && (
+        <div className={`import-status ${facebookProgress.status === 'failed' ? 'import-status--error' : facebookProgress.status === 'completed' ? 'import-status--success' : ''}`}>
+          {facebookProgress.status === 'running' && <span className="import-status__spinner">⏳</span>}
+          {facebookProgress.status === 'completed' && <span className="import-status__icon">✓</span>}
+          <span className="import-status__text">
+            <strong>Facebook:</strong> {facebookProgress.message}
+          </span>
+          {facebookProgress.status === 'running' && (
+            <button
+              className="archive-browser__btn archive-browser__btn--small"
+              onClick={cancelFacebookImport}
+              style={{ marginLeft: '8px' }}
+            >
+              Cancel
+            </button>
+          )}
+          {facebookProgress.status === 'completed' && (
+            <button
+              className="archive-browser__btn archive-browser__btn--small"
+              onClick={() => {
+                setFacebookProgress(null);
+                window.location.reload();
+              }}
+              style={{ marginLeft: '8px' }}
+            >
+              Refresh
+            </button>
+          )}
         </div>
       )}
 

@@ -60,3 +60,7 @@ three-threads-book/
 tmp/
 temp/
 *.tmp
+
+# Build outputs
+release/
+dist-electron/

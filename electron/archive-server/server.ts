@@ -16,6 +16,13 @@ import { createArchivesRouter } from './routes/archives';
 import { createConversationsRouter } from './routes/conversations';
 import { createEmbeddingsRouter } from './routes/embeddings';
 import { createFacebookRouter } from './routes/facebook';
+import { createContentRouter } from './routes/content';
+import { createGalleryRouter } from './routes/gallery';
+import { createImportRouter } from './routes/import';
+import { createLinksRouter } from './routes/links';
+
+// Service registry for cleanup on archive switch
+import { resetServices, getEmbeddingDatabase } from './services/registry';
 
 // ═══════════════════════════════════════════════════════════════════
 // SERVER INSTANCE
@@ -86,6 +93,10 @@ function createApp(): Express {
   app.use('/api/conversations', createConversationsRouter());
   app.use('/api/embeddings', createEmbeddingsRouter());
   app.use('/api/facebook', createFacebookRouter());
+  app.use('/api/content', createContentRouter());
+  app.use('/api/gallery', createGalleryRouter());
+  app.use('/api/import', createImportRouter());
+  app.use('/api/links', createLinksRouter());
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
@@ -123,6 +134,16 @@ export async function startServer(port?: number): Promise<string> {
       const url = `http://localhost:${serverPort}`;
       console.log(`[archive-server] Started on ${url}`);
       console.log(`[archive-server] Archive: ${config.archiveConfig.archivePath}`);
+
+      // Initialize EmbeddingDatabase eagerly to ensure Xanadu IPC handlers work
+      // This runs migrations and makes areServicesInitialized() return true
+      try {
+        getEmbeddingDatabase();
+        console.log(`[archive-server] EmbeddingDatabase initialized`);
+      } catch (err) {
+        console.error(`[archive-server] Failed to initialize EmbeddingDatabase:`, err);
+      }
+
       resolve(url);
     });
 

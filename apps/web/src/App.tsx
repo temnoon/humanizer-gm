@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import {
   analyzeSIC,
   type SICAnalysis,
@@ -15,6 +15,10 @@ import { handleOAuthCallback } from './lib/auth/api';
 import { LoginPromptModal } from './components/auth/LoginPromptModal';
 import { LayoutProvider } from './components/layout';
 import { ElectronContainer } from './components/layout/WindowTitleBar';
+import { initPlatformConfig } from './lib/platform';
+
+// Initialize platform configuration early (fetches archive server port)
+initPlatformConfig().catch(console.warn);
 
 // ═══════════════════════════════════════════════════════════════════
 // LEGACY SIC ANALYZER (kept at /analyze)
@@ -170,7 +174,7 @@ export function App() {
     <ElectronContainer>
       <AuthProvider>
         <LayoutProvider>
-          <BrowserRouter>
+          <HashRouter>
             <Routes>
               {/* Studio is the default */}
               <Route path="/" element={<Studio />} />
@@ -184,7 +188,7 @@ export function App() {
               {/* Legacy SIC analyzer */}
               <Route path="/analyze" element={<AnalyzePage />} />
             </Routes>
-          </BrowserRouter>
+          </HashRouter>
 
           {/* Global login prompt modal - shows when auth is required */}
           <LoginPromptModal />

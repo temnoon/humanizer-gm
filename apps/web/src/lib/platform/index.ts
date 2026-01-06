@@ -68,11 +68,62 @@ export interface ElectronAPI {
     disable: () => Promise<boolean>;
     status: () => Promise<{ installed: boolean; running: boolean }>;
   };
+  whisper: {
+    status: () => Promise<WhisperStatus>;
+    modelsLocal: () => Promise<WhisperModel[]>;
+    modelsAvailable: () => Promise<Array<{ name: string; size: string; downloaded: boolean }>>;
+    downloadModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+    transcribe: (audioPath: string, modelName?: string) => Promise<TranscribeResult>;
+    onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void;
+    onTranscribeProgress: (callback: (progress: TranscribeProgress) => void) => () => void;
+  };
   npe: {
     port: () => Promise<number | null>;
     status: () => Promise<NpeStatus>;
   };
+  shell: {
+    openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
+  };
   cloudDrives: CloudDrivesAPI;
+}
+
+// Whisper types
+export interface WhisperStatus {
+  available: boolean;
+  modelLoaded: boolean;
+  currentModel: string | null;
+  modelsPath: string;
+  availableModels: string[];
+}
+
+export interface WhisperModel {
+  name: string;
+  size: string;
+  path: string;
+}
+
+export interface TranscribeResult {
+  success: boolean;
+  result?: {
+    text: string;
+    segments?: Array<{ start: number; end: number; text: string }>;
+    language?: string;
+    duration?: number;
+  };
+  error?: string;
+}
+
+export interface DownloadProgress {
+  model: string;
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
+export interface TranscribeProgress {
+  status: 'loading' | 'transcribing' | 'complete' | 'error';
+  progress: number;
+  message?: string;
 }
 
 export interface NpeStatus {
@@ -81,6 +132,83 @@ export interface NpeStatus {
   service?: string;
   version?: string;
   ollama?: { available: boolean; url: string };
+}
+
+// Default port for development fallback
+const DEFAULT_ARCHIVE_PORT = 3002;
+const DEFAULT_NPE_PORT = 3003;
+
+// Cached port values (fetched once, used everywhere)
+let _archiveServerPort: number | null = null;
+let _archiveServerPortPromise: Promise<number> | null = null;
+
+/**
+ * Get the archive server port (cached after first call)
+ * In Electron: dynamically assigned port from main process
+ * In browser: falls back to VITE_ARCHIVE_API_URL or default 3002
+ */
+export async function getArchiveServerPort(): Promise<number> {
+  // Return cached value if available
+  if (_archiveServerPort !== null) {
+    return _archiveServerPort;
+  }
+
+  // If already fetching, wait for that promise
+  if (_archiveServerPortPromise) {
+    return _archiveServerPortPromise;
+  }
+
+  _archiveServerPortPromise = (async () => {
+    const api = getElectronAPI();
+    if (api) {
+      const port = await api.archive.port();
+      if (port) {
+        _archiveServerPort = port;
+        return port;
+      }
+    }
+
+    // Fallback: check env var or use default
+    const envUrl = import.meta.env.VITE_ARCHIVE_API_URL;
+    if (envUrl) {
+      const match = envUrl.match(/:(\d+)/);
+      if (match) {
+        _archiveServerPort = parseInt(match[1], 10);
+        return _archiveServerPort;
+      }
+    }
+
+    _archiveServerPort = DEFAULT_ARCHIVE_PORT;
+    return _archiveServerPort;
+  })();
+
+  return _archiveServerPortPromise;
+}
+
+/**
+ * Get archive server base URL
+ * Async on first call, returns cached value thereafter
+ */
+export async function getArchiveServerUrl(): Promise<string> {
+  const port = await getArchiveServerPort();
+  return `http://localhost:${port}`;
+}
+
+/**
+ * Get archive server URL synchronously (after first async call)
+ * Returns null if not yet initialized
+ */
+export function getArchiveServerUrlSync(): string | null {
+  if (_archiveServerPort === null) return null;
+  return `http://localhost:${_archiveServerPort}`;
+}
+
+/**
+ * Initialize platform config (call early in app startup)
+ * Pre-fetches port values so sync getters work
+ */
+export async function initPlatformConfig(): Promise<void> {
+  await getArchiveServerPort();
 }
 
 /**

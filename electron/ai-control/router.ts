@@ -29,6 +29,12 @@ import type {
 import { getProfileManager } from './user-profile';
 import { getAdminConfig } from './admin-config';
 import { runSafetyChecks, checkRateLimit, auditLog } from './safety';
+import {
+  callProvider,
+  streamProvider,
+  type LLMMessage,
+  type ProviderConfig,
+} from './providers';
 
 // ═══════════════════════════════════════════════════════════════════
 // PROVIDER AVAILABILITY CACHE
@@ -559,6 +565,8 @@ export class AIControlService {
 
     // 3. Resolve to best model
     const decision = await this.router.resolve(request);
+    const config = await this.adminConfig.getConfig();
+    const providerConfig = config.providers[decision.selectedProvider];
 
     // 4. Log request
     auditLog({
@@ -571,16 +579,48 @@ export class AIControlService {
       provider: decision.selectedProvider,
     });
 
-    // 5. Execute (TODO: implement actual provider calls)
-    // For now, return a placeholder
+    // 5. Build messages array
+    const messages = this.buildMessages(request);
+
+    // 6. Build provider config
+    const llmConfig: ProviderConfig = {
+      endpoint: providerConfig.endpoint,
+      apiKey: providerConfig.apiKey,
+      model: decision.selectedModel,
+      maxTokens: (request.params?.maxTokens as number) || 4096,
+      temperature: (request.params?.temperature as number) ?? 0.7,
+    };
+
+    // 7. Execute provider call
+    let providerResponse;
+    try {
+      providerResponse = await callProvider(
+        decision.selectedProvider,
+        messages,
+        llmConfig
+      );
+    } catch (error) {
+      auditLog({
+        type: 'error',
+        userId: request.userId,
+        requestId,
+        capability: request.capability,
+        model: decision.selectedModel,
+        provider: decision.selectedProvider,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+
+    // 8. Build response
     const response: AIResponse = {
-      output: `[AI Control] Would call ${decision.selectedModel} via ${decision.selectedProvider}`,
-      modelUsed: decision.selectedModel,
+      output: providerResponse.content,
+      modelUsed: providerResponse.model,
       providerUsed: decision.selectedProvider,
       capabilityUsed: request.capability,
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
+      inputTokens: providerResponse.inputTokens,
+      outputTokens: providerResponse.outputTokens,
+      totalTokens: providerResponse.inputTokens + providerResponse.outputTokens,
       processingTimeMs: Date.now() - startTime,
       filtered: false,
       safetyTriggered: safetyResult.violations.length > 0,
@@ -589,7 +629,7 @@ export class AIControlService {
       timestamp: new Date().toISOString(),
     };
 
-    // 6. Log response
+    // 9. Log response
     auditLog({
       type: 'response',
       userId: request.userId,
@@ -606,18 +646,74 @@ export class AIControlService {
   }
 
   /**
+   * Build LLM messages from AIRequest
+   */
+  private buildMessages(request: AIRequest): LLMMessage[] {
+    const messages: LLMMessage[] = [];
+
+    // Add system prompt if provided in params
+    if (request.params?.systemPrompt) {
+      messages.push({
+        role: 'system',
+        content: request.params.systemPrompt as string,
+      });
+    }
+
+    // Add conversation history if provided
+    if (request.params?.messages && Array.isArray(request.params.messages)) {
+      for (const msg of request.params.messages as LLMMessage[]) {
+        messages.push(msg);
+      }
+    }
+
+    // Add current input as user message
+    if (typeof request.input === 'string') {
+      messages.push({
+        role: 'user',
+        content: request.input,
+      });
+    } else if (request.input.text) {
+      // Multimodal input - just use text for now
+      messages.push({
+        role: 'user',
+        content: request.input.text,
+      });
+    }
+
+    return messages;
+  }
+
+  /**
    * Stream an AI capability response
    */
   async *stream(request: AIRequest): AsyncGenerator<AIStreamChunk> {
-    // For now, just yield the full response as a single chunk
-    const response = await this.call(request);
-    yield {
-      token: response.output,
-      done: true,
-      modelUsed: response.modelUsed,
-      inputTokens: response.inputTokens,
-      outputTokens: response.outputTokens,
+    const requestId = request.requestId || crypto.randomUUID();
+
+    // 1. Run safety checks
+    const safetyResult = runSafetyChecks(request);
+    if (safetyResult.blocked) {
+      throw new Error(`Request blocked: ${safetyResult.violations.map(v => v.message).join(', ')}`);
+    }
+
+    // 2. Resolve to best model
+    const decision = await this.router.resolve(request);
+    const config = await this.adminConfig.getConfig();
+    const providerConfig = config.providers[decision.selectedProvider];
+
+    // 3. Build messages
+    const messages = this.buildMessages(request);
+
+    // 4. Build provider config
+    const llmConfig: ProviderConfig = {
+      endpoint: providerConfig.endpoint,
+      apiKey: providerConfig.apiKey,
+      model: decision.selectedModel,
+      maxTokens: (request.params?.maxTokens as number) || 4096,
+      temperature: (request.params?.temperature as number) ?? 0.7,
     };
+
+    // 5. Stream from provider
+    yield* streamProvider(decision.selectedProvider, messages, llmConfig);
   }
 
   /**

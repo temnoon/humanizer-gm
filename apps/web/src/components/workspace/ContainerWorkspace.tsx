@@ -15,6 +15,26 @@ import type { ArchiveContainer } from '@humanizer/core';
 import { BookContentView, type BookContent } from './BookContentView';
 import { AnalyzableMarkdownWithMetrics } from './AnalyzableMarkdown';
 import type { BookProject } from '../archive/book-project/types';
+import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
+
+/**
+ * Get media URL from file path - handles Electron vs browser
+ */
+function getMediaUrl(filePath: string): string {
+  if (!filePath) return '';
+  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('local-media://')) {
+    return filePath;
+  }
+  if (isElectron) {
+    return `local-media://serve${filePath}`;
+  }
+  const archiveServer = getArchiveServerUrlSync();
+  if (!archiveServer) {
+    console.warn('Archive server URL not initialized');
+    return filePath;
+  }
+  return `${archiveServer}/media/${filePath}`;
+}
 
 // ============================================
 // Types
@@ -180,11 +200,7 @@ function MediaView({
   }
 
   // Handle both relative paths and full URLs
-  const mediaUrl = media.url || (media.filePath
-    ? (media.filePath.startsWith('http://') || media.filePath.startsWith('https://')
-        ? media.filePath
-        : `http://localhost:3002/media/${media.filePath}`)
-    : '');
+  const mediaUrl = media.url || (media.filePath ? getMediaUrl(media.filePath) : '');
 
   return (
     <div className="container-workspace container-workspace--media">
@@ -314,9 +330,7 @@ function ContentView({
             <div key={i} className="container-workspace__media-thumb">
               {m.mediaType === 'image' && (
                 <img
-                  src={m.url || (m.filePath?.startsWith('http://') || m.filePath?.startsWith('https://')
-                    ? m.filePath
-                    : `http://localhost:3002/media/${m.filePath}`)}
+                  src={m.url || getMediaUrl(m.filePath || '')}
                   alt={m.description || `Media ${i + 1}`}
                 />
               )}

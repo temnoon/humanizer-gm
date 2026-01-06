@@ -11,7 +11,6 @@
 import { type ReactNode, useCallback, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useLayout, useLayoutMode } from './LayoutContext';
 import { SplitDivider } from './SplitDivider';
-import { SplitModeToolbar } from './SplitModeToolbar';
 
 // ============================================
 // Types
@@ -158,9 +157,6 @@ export function SplitScreenWorkspace({
   // Desktop/Tablet: Side-by-side with divider
   return (
     <div className={`split-workspace split-workspace--desktop ${className}`}>
-      {/* Mode toolbar (floats at top center) */}
-      <SplitModeToolbar />
-
       {/* Left pane */}
       <div
         className="split-workspace__pane split-workspace__pane--left"

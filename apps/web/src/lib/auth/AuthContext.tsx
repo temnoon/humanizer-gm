@@ -20,9 +20,12 @@ import {
   getCurrentUser,
   logout as apiLogout,
   getStoredToken,
+  setStoredToken,
   getOAuthLoginUrl,
   handleOAuthCallback,
+  openOAuthExternal,
 } from './api';
+import { isElectron, getElectronAPI } from '../platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONTEXT TYPE
@@ -74,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check for existing session on mount
   useEffect(() => {
     const initAuth = async () => {
-      // Check for OAuth callback first
+      // Check for OAuth callback first (web flow)
       const callback = handleOAuthCallback();
       if (callback) {
         // Token was just set, fetch user
@@ -106,6 +109,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initAuth();
   }, []);
+
+  // Listen for OAuth callback from Electron deep link
+  useEffect(() => {
+    if (!isElectron) return;
+
+    // Get the Electron API with auth support
+    const electronWindow = window as unknown as { electronAPI?: { auth?: { onOAuthCallback: (cb: (data: { token: string; isNewUser: boolean }) => void) => () => void } } };
+    const authAPI = electronWindow.electronAPI?.auth;
+    if (!authAPI?.onOAuthCallback) return;
+
+    const unsubscribe = authAPI.onOAuthCallback(async (data) => {
+      console.log('[Auth] Received OAuth callback from Electron:', data.isNewUser ? 'new user' : 'existing user');
+
+      // Store the token
+      setStoredToken(data.token);
+      setError(null);
+
+      // Fetch user data
+      try {
+        const userData = await getCurrentUser();
+        setUser(userData);
+
+        // Execute pending action if any
+        if (pendingAction) {
+          const action = pendingAction;
+          setPendingAction(null);
+          setShowLoginPrompt(false);
+          setLoginPromptMessage(null);
+          setTimeout(action, 0);
+        }
+      } catch (err) {
+        console.error('[Auth] Failed to fetch user after OAuth:', err);
+        setError('Login succeeded but failed to load user data');
+      }
+    });
+
+    return unsubscribe;
+  }, [pendingAction]);
 
   // Login with email/password
   const login = useCallback(async (email: string, password: string) => {
@@ -176,7 +217,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // OAuth login
-  const loginWithOAuth = useCallback((provider: OAuthProvider) => {
+  const loginWithOAuth = useCallback(async (provider: OAuthProvider) => {
+    // In Electron, open OAuth in external browser
+    // The callback will come back via deep link (humanizer://auth/callback)
+    if (isElectron) {
+      const handled = await openOAuthExternal(provider);
+      if (handled) {
+        // OAuth opened in browser, callback will be received via deep link
+        // No error message needed - just wait for the callback
+        return;
+      }
+    }
+    // Normal web flow - redirect in same window
     window.location.href = getOAuthLoginUrl(provider);
   }, []);
 

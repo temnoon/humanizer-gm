@@ -53,16 +53,17 @@ export function createTransformationsRouter(): Router {
       }
 
       const trimmedText = text.trim();
-      if (trimmedText.length < 50) {
+      // Relaxed validation for quick testing (was 50 chars, 20 words)
+      if (trimmedText.length < 10) {
         return res.status(400).json({
-          error: 'Text must be at least 50 characters',
+          error: 'Text must be at least 10 characters',
         });
       }
 
       const words = trimmedText.split(/\s+/).filter(w => w.length > 0);
-      if (words.length < 20) {
+      if (words.length < 3) {
         return res.status(400).json({
-          error: 'Text must be at least 20 words',
+          error: 'Text must be at least 3 words',
         });
       }
 

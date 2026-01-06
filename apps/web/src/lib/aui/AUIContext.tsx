@@ -20,14 +20,17 @@ import {
   useState,
   useEffect,
   useRef,
+  useMemo,
   type ReactNode,
 } from 'react';
 
 import { auiAnimator, teachingToAnimation, type AnimatorState } from './animator';
 import { loadAUISettings, saveAUISettings, type AUISettings } from './settings';
-import { executeAllTools, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
+import { executeAllTools, cleanToolsFromResponse, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
 import { useLayout } from '../../components/layout/LayoutContext';
 import { useBookOptional } from '../book';
+import { useBookshelf } from '../bookshelf';
+import { getArchiveServerUrl } from '../platform';
 import {
   getAgentBridge,
   type AgentProposal,
@@ -111,27 +114,143 @@ export interface AUIContextValue {
     payload: unknown,
     projectId?: string
   ) => Promise<{ taskId: string } | { error: string }>;
+  /** Update workspace state (called by StudioContent) */
+  setWorkspace: (workspace: AUIToolContext['workspace']) => void;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ELECTRON CHAT API TYPE
+// ═══════════════════════════════════════════════════════════════════
+
+interface ElectronChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  timestamp: number;
+}
+
+interface ElectronChatAPI {
+  chat: {
+    sendMessage: (content: string, options?: { context?: string }) => Promise<ElectronChatMessage[]>;
+    getMessages: (conversationId?: string) => Promise<ElectronChatMessage[]>;
+    startConversation: () => Promise<{ id: string }>;
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WORKSPACE CONTEXT BUILDER
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Build a context string from current workspace state
+ * This is passed to the LLM so it knows what the user is looking at
+ */
+function buildWorkspaceContext(
+  workspace: AUIToolContext['workspace'] | undefined,
+  book: { activeProject: { id: string } | null } | null
+): string {
+  const parts: string[] = [];
+
+  // Currently selected container (unified content model)
+  if (workspace?.selectedContainer) {
+    const container = workspace.selectedContainer;
+    const title = container.meta?.title || container.id;
+    const contentPreview = container.content?.raw?.slice(0, 300) || '';
+
+    parts.push(`Selected ${container.type}: "${title}"`);
+
+    // Add source info
+    if (container.source?.type) {
+      parts.push(`  Source: ${container.source.type}${container.source.originalId ? ` (${container.source.originalId})` : ''}`);
+    }
+
+    // Add content preview
+    if (contentPreview) {
+      parts.push(`  Preview: "${contentPreview}${container.content?.raw && container.content.raw.length > 300 ? '...' : ''}"`);
+    }
+
+    // Add metadata
+    if (container.meta?.tags?.length) {
+      parts.push(`  Tags: ${container.meta.tags.join(', ')}`);
+    }
+  }
+
+  // Active buffer content (if different from container)
+  if (workspace?.bufferContent && !workspace?.selectedContainer) {
+    const preview = workspace.bufferContent.slice(0, 500);
+    parts.push(`Buffer "${workspace.bufferName || 'untitled'}" (${workspace.bufferContent.length} chars): "${preview}${workspace.bufferContent.length > 500 ? '...' : ''}"`);
+  }
+
+  // Current view mode
+  if (workspace?.viewMode) {
+    parts.push(`View mode: ${workspace.viewMode}`);
+  }
+
+  // Legacy: Selected Facebook content (fallback if no container)
+  if (workspace?.selectedContent && !workspace?.selectedContainer) {
+    parts.push(`Viewing: ${workspace.selectedContent.type} from ${workspace.selectedContent.source || 'unknown'}`);
+  }
+
+  // Active book info
+  if (book?.activeProject) {
+    const project = book.activeProject;
+    parts.push(`Active book: ${project.id}`);
+  }
+
+  return parts.length > 0 ? parts.join('\n') : '';
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
 
-const ARCHIVE_SERVER = 'http://localhost:3002';
+const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), an assistant integrated into the Humanizer Studio.
 
-const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), a helpful assistant integrated into the Humanizer Studio.
+IMPORTANT: When the user requests an action, you MUST use USE_TOOL to execute it. Do NOT describe what you would do - actually do it.
 
-You help users:
-- Navigate the Studio interface (Archive panel, Tools panel)
-- Search their archives (ChatGPT conversations, Facebook content)
-- Transform content (humanize, apply personas/styles)
-- Build their book (chapters, passages, gems)
-- Understand their data
+AVAILABLE TOOLS:
 
-When you perform actions, use USE_TOOL(name, {params}) syntax.
-Your conversations are archived and become searchable content.
+ARCHIVE & SEARCH:
+- search_archive({"query": "text", "limit": 10}) - Search all conversations
+- search_facebook({"query": "text", "type": "posts|comments|messages"}) - Search Facebook content
+- list_conversations({"limit": 20}) - List recent conversations
+- harvest_archive({"queries": ["query1", "query2"], "threadName": "name"}) - Collect passages by query
 
-Be concise but helpful. Show users HOW to do things themselves.`;
+BOOK & CHAPTERS:
+- create_chapter({"title": "Chapter Title"}) - Create a new chapter
+- update_chapter({"chapterId": "id", "content": "markdown"}) - Update chapter content
+- list_chapters({}) - List all chapters in active book
+- get_chapter({"chapterId": "id"}) - Get chapter content
+- add_passage({"content": "text", "conversationTitle": "source"}) - Add passage to book
+- generate_first_draft({"chapterId": "id", "arc": "description"}) - Generate chapter draft
+
+TEXT TOOLS:
+- detect_ai({"text": "content"}) - Check if text is AI-generated
+- humanize({"text": "content"}) - Transform to sound more human
+- analyze_text({"text": "content"}) - Sentence-level analysis
+- apply_persona({"text": "content", "personaId": "id"}) - Apply writing persona
+- apply_style({"text": "content", "styleId": "id"}) - Apply writing style
+
+PERSONAS & STYLES:
+- list_personas({}) - List available personas
+- list_styles({}) - List available styles
+- extract_persona({"text": "sample"}) - Extract persona from text
+- extract_style({"text": "sample"}) - Extract style from text
+
+WORKSPACE:
+- get_workspace({}) - Get current buffer content and state
+
+EXAMPLES:
+User: "Search for conversations about phenomenology"
+You: USE_TOOL(search_archive, {"query": "phenomenology", "limit": 10})
+
+User: "Analyze this text for AI"
+You: USE_TOOL(detect_ai, {"text": "[current buffer content]"})
+
+User: "Create a chapter called Introduction"
+You: USE_TOOL(create_chapter, {"title": "Introduction"})
+
+Be concise. Execute tools directly. Don't explain what you're going to do - just do it.`;
 
 // ═══════════════════════════════════════════════════════════════════
 // CONTEXT
@@ -157,38 +276,96 @@ interface AUIProviderProps {
   workspace?: AUIToolContext['workspace'];
 }
 
-export function AUIProvider({ children, workspace }: AUIProviderProps) {
+export function AUIProvider({ children, workspace: initialWorkspace }: AUIProviderProps) {
   // Dependencies
   const layout = useLayout();
   const bookContext = useBookOptional();
+  const bookshelf = useBookshelf();
 
-  // Provide fallbacks if book context is not available
-  const book = bookContext ?? {
-    activeProject: null,
-    updateChapter: () => {},
-    createChapter: () => null,
-    deleteChapter: () => {},
-    renderBook: () => '',
-    getChapter: () => null,
-    addPassage: () => null,
-    updatePassage: () => {},
-    getPassages: () => [],
-  };
+  // Build book interface from bookshelf's simple methods (preferred) or fallback to bookContext
+  // IMPORTANT: Memoize to prevent infinite re-renders in useEffect dependencies
+  const book = useMemo(() => ({
+    activeProject: bookshelf.activeBook || bookContext?.activeProject || null,
+    createProject: bookContext?.createProject ?? (() => {
+      console.warn('[AUI] No BookContext - use bookshelf.createBook instead');
+      return null;
+    }) as unknown as (name: string, subtitle?: string) => import('../bookshelf/types').BookProject,
+    updateChapter: (chapterId: string, content: string, changes?: string) => {
+      if (bookshelf.updateChapterSimple) {
+        void bookshelf.updateChapterSimple(chapterId, content, changes);
+      } else if (bookContext?.updateChapter) {
+        bookContext.updateChapter(chapterId, content, changes);
+      }
+    },
+    createChapter: (title: string, content?: string) => {
+      if (bookshelf.createChapterSimple) {
+        void bookshelf.createChapterSimple(title, content);
+        // Return placeholder for sync interface
+        return { id: `ch-${Date.now()}`, number: 1, title, content: content || '', wordCount: 0, version: 1, versions: [], status: 'outline' as const };
+      }
+      return bookContext?.createChapter?.(title, content) ?? null;
+    },
+    deleteChapter: (chapterId: string) => {
+      if (bookshelf.deleteChapterSimple) {
+        void bookshelf.deleteChapterSimple(chapterId);
+      } else if (bookContext?.deleteChapter) {
+        bookContext.deleteChapter(chapterId);
+      }
+    },
+    renderBook: () => bookshelf.renderActiveBook?.() ?? bookContext?.renderBook?.() ?? '',
+    getChapter: (chapterId: string) => bookshelf.getChapterSimple?.(chapterId) ?? bookContext?.getChapter?.(chapterId) ?? null,
+    addPassage: (passage: {
+      content: string;
+      conversationId?: string;
+      conversationTitle: string;
+      role?: 'user' | 'assistant';
+      tags?: string[];
+    }) => {
+      if (bookshelf.addPassageSimple) {
+        void bookshelf.addPassageSimple(passage);
+        // Return placeholder
+        return { id: `p-${Date.now()}`, text: passage.content, wordCount: passage.content.split(/\s+/).length } as ReturnType<typeof bookContext.addPassage>;
+      }
+      return bookContext?.addPassage?.(passage) ?? null;
+    },
+    updatePassage: (passageId: string, updates: Partial<import('../bookshelf/types').SourcePassage>) => {
+      if (bookshelf.updatePassageSimple) {
+        void bookshelf.updatePassageSimple(passageId, updates);
+      } else if (bookContext?.updatePassage) {
+        bookContext.updatePassage(passageId, updates);
+      }
+    },
+    getPassages: () => bookshelf.getPassagesSimple?.() ?? bookContext?.getPassages?.() ?? [],
+  }), [
+    bookshelf.activeBook,
+    bookshelf.updateChapterSimple,
+    bookshelf.createChapterSimple,
+    bookshelf.deleteChapterSimple,
+    bookshelf.renderActiveBook,
+    bookshelf.getChapterSimple,
+    bookshelf.addPassageSimple,
+    bookshelf.updatePassageSimple,
+    bookshelf.getPassagesSimple,
+    bookContext,
+  ]);
 
-  // State
+  // State - settings must be loaded first since createNewConversation uses it
+  const [settings, setSettings] = useState<AUISettings>(loadAUISettings);
   const [conversation, setConversation] = useState<AUIConversation>(() =>
-    createNewConversation()
+    createNewConversation(settings)
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [animationState, setAnimationState] = useState<AnimatorState>(
     auiAnimator.getState()
   );
-  const [settings, setSettings] = useState<AUISettings>(loadAUISettings);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [pendingProposals, setPendingProposals] = useState<AgentProposal[]>([]);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentBridgeConnected, setAgentBridgeConnected] = useState(false);
+
+  // Workspace state - can be set from StudioContent
+  const [workspaceState, setWorkspaceState] = useState<AUIToolContext['workspace']>(initialWorkspace);
 
   // Refs
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -207,6 +384,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     // Build tool context for the bridge
     const toolContext: AUIToolContext = {
       activeProject: book.activeProject,
+      createProject: book.createProject,
       updateChapter: book.updateChapter,
       createChapter: book.createChapter,
       deleteChapter: book.deleteChapter,
@@ -215,7 +393,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
       addPassage: book.addPassage,
       updatePassage: book.updatePassage,
       getPassages: book.getPassages,
-      workspace,
+      workspace: workspaceState,
     };
 
     // Initialize bridge with context
@@ -277,10 +455,10 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     return () => {
       unsubscribe();
     };
-  }, [book, workspace, settings]);
+  }, [book, workspaceState, settings]);
 
   // Create a new conversation
-  function createNewConversation(): AUIConversation {
+  function createNewConversation(currentSettings: AUISettings): AUIConversation {
     return {
       id: `aui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       messages: [
@@ -293,7 +471,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
         },
       ],
       startedAt: new Date(),
-      tags: [settings.archive.chatTag],
+      tags: [currentSettings.archive.chatTag],
     };
   }
 
@@ -321,18 +499,37 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
       abortControllerRef.current = new AbortController();
 
       try {
-        // Call LLM
-        const apiUrl =
-          import.meta.env.VITE_CHAT_API_URL || 'http://localhost:11434/api/chat';
-        const isOllama = apiUrl.includes('11434');
-
-        const messagesForLLM = conversation.messages
-          .filter((m) => m.role !== 'tool')
-          .map((m) => ({ role: m.role, content: m.content }));
-
         let assistantContent: string;
 
-        if (isOllama) {
+        // Build workspace context for the LLM
+        const workspaceContext = buildWorkspaceContext(workspaceState, book);
+
+        // Use Electron chat service if available (routes through AgentMaster)
+        // This provides tiered prompts based on device RAM and automatic output vetting
+        const electronAPI = (window as unknown as { electronAPI?: ElectronChatAPI }).electronAPI;
+        const isElectron = (window as unknown as { isElectron?: boolean }).isElectron;
+
+        if (isElectron && electronAPI?.chat) {
+          // Route through AgentMaster for tiered prompts + vetting
+          // sendMessage returns the new messages (including assistant response)
+          const newMessages = await electronAPI.chat.sendMessage(content.trim(), {
+            context: workspaceContext,
+          });
+
+          // Find the assistant's response from the returned messages
+          const lastAssistant = newMessages
+            .filter((m) => m.role === 'assistant')
+            .pop();
+          assistantContent = lastAssistant?.content || "I couldn't process that.";
+        } else {
+          // Fallback: Direct Ollama call (web-only mode)
+          const apiUrl =
+            import.meta.env.VITE_CHAT_API_URL || 'http://localhost:11434/api/chat';
+
+          const messagesForLLM = conversation.messages
+            .filter((m) => m.role !== 'tool')
+            .map((m) => ({ role: m.role, content: m.content }));
+
           const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -340,6 +537,8 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
               model: 'llama3.2',
               messages: [
                 { role: 'system', content: AUI_SYSTEM_PROMPT },
+                // Include workspace context as a system message
+                ...(workspaceContext ? [{ role: 'system', content: `Current workspace:\n${workspaceContext}` }] : []),
                 ...messagesForLLM,
                 { role: 'user', content: content.trim() },
               ],
@@ -351,41 +550,12 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
           if (!response.ok) throw new Error('Ollama not available');
           const data = await response.json();
           assistantContent = data.message?.content || "I couldn't process that.";
-        } else {
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: [
-                { role: 'system', content: AUI_SYSTEM_PROMPT },
-                ...messagesForLLM,
-                { role: 'user', content: content.trim() },
-              ],
-            }),
-            signal: abortControllerRef.current.signal,
-          });
-
-          if (!response.ok) throw new Error('Chat API not available');
-          const data = await response.json();
-          assistantContent = data.response || "I couldn't process that.";
         }
 
-        // Add assistant message
-        const assistantMessage: ChatMessage = {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: assistantContent,
-          timestamp: new Date(),
-        };
-
-        setConversation((prev) => ({
-          ...prev,
-          messages: [...prev.messages, assistantMessage],
-        }));
-
-        // Execute tools
+        // Execute tools FIRST (before displaying message)
         const toolContext: AUIToolContext = {
           activeProject: book.activeProject,
+          createProject: book.createProject,
           updateChapter: book.updateChapter,
           createChapter: book.createChapter,
           deleteChapter: book.deleteChapter,
@@ -394,13 +564,32 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
           addPassage: book.addPassage,
           updatePassage: book.updatePassage,
           getPassages: book.getPassages,
-          workspace,
+          workspace: workspaceState,
         };
 
         const { results, hasTools } = await executeAllTools(
           assistantContent,
           toolContext
         );
+
+        // Clean tool syntax from response BEFORE displaying
+        const cleanedContent = cleanToolsFromResponse(assistantContent);
+
+        // Only add assistant message if there's content after cleaning
+        // (If the entire message was just a tool call, show tool results instead)
+        if (cleanedContent.trim()) {
+          const assistantMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: cleanedContent,
+            timestamp: new Date(),
+          };
+
+          setConversation((prev) => ({
+            ...prev,
+            messages: [...prev.messages, assistantMessage],
+          }));
+        }
 
         if (hasTools && results.length > 0) {
           // Add tool results message
@@ -457,7 +646,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
         abortControllerRef.current = null;
       }
     },
-    [conversation.messages, isLoading, book, workspace, settings.animation.enabled]
+    [conversation.messages, isLoading, book, workspaceState, settings.animation.enabled]
   );
 
   // Clear conversation
@@ -466,8 +655,8 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     if (settings.archive.archiveChats && conversation.messages.length > 1) {
       archiveConversationInternal(conversation).catch(() => {});
     }
-    setConversation(createNewConversation());
-  }, [conversation, settings.archive.archiveChats]);
+    setConversation(createNewConversation(settings));
+  }, [conversation, settings]);
 
   // Archive conversation
   const archiveConversation = useCallback(async () => {
@@ -496,7 +685,8 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
         `AUI Chat: ${conv.messages.find((m) => m.role === 'user')?.content.slice(0, 50) || 'Conversation'}`;
 
       // Send to archive server
-      await fetch(`${ARCHIVE_SERVER}/api/aui/archive`, {
+      const archiveServer = await getArchiveServerUrl();
+      await fetch(`${archiveServer}/api/aui/archive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -633,6 +823,7 @@ export function AUIProvider({ children, workspace }: AUIProviderProps) {
     approveProposal,
     rejectProposal,
     requestAgentWork,
+    setWorkspace: setWorkspaceState,
   };
 
   return <AUIContext.Provider value={value}>{children}</AUIContext.Provider>;

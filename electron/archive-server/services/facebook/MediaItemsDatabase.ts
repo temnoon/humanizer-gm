@@ -44,9 +44,9 @@ export class MediaItemsDatabase {
   }
 
   private initSchema(): void {
-    // Create media_items table
+    // Create facebook_media table (renamed from media_items to avoid conflict with v7 Xanadu schema)
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS media_items (
+      CREATE TABLE IF NOT EXISTS facebook_media (
         id TEXT PRIMARY KEY,
         source_type TEXT NOT NULL,
         media_type TEXT NOT NULL,
@@ -65,16 +65,16 @@ export class MediaItemsDatabase {
         metadata TEXT
       );
 
-      CREATE INDEX IF NOT EXISTS idx_media_source_type ON media_items(source_type);
-      CREATE INDEX IF NOT EXISTS idx_media_type ON media_items(media_type);
-      CREATE INDEX IF NOT EXISTS idx_media_created ON media_items(created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_media_filename ON media_items(filename);
-      CREATE INDEX IF NOT EXISTS idx_media_size ON media_items(file_size);
-      CREATE INDEX IF NOT EXISTS idx_media_dimensions ON media_items(width, height);
-      CREATE INDEX IF NOT EXISTS idx_media_context ON media_items(context_id);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_source_type ON facebook_media(source_type);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_type ON facebook_media(media_type);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_created ON facebook_media(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_filename ON facebook_media(filename);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_size ON facebook_media(file_size);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_dimensions ON facebook_media(width, height);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_context ON facebook_media(context_id);
     `);
 
-    console.log('✅ Media items schema initialized');
+    console.log('✅ Facebook media schema initialized');
   }
 
   /**
@@ -82,7 +82,7 @@ export class MediaItemsDatabase {
    */
   insertMediaItem(item: MediaItem): void {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO media_items (
+      INSERT OR REPLACE INTO facebook_media (
         id, source_type, media_type, file_path, filename, file_size,
         width, height, created_at, description, tags, context, context_id,
         related_post_id, exif_data, metadata
@@ -114,7 +114,7 @@ export class MediaItemsDatabase {
    */
   insertMediaItems(items: MediaItem[]): number {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO media_items (
+      INSERT OR REPLACE INTO facebook_media (
         id, source_type, media_type, file_path, filename, file_size,
         width, height, created_at, description, tags, context, context_id,
         related_post_id, exif_data, metadata
@@ -163,7 +163,7 @@ export class MediaItemsDatabase {
     limit?: number;
     offset?: number;
   }): MediaItem[] {
-    let query = 'SELECT * FROM media_items WHERE 1=1';
+    let query = 'SELECT * FROM facebook_media WHERE 1=1';
     const params: any[] = [];
 
     if (filters.sourceType) {
@@ -276,7 +276,7 @@ export class MediaItemsDatabase {
   getMediaCountBySource(): Record<string, number> {
     const stmt = this.db.prepare(`
       SELECT source_type, COUNT(*) as count
-      FROM media_items
+      FROM facebook_media
       GROUP BY source_type
     `);
 
@@ -291,7 +291,7 @@ export class MediaItemsDatabase {
    * Get total media count
    */
   getTotalMediaCount(): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM media_items');
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM facebook_media');
     const result = stmt.get() as { count: number };
     return result.count;
   }

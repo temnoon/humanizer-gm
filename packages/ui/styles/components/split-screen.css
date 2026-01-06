@@ -1,0 +1,489 @@
+/**
+ * Split-Screen UI Component Styles
+ *
+ * Implements animated split-pane layout with book-page aesthetic.
+ * Follows Style Agent Protocol - all values from design tokens.
+ *
+ * WCAG 2.1 AA Compliant:
+ * - 44px minimum touch targets
+ * - Sufficient color contrast
+ * - Reduced motion support
+ * - Keyboard navigation ready
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SPLIT SCREEN CONTAINER
+   Entry point for the split view - manages animation timing
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.split-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--color-surface-primary);
+}
+
+/* Main split container - Grid layout for panes + divider */
+.split-screen__main {
+  display: grid;
+  grid-template-columns: 1fr var(--split-divider-width, 1px) 1fr;
+  flex: 1;
+  gap: 0;
+  min-height: 0;
+  background-color: var(--color-surface-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PANE ANIMATIONS - Text "pulls apart" from center
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@keyframes split-pane-left-enter {
+  from {
+    transform: translateX(25%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes split-pane-right-enter {
+  from {
+    transform: translateX(-25%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes split-pane-left-exit {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-25%);
+    opacity: 0;
+  }
+}
+
+@keyframes split-pane-right-exit {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(25%);
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LEFT PANE - Editor/Source Content
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.split-screen__pane--left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: var(--color-surface-elevated);
+  border-right: var(--border-width-thin) solid var(--color-border-subtle);
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  animation: split-pane-left-enter
+    var(--duration-slow)
+    var(--ease-out)
+    forwards;
+
+  transition: flex var(--duration-normal) var(--ease-out);
+}
+
+.split-screen__pane--left:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.split-screen__pane--left.split-screen__pane--active {
+  box-shadow: inset 0 0 0 var(--border-width-thin) var(--color-primary);
+  z-index: var(--z-raised);
+}
+
+.split-screen__pane--left.split-screen__pane--exiting {
+  animation: split-pane-left-exit
+    var(--duration-slow)
+    var(--ease-out)
+    forwards;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RIGHT PANE - Preview/Book-Page Aesthetic
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.split-screen__pane--right {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: var(--color-surface-primary);
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  /* Book-page aesthetic: inset shadow for spine effect */
+  box-shadow: inset 8px 0 12px hsl(220, 10%, 0%, 0.05);
+
+  animation: split-pane-right-enter
+    var(--duration-slow)
+    var(--ease-out)
+    forwards;
+
+  transition: flex var(--duration-normal) var(--ease-out);
+}
+
+.split-screen__pane--right:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.split-screen__pane--right.split-screen__pane--active {
+  box-shadow:
+    inset 0 0 0 var(--border-width-thin) var(--color-primary),
+    inset 8px 0 12px hsl(220, 10%, 0%, 0.05);
+  z-index: var(--z-raised);
+}
+
+.split-screen__pane--right.split-screen__pane--exiting {
+  animation: split-pane-right-exit
+    var(--duration-slow)
+    var(--ease-out)
+    forwards;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PANE CONTENT WRAPPER
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.split-screen__content {
+  flex: 1;
+  padding: var(--space-large);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+.split-screen__content--book {
+  max-width: var(--width-content-medium);
+  margin: 0 auto;
+  font-family: var(--font-family-reading);
+  line-height: var(--line-height-reading);
+  color: var(--color-text-primary);
+  padding: var(--space-large) var(--space-xlarge);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESIZABLE DIVIDER
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.split-screen__divider {
+  width: 1px;
+  min-width: 1px;
+  max-width: 1px;
+  height: auto;
+  background-color: var(--color-border-subtle);
+  cursor: col-resize;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    width var(--duration-fast) var(--ease-out);
+
+  z-index: var(--z-raised);
+}
+
+.split-screen__divider:hover {
+  background-color: var(--color-border-default);
+  width: var(--space-small);
+}
+
+.split-screen__divider:active,
+.split-screen__divider--dragging {
+  background-color: var(--color-primary);
+  width: var(--space-small);
+  box-shadow: 0 0 8px hsl(220, 60%, 50%, 0.3);
+}
+
+.split-screen__divider:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.split-screen__divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 40px;
+  background-color: var(--color-border-strong);
+  border-radius: var(--radius-full);
+  opacity: 0.5;
+
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    height var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.split-screen__divider:hover::before {
+  opacity: 1;
+  height: 60px;
+  background-color: var(--color-primary);
+}
+
+.split-screen__divider:active::before,
+.split-screen__divider--dragging::before {
+  background-color: var(--color-text-inverse);
+  opacity: 1;
+  height: 80px;
+}
+
+/* Touch target - Mobile (coarse pointer) */
+@media (pointer: coarse) {
+  .split-screen__divider {
+    width: var(--space-medium);
+    background-color: transparent;
+  }
+
+  .split-screen__divider:hover {
+    background-color: transparent;
+  }
+
+  .split-screen__divider::before {
+    opacity: 0.3;
+    height: 60px;
+  }
+
+  .split-screen__divider:active::before,
+  .split-screen__divider--dragging::before {
+    opacity: 1;
+    background-color: var(--color-primary);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE BREAKPOINTS
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1023px) {
+  .split-screen__pane--left,
+  .split-screen__pane--right {
+    padding: var(--space-medium);
+  }
+
+  .split-screen__content--book {
+    padding: var(--space-large) var(--space-medium);
+  }
+}
+
+@media (max-width: 767px) {
+  .split-screen__main {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: unset;
+  }
+
+  .split-screen__divider {
+    display: none;
+  }
+
+  .split-screen__pane--left,
+  .split-screen__pane--right {
+    display: none;
+    flex: 1;
+  }
+
+  .split-screen__pane--left.split-screen__pane--active,
+  .split-screen__pane--right.split-screen__pane--active {
+    display: flex;
+  }
+
+  .split-screen__pane--left,
+  .split-screen__pane--right {
+    animation: none;
+    box-shadow: none;
+  }
+
+  @media (orientation: landscape) {
+    .split-screen__main {
+      flex-direction: row;
+      grid-template-columns: 1fr 1px 1fr;
+    }
+
+    .split-screen__pane--left,
+    .split-screen__pane--right {
+      display: flex;
+    }
+
+    .split-screen__divider {
+      display: flex;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY: Reduced Motion Support
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .split-screen__pane--left,
+  .split-screen__pane--right {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .split-screen__pane--left,
+  .split-screen__pane--right,
+  .split-screen__divider {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOOK-PAGE TYPOGRAPHY (Right Pane)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.split-screen__content--book h1 {
+  font-size: var(--text-size-heading-1);
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-large);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+}
+
+.split-screen__content--book h2 {
+  font-size: var(--text-size-heading-2);
+  font-weight: var(--font-weight-semibold);
+  margin-top: var(--space-xlarge);
+  margin-bottom: var(--space-medium);
+  color: var(--color-text-primary);
+}
+
+.split-screen__content--book h3 {
+  font-size: var(--text-size-heading-3);
+  font-weight: var(--font-weight-semibold);
+  margin-top: var(--space-large);
+  margin-bottom: var(--space-small);
+  color: var(--color-text-primary);
+}
+
+.split-screen__content--book p {
+  margin-bottom: var(--space-medium);
+  text-align: justify;
+}
+
+.split-screen__content--book > p:first-of-type::first-letter {
+  float: left;
+  font-size: var(--text-size-display);
+  font-weight: var(--font-weight-bold);
+  line-height: 0.8;
+  padding-right: var(--space-small);
+  color: var(--color-primary);
+  font-family: var(--font-family-heading);
+}
+
+.split-screen__content--book blockquote {
+  margin: var(--space-large) 0;
+  padding: var(--space-medium) var(--space-large);
+  border-left: var(--border-width-thick) solid var(--color-primary);
+  background-color: var(--color-surface-sunken);
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.split-screen__content--book blockquote p {
+  margin: 0;
+}
+
+.split-screen__content--book blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.split-screen__content--book hr {
+  border: none;
+  height: 0;
+  margin: var(--space-huge) 0;
+  position: relative;
+  text-align: center;
+}
+
+.split-screen__content--book hr::before {
+  content: '\2726';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-size-body);
+}
+
+.split-screen__content--book hr::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--color-border-subtle) 20%,
+    var(--color-border-subtle) 80%,
+    transparent 100%
+  );
+}
+
+.split-screen__content--book ul,
+.split-screen__content--book ol {
+  margin-bottom: var(--space-medium);
+  margin-left: var(--space-large);
+}
+
+.split-screen__content--book li {
+  margin-bottom: var(--space-small);
+}
+
+.split-screen__content--book strong {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.split-screen__content--book em {
+  font-style: italic;
+}
+
+.split-screen__content--book a {
+  color: var(--color-text-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.split-screen__content--book a:hover {
+  color: var(--color-text-link-hover);
+}
+
+.split-screen__content--book a:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-small);
+}

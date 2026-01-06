@@ -85,6 +85,13 @@ export interface LLMResponse {
     completionTokens: number;
     totalTokens: number;
   };
+  /** Teaching output from AgentMaster */
+  teaching?: {
+    whatHappened: string;
+    promptTierUsed: 'tiny' | 'standard' | 'full';
+    modelSelected: string;
+    vettingApplied: string;
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -132,6 +139,8 @@ export interface ChatServiceConfig {
   archiveUrl?: string;
   /** Whether to auto-archive conversations */
   autoArchive?: boolean;
+  /** User ID for AgentMaster tracking */
+  userId?: string;
 }
 
 export interface SendMessageOptions {

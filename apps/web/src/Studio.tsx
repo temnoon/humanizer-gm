@@ -23,6 +23,7 @@ import {
   useBuffers,
   type OperatorDefinition,
   type ArchiveSource,
+  type ArchiveSourceType,
 } from './lib/buffer';
 import {
   fetchConversations,
@@ -49,23 +50,26 @@ import {
 } from './lib/transform';
 import { useAuth } from './lib/auth';
 import { LoginPage } from './components/auth/LoginPage';
-import { BookProvider, useBook } from './lib/book';
-import { BookshelfProvider } from './lib/bookshelf';
-import { executeAllTools, AUI_BOOK_SYSTEM_PROMPT, AUIProvider, type AUIContext, type WorkspaceState } from './lib/aui';
+// BookProvider removed - consolidated into BookshelfProvider (Phase 4.2)
+import { BookshelfProvider, useBookshelf, type DraftChapter } from './lib/bookshelf';
+import { executeAllTools, executeTool, buildAUIContext, AUI_BOOK_SYSTEM_PROMPT, AUIProvider, useAUI, subscribeToGUIActions, type AUIContext, type WorkspaceState } from './lib/aui';
 import { ThemeProvider, useTheme } from './lib/theme/ThemeContext';
 import { ThemeSettingsModal } from './components/theme/ThemeSettingsModal';
 import { ArchiveTabs, type SelectedFacebookMedia, type SelectedFacebookContent, type ArchiveTabId, type SearchResult } from './components/archive';
-import { BookContentView, ContainerWorkspace, AnalyzableMarkdown, WelcomeScreen, StructureInspector, type BookContent } from './components/workspace';
+import { BookContentView, ContainerWorkspace, AnalyzableMarkdown, WelcomeScreen, StructureInspector, HarvestWorkspaceView, type BookContent, type HarvestConversation, type StagedMessage } from './components/workspace';
 import type { BookProject } from './components/archive/book-project/types';
 import { ProfileCardsContainer } from './components/tools/ProfileCards';
+import { HarvestQueuePanel } from './components/tools/HarvestQueuePanel';
 import { SocialGraphView } from './components/graph';
 import { useLayout, CornerAssistant, PanelResizer, usePanelState, useLayoutMode, useSplitScreen, SplitScreenWorkspace, useHighlights, useSplitMode, type SplitPaneContent } from './components/layout';
+import { AddToBookDialog, type AddAction } from './components/dialogs/AddToBookDialog';
 import type { SentenceAnalysis } from './lib/analysis';
 import type { ArchiveContainer } from '@humanizer/core';
 import {
   facebookMediaToContainer,
   facebookContentToContainer,
 } from './lib/archive';
+import { getArchiveServerUrlSync, initPlatformConfig, isElectron } from './lib/platform';
 
 // ═══════════════════════════════════════════════════════════════════
 // HOVER PANEL
@@ -173,7 +177,25 @@ interface ArchivePanelProps {
 }
 
 function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onSelectSearchResult, navigateToTab, onTabChange }: ArchivePanelProps) {
-  const { importText, buffers } = useBuffers();
+  const { importText, buffers, activeNode } = useBuffers();
+
+  // Get the currently selected conversation folder from workspace
+  const selectedConversationFolder = activeNode?.metadata?.source?.conversationFolder;
+
+  // Auto-scroll to selected conversation when it changes
+  useEffect(() => {
+    if (!selectedConversationFolder) return;
+
+    // Wait a tick for DOM to update
+    const timer = setTimeout(() => {
+      const element = document.querySelector(`[data-conversation-folder="${selectedConversationFolder}"]`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [selectedConversationFolder]);
 
   // Archive state
   const [allConversations, setAllConversations] = useState<ArchiveConversation[]>([]); // Full index for search
@@ -189,16 +211,75 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
   // Pagination, sorting, search, and filters
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
-  const [sortBy, setSortBy] = useState<'recent' | 'oldest' | 'messages-desc' | 'length-desc'>('messages-desc');
+  const [sortBy, setSortBy] = useState<'recent' | 'oldest' | 'messages-desc' | 'length-desc' | 'length-asc' | 'words-desc' | 'words-asc'>('messages-desc');
   const [searchQuery, setSearchQuery] = useState('');
   const [hideEmpty, setHideEmpty] = useState(true);
-  const [mediaFilter, setMediaFilter] = useState<'all' | 'images' | 'audio' | 'any'>('all');
+  const [hideTrivial, setHideTrivial] = useState(false); // Hide ≤5 word conversations
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'images' | 'audio' | 'any' | 'code'>('all');
+  const [minWords, setMinWords] = useState<number | null>(null);
+  const [maxWords, setMaxWords] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(50); // Virtual scroll: items to render
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const PAGE_SIZE = 50;
 
-  // Filter ALL conversations by search query (searches full index)
-  const filteredConversations = searchQuery.trim()
-    ? allConversations.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
-    : conversations; // When not searching, show paginated results
+  // Estimate word count from text_length (avg ~5 chars per word)
+  const estimateWords = (textLength: number) => Math.round(textLength / 5);
+
+  // Filter ALL conversations by search query and additional filters
+  const filteredConversations = useMemo(() => {
+    let result = searchQuery.trim()
+      ? allConversations.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
+      : conversations;
+
+    // Apply word count filters
+    if (hideTrivial) {
+      result = result.filter(c => estimateWords(c.text_length) > 5);
+    }
+    if (minWords !== null) {
+      result = result.filter(c => estimateWords(c.text_length) >= minWords);
+    }
+    if (maxWords !== null) {
+      result = result.filter(c => estimateWords(c.text_length) <= maxWords);
+    }
+
+    // Sort by words if selected
+    if (sortBy === 'words-desc') {
+      result = [...result].sort((a, b) => b.text_length - a.text_length);
+    } else if (sortBy === 'words-asc') {
+      result = [...result].sort((a, b) => a.text_length - b.text_length);
+    }
+
+    return result;
+  }, [searchQuery, allConversations, conversations, hideTrivial, minWords, maxWords, sortBy]);
+
+  // Virtual scroll: Only render visible items
+  const visibleConversations = useMemo(() => {
+    const allFiltered = filteredConversations;
+    return allFiltered.slice(0, visibleCount);
+  }, [filteredConversations, visibleCount]);
+
+  // Reset visible count when filters change
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [searchQuery, hideTrivial, minWords, maxWords, sortBy, mediaFilter]);
+
+  // IntersectionObserver to load more as user scrolls
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && visibleCount < filteredConversations.length) {
+          setVisibleCount(prev => Math.min(prev + 50, filteredConversations.length));
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [visibleCount, filteredConversations.length]);
 
   // Load conversations on mount
   useEffect(() => {
@@ -245,15 +326,20 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
       // Check if archive server is available
       const healthy = await checkArchiveHealth();
       if (!healthy) {
-        setError('Archive server not available. Start with: npx tsx archive-server.js');
+        setError('Archive server not available. The embedded server may still be starting...');
         setLoading(false);
         return;
       }
 
+      // Map words-* sort options to length-* for server-side sorting
+      const serverSortBy = newSortBy === 'words-desc' ? 'length-desc'
+        : newSortBy === 'words-asc' ? 'length-asc'
+        : newSortBy;
+
       const result = await fetchConversations({
         limit: PAGE_SIZE,
         offset: newOffset,
-        sortBy: newSortBy,
+        sortBy: serverSortBy,
         minMessages: newHideEmpty ? 1 : undefined,
         hasImages: newMediaFilter === 'images' ? true : undefined,
         hasAudio: newMediaFilter === 'audio' ? true : undefined,
@@ -302,7 +388,8 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
     try {
       const fullConv = await fetchConversation(conv.folder);
       // Limit to first 20 messages for quick loading
-      const messages = getMessages(fullConv, 20);
+      const archiveServer = getArchiveServerUrlSync() || '';
+      const messages = getMessages(fullConv, 20, archiveServer);
       setExpandedMessages(messages);
     } catch (err) {
       console.error('Failed to load messages:', err);
@@ -325,6 +412,15 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
     onClose();
   };
 
+  // Handle Gutenberg text selection
+  const handleSelectGutenbergText = (text: string, title: string) => {
+    importText(text, title, {
+      type: 'gutenberg',
+      path: ['gutenberg', title],
+    });
+    onClose();
+  };
+
   const handleImportFullConversation = (conv: ArchiveConversation) => {
     const allContent = expandedMessages
       .map(m => `**[${m.role.toUpperCase()}]**\n\n${m.content}`)
@@ -334,7 +430,8 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
   };
 
   // Group filtered conversations by month
-  const groupedConversations = groupConversationsByMonth(filteredConversations);
+  // Group only visible conversations for rendering (virtual scroll)
+  const groupedConversations = groupConversationsByMonth(visibleConversations);
 
   // Show buffer list
   const allBuffers = buffers.getAllBuffers();
@@ -420,36 +517,82 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
               </span>
             </h3>
             <div className="archive-browser__filters">
+              {/* Sort options */}
               <select
                 className="archive-browser__filter"
                 value={sortBy}
                 onChange={(e) => handleSortChange(e.target.value as typeof sortBy)}
                 title="Sort by"
               >
-                <option value="messages-desc">Most messages</option>
-                <option value="length-desc">Longest</option>
-                <option value="recent">Recent</option>
-                <option value="oldest">Oldest</option>
+                <optgroup label="By Messages">
+                  <option value="messages-desc">Most messages</option>
+                </optgroup>
+                <optgroup label="By Length">
+                  <option value="length-desc">Longest first</option>
+                  <option value="length-asc">Shortest first</option>
+                  <option value="words-desc">Most words</option>
+                  <option value="words-asc">Fewest words</option>
+                </optgroup>
+                <optgroup label="By Date">
+                  <option value="recent">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                </optgroup>
               </select>
+
+              {/* Content type filter */}
               <select
                 className="archive-browser__filter"
                 value={mediaFilter}
                 onChange={(e) => handleMediaFilterChange(e.target.value as typeof mediaFilter)}
-                title="Filter by media"
+                title="Filter by content"
               >
-                <option value="all">All</option>
+                <option value="all">All types</option>
                 <option value="images">Has images</option>
                 <option value="audio">Has audio</option>
                 <option value="any">Has media</option>
+                <option value="code">Has code</option>
               </select>
-              <label className="archive-browser__checkbox" title="Hide empty conversations">
+
+              {/* Word count range */}
+              <div className="archive-browser__filter-group" title="Filter by word count">
                 <input
-                  type="checkbox"
-                  checked={hideEmpty}
-                  onChange={(e) => handleHideEmptyChange(e.target.checked)}
+                  type="number"
+                  className="archive-browser__filter-input"
+                  placeholder="Min words"
+                  min={0}
+                  value={minWords ?? ''}
+                  onChange={(e) => setMinWords(e.target.value ? parseInt(e.target.value) : null)}
                 />
-                <span>Hide empty</span>
-              </label>
+                <span className="archive-browser__filter-sep">–</span>
+                <input
+                  type="number"
+                  className="archive-browser__filter-input"
+                  placeholder="Max"
+                  min={0}
+                  value={maxWords ?? ''}
+                  onChange={(e) => setMaxWords(e.target.value ? parseInt(e.target.value) : null)}
+                />
+              </div>
+
+              {/* Quick filters */}
+              <div className="archive-browser__checkboxes">
+                <label className="archive-browser__checkbox" title="Hide empty conversations">
+                  <input
+                    type="checkbox"
+                    checked={hideEmpty}
+                    onChange={(e) => handleHideEmptyChange(e.target.checked)}
+                  />
+                  <span>Hide empty</span>
+                </label>
+                <label className="archive-browser__checkbox" title="Hide trivial (≤5 words)">
+                  <input
+                    type="checkbox"
+                    checked={hideTrivial}
+                    onChange={(e) => setHideTrivial(e.target.checked)}
+                  />
+                  <span>Hide trivial</span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -472,22 +615,39 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
             </div>
           )}
 
+          {/* Empty state when no conversations */}
+          {groupedConversations.size === 0 && !loading && (
+            <div className="archive-browser__empty">
+              <p className="archive-browser__empty-text">No conversations found</p>
+              <p className="archive-browser__empty-hint">
+                Switch to the <strong>Import</strong> tab to add archives
+              </p>
+            </div>
+          )}
+
           {/* Grouped by month */}
           {Array.from(groupedConversations.entries()).map(([month, convs]) => (
             <div key={month} className="archive-browser__month">
               <div className="archive-browser__month-header">{month}</div>
               <div className="archive-browser__list">
-                {convs.map(conv => (
-                  <div key={conv.folder} className="archive-item">
+                {convs.map(conv => {
+                  const isSelected = conv.folder === selectedConversationFolder;
+                  return (
+                  <div
+                    key={conv.folder}
+                    className={`archive-item ${isSelected ? 'archive-item--selected' : ''}`}
+                    data-conversation-folder={conv.folder}
+                  >
                     <button
-                      className={`archive-item__header ${expandedConv === conv.folder ? 'archive-item__header--expanded' : ''}`}
+                      className={`archive-item__header ${expandedConv === conv.folder ? 'archive-item__header--expanded' : ''} ${isSelected ? 'archive-item__header--selected' : ''}`}
                       onClick={() => handleExpandConversation(conv)}
                     >
                       <span className="archive-item__icon">{expandedConv === conv.folder ? '▼' : '▶'}</span>
                       <span className="archive-item__title">{conv.title}</span>
                       <span className="archive-item__meta">
-                        {conv.message_count} msgs
+                        {conv.message_count} msgs · {estimateWords(conv.text_length).toLocaleString()} words
                         {conv.has_media && ' 📎'}
+                        {isSelected && ' ●'}
                       </span>
                     </button>
 
@@ -497,17 +657,31 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
                           <div className="archive-item__loading">Loading...</div>
                         ) : (
                           <>
-                            {/* Import full conversation button */}
-                            {expandedMessages.length > 1 && (
+                            {/* Action buttons */}
+                            <div className="archive-item__actions">
+                              {expandedMessages.length > 1 && (
+                                <button
+                                  className="archive-message archive-message--full"
+                                  onClick={() => handleImportFullConversation(conv)}
+                                >
+                                  Import all ({expandedMessages.length} msgs)
+                                </button>
+                              )}
                               <button
-                                className="archive-message archive-message--full"
-                                onClick={() => handleImportFullConversation(conv)}
+                                className="archive-browser__similar-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Navigate to explore tab with conversation content as query
+                                  const searchText = expandedMessages.slice(0, 3).map(m => m.content.slice(0, 200)).join(' ');
+                                  onTabChange?.('explore');
+                                  // Dispatch custom event to set search query in ExploreView
+                                  window.dispatchEvent(new CustomEvent('explore-search', { detail: { query: searchText.slice(0, 500) } }));
+                                }}
+                                title="Find similar conversations using semantic search"
                               >
-                                <span className="archive-message__preview">
-                                  Import full conversation ({expandedMessages.length} messages)
-                                </span>
+                                Find Similar
                               </button>
-                            )}
+                            </div>
 
                             {/* Individual messages */}
                             {expandedMessages.map(msg => (
@@ -528,10 +702,21 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
+
+          {/* Virtual scroll: Load more sentinel */}
+          {visibleCount < filteredConversations.length && (
+            <div
+              ref={loadMoreRef}
+              className="archive-browser__load-more"
+            >
+              Loading more... ({visibleCount} of {filteredConversations.length})
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -546,6 +731,7 @@ function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, on
       onOpenGraph={onOpenGraph}
       onSelectBookContent={onSelectBookContent}
       onSelectSearchResult={onSelectSearchResult}
+      onSelectGutenbergText={handleSelectGutenbergText}
       controlledTab={navigateToTab}
       onTabChange={onTabChange}
     />
@@ -561,7 +747,7 @@ interface ToolDefinition {
   icon: string;
   label: string;
   description: string;
-  category: 'transform' | 'analyze' | 'edit' | 'advanced' | 'settings';
+  category: 'transform' | 'analyze' | 'edit' | 'book' | 'advanced' | 'settings';
   defaultVisible: boolean;
 }
 
@@ -577,7 +763,12 @@ const TOOL_REGISTRY: ToolDefinition[] = [
 
   // Edit tools
   { id: 'editor', icon: '¶', label: 'Editor', description: 'Markdown editor', category: 'edit', defaultVisible: true },
-  { id: 'book', icon: '❡', label: 'Book', description: 'Book environment', category: 'edit', defaultVisible: false },
+  { id: 'harvest', icon: '🌾', label: 'Harvest', description: 'Passage curation queue', category: 'edit', defaultVisible: true },
+
+  // Book tools
+  { id: 'arc', icon: '◠', label: 'Arc', description: 'Trace narrative arcs through your archive', category: 'book', defaultVisible: true },
+  { id: 'threads', icon: '⚯', label: 'Threads', description: 'Discover thematic threads', category: 'book', defaultVisible: true },
+  { id: 'chapters', icon: '❡', label: 'Chapters', description: 'Manage book chapters', category: 'book', defaultVisible: true },
 
   // Advanced tools (hidden by default)
   { id: 'pipelines', icon: '⚡', label: 'Pipelines', description: 'Preset workflows', category: 'advanced', defaultVisible: false },
@@ -622,9 +813,10 @@ function saveToolVisibility(visibility: Record<string, boolean>): void {
 interface ToolsPanelProps {
   onClose: () => void;
   onTransformComplete?: (original: string, transformed: string, transformType: string) => void;
+  onReviewInWorkspace?: (conversationId: string, conversationTitle: string, passage: import('@humanizer/core').SourcePassage) => void;
 }
 
-function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps) {
+function ToolsPanel({ onClose: _onClose, onTransformComplete, onReviewInWorkspace }: ToolsPanelProps) {
   const {
     activeContent,
     applyOperator,
@@ -641,8 +833,11 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
   const pipelines = getPipelines();
 
   // Highlight and split mode hooks for analysis integration
-  const { setData: setAnalysisData, setActive: setActiveHighlights } = useHighlights();
-  const { setMode: setSplitMode } = useSplitMode();
+  const { setData: setAnalysisData, setActive: setActiveHighlights, analysisData } = useHighlights();
+  const { mode: splitMode, setMode: setSplitMode } = useSplitMode();
+
+  // Bookshelf hook for harvest panel
+  const bookshelf = useBookshelf();
 
   // Tool visibility state
   const [toolVisibility, setToolVisibility] = useState<Record<string, boolean>>(loadToolVisibility);
@@ -933,6 +1128,20 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
       setAnalysisProgress(null);
     }
   }, []);
+
+  // Auto-trigger analysis when toolbar mode changes to 'analyze'
+  useEffect(() => {
+    // Only trigger when mode is 'analyze', there's content, we're not already analyzing,
+    // and we don't already have analysis data
+    if (
+      splitMode === 'analyze' &&
+      contentText.trim() &&
+      !isAnalyzing &&
+      !analysisData?.sentences?.length
+    ) {
+      handleSentenceAnalysis();
+    }
+  }, [splitMode, contentText, isAnalyzing, analysisData?.sentences?.length, handleSentenceAnalysis]);
 
   // Ensure active tab is visible
   useEffect(() => {
@@ -1418,6 +1627,68 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
         )}
 
         {/* ═══════════════════════════════════════════════════════════════
+            HARVEST - Passage curation queue
+            ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'harvest' && (
+          <HarvestQueuePanel
+            bookUri={bookshelf.activeBookUri}
+            onSelectPassage={(passage) => {
+              // Load passage into buffer for viewing
+              importText(passage.text || '', passage.sourceRef?.conversationTitle || 'Passage', {
+                type: 'passage',
+              });
+            }}
+            onOpenSource={(conversationId) => {
+              // Dispatch event to open conversation in Archive
+              window.dispatchEvent(
+                new CustomEvent('open-conversation', {
+                  detail: { conversationId, folder: conversationId },
+                })
+              );
+            }}
+            onReviewInWorkspace={onReviewInWorkspace}
+          />
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            ARC - Trace narrative arcs
+            ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'arc' && (
+          <ArcToolPanel
+            activeContent={getContentText(activeContent)}
+            bookUri={bookshelf.activeBookUri}
+          />
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            THREADS - Discover thematic threads
+            ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'threads' && (
+          <ThreadsToolPanel
+            bookUri={bookshelf.activeBookUri}
+          />
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            CHAPTERS - Book chapter management
+            ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'chapters' && (
+          <ChaptersToolPanel
+            bookUri={bookshelf.activeBookUri}
+          />
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            PERSONA - Voice creation and management
+            ═══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'persona' && (
+          <PersonaToolPanel
+            bookUri={bookshelf.activeBookUri}
+            activeContent={getContentText(activeContent)}
+          />
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
             PIPELINES - Advanced workflows
             ═══════════════════════════════════════════════════════════════ */}
         {activeTab === 'pipelines' && (
@@ -1589,7 +1860,7 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
               <span className="tool-panel__subtitle">Show or hide tools</span>
             </div>
             <div className="tool-panel__body">
-              {(['transform', 'analyze', 'edit', 'advanced'] as const).map(category => (
+              {(['transform', 'analyze', 'edit', 'book', 'advanced'] as const).map(category => (
                 <div key={category} className="tool-panel__section">
                   <label className="tool-panel__label">{category}</label>
                   {TOOL_REGISTRY.filter(t => t.category === category).map(tool => (
@@ -1615,6 +1886,731 @@ function ToolsPanel({ onClose: _onClose, onTransformComplete }: ToolsPanelProps)
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// BOOK TOOL PANELS
+// ═══════════════════════════════════════════════════════════════════
+
+// Helper to extract text from ContentItem | ContentItem[] | null
+function getContentText(content: { text: string } | { text: string }[] | null): string | null {
+  if (!content) return null;
+  if (Array.isArray(content)) {
+    return content.map(c => c.text).join('\n\n');
+  }
+  return content.text;
+}
+
+interface ArcToolPanelProps {
+  activeContent: string | null;
+  bookUri: string | null;
+}
+
+function ArcToolPanel({ activeContent, bookUri }: ArcToolPanelProps) {
+  const [theme, setTheme] = useState('');
+  const [arcType, setArcType] = useState<'progressive' | 'chronological' | 'thematic' | 'dialectic'>('progressive');
+  const [isTracing, setIsTracing] = useState(false);
+  const [saveToHarvest, setSaveToHarvest] = useState(false);
+  const [result, setResult] = useState<{
+    message: string;
+    phases?: Array<{ phase: string; count: number; samples?: Array<{ preview: string; source?: string }> }>;
+    teaching?: { whatHappened: string; why?: string };
+  } | null>(null);
+
+  // Get contexts for tool execution
+  const bookshelf = useBookshelf();
+
+  const handleTrace = async () => {
+    if (!theme.trim()) return;
+
+    setIsTracing(true);
+    setResult(null);
+
+    try {
+      // Build AUI context from bookshelf (BookContext deprecated)
+      const context = buildAUIContext(null, bookshelf);
+
+      // Execute the trace_arc tool
+      const toolResult = await executeTool(
+        {
+          name: 'trace_arc',
+          params: {
+            theme,
+            arc_type: arcType,
+            save_to_harvest: saveToHarvest,
+            limit: 20,
+          },
+          raw: '',
+        },
+        context
+      );
+
+      if (toolResult.success && toolResult.data) {
+        const data = toolResult.data as { phases?: { phase: string; count: number; samples?: { preview: string; source?: string }[] }[] };
+        setResult({
+          message: toolResult.message || `Traced "${theme}" arc`,
+          phases: data.phases,
+          teaching: toolResult.teaching,
+        });
+      } else {
+        setResult({
+          message: toolResult.error || 'Failed to trace arc',
+        });
+      }
+    } catch (e) {
+      setResult({ message: `Error: ${e instanceof Error ? e.message : 'Failed to trace arc'}` });
+    } finally {
+      setIsTracing(false);
+    }
+  };
+
+  return (
+    <div className="tool-panel">
+      <div className="tool-panel__header">
+        <h3>Trace Arc</h3>
+        <span className="tool-panel__subtitle">Find how a theme evolved through your archive</span>
+      </div>
+      <div className="tool-panel__body">
+        <div className="tool-panel__field">
+          <label className="tool-panel__label">Theme to trace</label>
+          <input
+            type="text"
+            className="tool-panel__input"
+            placeholder="e.g., consciousness, meditation, writing..."
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+          />
+        </div>
+
+        <div className="tool-panel__field">
+          <label className="tool-panel__label">Arc type</label>
+          <div className="tool-panel__radio-group">
+            {[
+              { value: 'progressive', label: 'Progressive', desc: 'Beginning → Middle → End' },
+              { value: 'chronological', label: 'Chronological', desc: 'Ordered by date' },
+              { value: 'dialectic', label: 'Dialectic', desc: 'Thesis → Antithesis → Synthesis' },
+              { value: 'thematic', label: 'Thematic', desc: 'Variations on theme' },
+            ].map(opt => (
+              <label key={opt.value} className="tool-panel__radio">
+                <input
+                  type="radio"
+                  name="arcType"
+                  value={opt.value}
+                  checked={arcType === opt.value}
+                  onChange={() => setArcType(opt.value as typeof arcType)}
+                />
+                <span className="tool-panel__radio-label">{opt.label}</span>
+                <span className="tool-panel__radio-desc">{opt.desc}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Save to Harvest checkbox */}
+        <div className="tool-panel__field tool-panel__field--inline">
+          <label className="tool-panel__checkbox">
+            <input
+              type="checkbox"
+              checked={saveToHarvest}
+              onChange={(e) => setSaveToHarvest(e.target.checked)}
+            />
+            <span>Save results to Harvest bucket</span>
+          </label>
+        </div>
+
+        <button
+          className="tool-panel__button tool-panel__button--primary"
+          onClick={handleTrace}
+          disabled={isTracing || !theme.trim()}
+        >
+          {isTracing ? 'Tracing...' : 'Trace Arc'}
+        </button>
+
+        {result && (
+          <div className="tool-panel__result">
+            <p className="tool-panel__result-message">{result.message}</p>
+
+            {result.phases && (
+              <div className="tool-panel__phases">
+                {result.phases.map((p, i) => (
+                  <div key={i} className="tool-panel__phase">
+                    <div className="tool-panel__phase-header">
+                      <span className="tool-panel__phase-name">{p.phase}</span>
+                      <span className="tool-panel__phase-count">{p.count} passages</span>
+                    </div>
+                    {p.samples && p.samples.length > 0 && (
+                      <div className="tool-panel__phase-samples">
+                        {p.samples.map((s, j) => (
+                          <div key={j} className="tool-panel__phase-sample">
+                            <span className="tool-panel__sample-preview">{s.preview}</span>
+                            {s.source && <span className="tool-panel__sample-source">— {s.source}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {result.teaching && (
+              <div className="tool-panel__teaching">
+                <p className="tool-panel__teaching-what">{result.teaching.whatHappened}</p>
+                {result.teaching.why && (
+                  <p className="tool-panel__teaching-why">{result.teaching.why}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeContent && (
+          <div className="tool-panel__hint">
+            <p>Tip: Use the current content as a starting point</p>
+            <button
+              className="tool-panel__button tool-panel__button--secondary"
+              onClick={() => {
+                const words = activeContent.split(/\s+/).slice(0, 5).join(' ');
+                setTheme(words);
+              }}
+            >
+              Use current text
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ThreadsToolPanelProps {
+  bookUri: string | null;
+}
+
+function ThreadsToolPanel({ bookUri }: ThreadsToolPanelProps) {
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [threads, setThreads] = useState<Array<{ theme: string; count: number; coherence: number }>>([]);
+  const bookshelf = useBookshelf();
+
+  const handleDiscover = async () => {
+    if (!bookUri) return;
+
+    setIsDiscovering(true);
+
+    try {
+      // Get passages from active book
+      const passages = bookshelf.getPassages(bookUri);
+
+      if (passages.length < 3) {
+        setThreads([]);
+        return;
+      }
+
+      // Simple keyword clustering
+      const keywordCounts = new Map<string, number>();
+      const commonWords = new Set(['about', 'which', 'their', 'there', 'would', 'could', 'should', 'being', 'having', 'through', 'because', 'while', 'something', 'anything']);
+
+      for (const p of passages) {
+        const text = p.text || '';
+        const words = text.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length >= 5 && !commonWords.has(w));
+        const seen = new Set<string>();
+        for (const w of words) {
+          if (!seen.has(w)) {
+            keywordCounts.set(w, (keywordCounts.get(w) || 0) + 1);
+            seen.add(w);
+          }
+        }
+      }
+
+      // Find themes (keywords in multiple passages)
+      const themes = Array.from(keywordCounts.entries())
+        .filter(([, count]) => count >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([word, count]) => ({
+          theme: word,
+          count,
+          coherence: Math.min(1, count / passages.length),
+        }));
+
+      setThreads(themes);
+    } catch (e) {
+      console.error('Thread discovery failed:', e);
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
+  return (
+    <div className="tool-panel">
+      <div className="tool-panel__header">
+        <h3>Discover Threads</h3>
+        <span className="tool-panel__subtitle">Find thematic patterns in your passages</span>
+      </div>
+      <div className="tool-panel__body">
+        {!bookUri ? (
+          <div className="tool-panel__empty">
+            <p>No book project active</p>
+            <span className="tool-panel__muted">Open a book project in Archive → Books</span>
+          </div>
+        ) : (
+          <>
+            <button
+              className="tool-panel__button tool-panel__button--primary"
+              onClick={handleDiscover}
+              disabled={isDiscovering}
+            >
+              {isDiscovering ? 'Discovering...' : 'Discover Threads'}
+            </button>
+
+            {threads.length > 0 && (
+              <div className="tool-panel__threads">
+                {threads.map((t, i) => (
+                  <div key={i} className="tool-panel__thread">
+                    <span className="tool-panel__thread-theme">{t.theme}</span>
+                    <span className="tool-panel__thread-count">{t.count} passages</span>
+                    <div
+                      className="tool-panel__thread-bar"
+                      style={{ width: `${t.coherence * 100}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {threads.length === 0 && !isDiscovering && (
+              <div className="tool-panel__empty">
+                <p>No threads discovered yet</p>
+                <span className="tool-panel__muted">Add passages to your book, then discover patterns</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ChaptersToolPanelProps {
+  bookUri: string | null;
+}
+
+function ChaptersToolPanel({ bookUri }: ChaptersToolPanelProps) {
+  const [newChapterTitle, setNewChapterTitle] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateResult, setGenerateResult] = useState<{ message: string; success: boolean } | null>(null);
+  const bookshelf = useBookshelf();
+  const book = bookUri ? bookshelf.getBook(bookUri) : null;
+
+  // Active persona for draft generation
+  const { activePersona, activePersonaUri } = bookshelf;
+
+  // Count approved passages
+  const approvedCount = (book?.passages || []).filter(
+    p => p.curation?.status === 'approved' || p.curation?.status === 'gem'
+  ).length;
+
+  const handleAddChapter = () => {
+    if (!bookUri || !newChapterTitle.trim()) return;
+
+    const existingChapters = book?.chapters || [];
+    const chapter: DraftChapter = {
+      id: `chapter-${Date.now()}`,
+      number: existingChapters.length + 1,
+      title: newChapterTitle,
+      content: '',
+      status: 'drafting',
+      version: 1,
+      versions: [],
+      wordCount: 0,
+      sections: [],
+      marginalia: [],
+      metadata: {
+        lastEditedBy: 'user',
+        lastEditedAt: Date.now(),
+      },
+      passageRefs: [],
+    };
+
+    bookshelf.addChapter(bookUri, chapter);
+    setNewChapterTitle('');
+  };
+
+  const handleGenerateDraft = async () => {
+    if (!bookUri || approvedCount === 0) return;
+
+    setIsGenerating(true);
+    setGenerateResult(null);
+
+    try {
+      // Build context (BookContext deprecated - passing null)
+      const context = buildAUIContext(null, bookshelf);
+
+      // Execute generate_first_draft tool
+      // Pass persona's systemPrompt or description as style
+      const personaStyle = activePersona
+        ? (activePersona.systemPrompt || activePersona.description || `Write in the voice of ${activePersona.name}`)
+        : undefined;
+
+      const result = await executeTool(
+        {
+          name: 'generate_first_draft',
+          params: {
+            chapterTitle: newChapterTitle || 'Untitled Chapter',
+            use_approved: true,
+            style: personaStyle,
+          },
+          raw: '',
+        },
+        context
+      );
+
+      setGenerateResult({
+        message: result.message || (result.success ? 'Draft generated!' : 'Generation failed'),
+        success: result.success,
+      });
+
+      // Clear title input on success
+      if (result.success) {
+        setNewChapterTitle('');
+      }
+    } catch (e) {
+      setGenerateResult({
+        message: e instanceof Error ? e.message : 'Failed to generate draft',
+        success: false,
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="tool-panel">
+      <div className="tool-panel__header">
+        <h3>Chapters</h3>
+        <span className="tool-panel__subtitle">Manage book chapters</span>
+      </div>
+      <div className="tool-panel__body">
+        {!bookUri ? (
+          <div className="tool-panel__empty">
+            <p>No book project active</p>
+            <span className="tool-panel__muted">Open a book project in Archive → Books</span>
+          </div>
+        ) : (
+          <>
+            <div className="tool-panel__field">
+              <label className="tool-panel__label">Add chapter</label>
+              <div className="tool-panel__input-group">
+                <input
+                  type="text"
+                  className="tool-panel__input"
+                  placeholder="Chapter title..."
+                  value={newChapterTitle}
+                  onChange={(e) => setNewChapterTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddChapter()}
+                />
+                <button
+                  className="tool-panel__button"
+                  onClick={handleAddChapter}
+                  disabled={!newChapterTitle.trim()}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {book?.chapters && book.chapters.length > 0 ? (
+              <div className="tool-panel__chapters">
+                {book.chapters.map((ch, i) => (
+                  <div key={ch.id} className="tool-panel__chapter">
+                    <span className="tool-panel__chapter-num">{i + 1}</span>
+                    <span className="tool-panel__chapter-title">{ch.title}</span>
+                    <span className="tool-panel__chapter-words">{ch.wordCount || 0} words</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="tool-panel__empty">
+                <p>No chapters yet</p>
+                <span className="tool-panel__muted">Add your first chapter above</span>
+              </div>
+            )}
+
+            <div className="tool-panel__stats">
+              <div className="tool-panel__stat">
+                <span className="tool-panel__stat-value">{book?.chapters?.length || 0}</span>
+                <span className="tool-panel__stat-label">chapters</span>
+              </div>
+              <div className="tool-panel__stat">
+                <span className="tool-panel__stat-value">{approvedCount}</span>
+                <span className="tool-panel__stat-label">approved</span>
+              </div>
+            </div>
+
+            {/* Generate Draft Section */}
+            <div className="tool-panel__section">
+              <h4 className="tool-panel__section-title">Generate First Draft</h4>
+              <p className="tool-panel__muted">
+                Use approved passages to generate a chapter draft with AI
+              </p>
+              {activePersona && (
+                <p className="tool-panel__persona-active">
+                  Voice: <strong>{activePersona.name}</strong>
+                </p>
+              )}
+              {!activePersona && (
+                <p className="tool-panel__hint-text">
+                  Select a persona in the Persona panel for voice styling
+                </p>
+              )}
+              <button
+                className="tool-panel__button tool-panel__button--primary"
+                onClick={handleGenerateDraft}
+                disabled={isGenerating || approvedCount === 0}
+              >
+                {isGenerating ? 'Generating...' : `Generate Draft (${approvedCount} passages)`}
+              </button>
+              {approvedCount === 0 && (
+                <p className="tool-panel__hint-text">
+                  Approve some passages first in the Harvest panel
+                </p>
+              )}
+              {generateResult && (
+                <div className={`tool-panel__result ${generateResult.success ? '' : 'tool-panel__result--error'}`}>
+                  <p>{generateResult.message}</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface PersonaToolPanelProps {
+  bookUri: string | null;
+  activeContent: string | null;
+}
+
+function PersonaToolPanel({ bookUri, activeContent }: PersonaToolPanelProps) {
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualDescription, setManualDescription] = useState('');
+  const [result, setResult] = useState<{ message: string; success: boolean; persona?: unknown } | null>(null);
+  const bookshelf = useBookshelf();
+
+  // Get personas from bookshelf
+  const personas = bookshelf.personas || [];
+
+  // Active persona from bookshelf context (shared state)
+  const { activePersonaUri, setActivePersonaUri } = bookshelf;
+
+  const handleExtractFromContent = async () => {
+    if (!activeContent || activeContent.length < 200) {
+      setResult({
+        success: false,
+        message: 'Need at least 200 characters in workspace to extract persona',
+      });
+      return;
+    }
+
+    setIsExtracting(true);
+    setResult(null);
+
+    try {
+      const context = buildAUIContext(null, bookshelf);
+
+      const toolResult = await executeTool(
+        {
+          name: 'extract_persona',
+          params: {
+            text: activeContent,
+            name: manualName || undefined,
+          },
+          raw: '',
+        },
+        context
+      );
+
+      if (toolResult.success) {
+        const data = toolResult.data as { unified?: Parameters<typeof bookshelf.createPersona>[0] } | undefined;
+        setResult({
+          success: true,
+          message: toolResult.message || 'Persona extracted!',
+          persona: toolResult.data,
+        });
+
+        // Store the persona if unified format available
+        if (data?.unified) {
+          await bookshelf.createPersona(data.unified);
+        }
+      } else {
+        setResult({
+          success: false,
+          message: toolResult.error || 'Failed to extract persona',
+        });
+      }
+    } catch (e) {
+      setResult({
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to extract persona',
+      });
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handleCreateManual = async () => {
+    if (!manualName.trim()) return;
+
+    setIsCreating(true);
+
+    try {
+      const now = Date.now();
+      const persona = await bookshelf.createPersona({
+        id: `persona-${now}`,
+        name: manualName,
+        author: 'user',
+        description: manualDescription || `Custom persona: ${manualName}`,
+        createdAt: now,
+        updatedAt: now,
+        tags: ['custom'],
+        voice: {
+          selfDescription: manualDescription || '',
+          styleNotes: [],
+          register: 'conversational',
+          emotionalRange: 'neutral',
+        },
+        vocabulary: {
+          preferred: [],
+          avoided: [],
+        },
+        influences: [],
+        exemplars: [],
+        derivedFrom: [],
+      });
+
+      setResult({
+        success: true,
+        message: `Created persona "${persona.name}"`,
+        persona,
+      });
+
+      setManualName('');
+      setManualDescription('');
+    } catch (e) {
+      setResult({
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to create persona',
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  return (
+    <div className="tool-panel">
+      <div className="tool-panel__header">
+        <h3>Persona / Voice</h3>
+        <span className="tool-panel__subtitle">Create and manage writing voices</span>
+      </div>
+      <div className="tool-panel__body">
+        {/* Existing Personas */}
+        <div className="tool-panel__field">
+          <label className="tool-panel__label">Available Personas</label>
+          {personas.length > 0 ? (
+            <div className="tool-panel__persona-list">
+              {personas.map(p => (
+                <button
+                  key={p.uri}
+                  className={`tool-panel__persona-item ${activePersonaUri === p.uri ? 'tool-panel__persona-item--active' : ''}`}
+                  onClick={() => setActivePersonaUri(p.uri)}
+                >
+                  <span className="tool-panel__persona-name">{p.name}</span>
+                  <span className="tool-panel__persona-desc">{p.description?.slice(0, 50)}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="tool-panel__muted">No personas yet. Create one below.</p>
+          )}
+        </div>
+
+        {/* Extract from content */}
+        <div className="tool-panel__section">
+          <h4 className="tool-panel__section-title">Extract from Text</h4>
+          <p className="tool-panel__muted">
+            Analyze text in the workspace to extract voice characteristics
+          </p>
+          <div className="tool-panel__field">
+            <input
+              type="text"
+              className="tool-panel__input"
+              placeholder="Optional name for persona..."
+              value={manualName}
+              onChange={(e) => setManualName(e.target.value)}
+            />
+          </div>
+          <button
+            className="tool-panel__button tool-panel__button--primary"
+            onClick={handleExtractFromContent}
+            disabled={isExtracting || !activeContent || activeContent.length < 200}
+          >
+            {isExtracting ? 'Extracting...' : 'Extract Persona from Workspace'}
+          </button>
+          {!activeContent && (
+            <p className="tool-panel__hint-text">
+              Load some text into the workspace first
+            </p>
+          )}
+        </div>
+
+        {/* Manual creation */}
+        <div className="tool-panel__section">
+          <h4 className="tool-panel__section-title">Create Manually</h4>
+          <div className="tool-panel__field">
+            <input
+              type="text"
+              className="tool-panel__input"
+              placeholder="Persona name..."
+              value={manualName}
+              onChange={(e) => setManualName(e.target.value)}
+            />
+          </div>
+          <div className="tool-panel__field">
+            <textarea
+              className="tool-panel__textarea"
+              placeholder="Description of voice, tone, perspective..."
+              value={manualDescription}
+              onChange={(e) => setManualDescription(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <button
+            className="tool-panel__button"
+            onClick={handleCreateManual}
+            disabled={isCreating || !manualName.trim()}
+          >
+            {isCreating ? 'Creating...' : 'Create Persona'}
+          </button>
+        </div>
+
+        {/* Result display */}
+        {result && (
+          <div className={`tool-panel__result ${result.success ? '' : 'tool-panel__result--error'}`}>
+            <p>{result.message}</p>
+            {!!result.persona && (
+              <p className="tool-panel__teaching-why">
+                Persona ready for use in draft generation
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // WORKSPACE
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1624,23 +2620,25 @@ interface WorkspaceProps {
   onClearMedia?: () => void;
   onClearContent?: () => void;
   onUpdateMedia?: (media: SelectedFacebookMedia) => void;
+  onGoToBook?: () => void;
 }
-
-const ARCHIVE_SERVER = 'http://localhost:3002';
 
 type WorkspaceViewMode = 'read' | 'edit';
 
-function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearContent, onUpdateMedia }: WorkspaceProps) {
+function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearContent, onUpdateMedia, onGoToBook }: WorkspaceProps) {
   const { activeContent, activeNode, activeBuffer, getNodeHistory, importText, graph: _graph, buffers: _buffers } = useBuffers();
   const { setEditorWidth } = useTheme();
+  const bookshelf = useBookshelf();
   const [navLoading, setNavLoading] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [viewMode, setViewMode] = useState<WorkspaceViewMode>('read');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [editContent, setEditContent] = useState('');
   const [splitPosition, setSplitPosition] = useState(50); // Percentage for editor pane
   const [isDragging, setIsDragging] = useState(false);
   const [mobileActivePane, setMobileActivePane] = useState<'editor' | 'preview'>('editor');
+  const [showAddToBookDialog, setShowAddToBookDialog] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const splitViewRef = useRef<HTMLDivElement>(null);
 
@@ -1654,8 +2652,125 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
     }
   }, [activeContent]);
 
+  // Handle edit content change
+  const handleEditChange = (newContent: string) => {
+    setEditContent(newContent);
+  };
+
+  // Apply edits to buffer (creates new node)
+  const applyEdits = useCallback(() => {
+    if (!activeNode || !activeBuffer) return;
+    // Import the edited text as a new node
+    const title = activeNode.metadata.title || 'Edited Content';
+    importText(editContent, title, activeNode.metadata.source);
+    setViewMode('read');
+  }, [activeNode, activeBuffer, editContent, importText]);
+
+  // Check if current content is from a book project
+  const isBookContent = activeNode?.metadata?.type?.startsWith('book-') ?? false;
+  const bookProjectId = activeNode?.metadata?.bookProjectId as string | undefined;
+  const chapterId = activeNode?.metadata?.itemId as string | undefined;
+  const canSaveToBook = isBookContent && bookProjectId && chapterId;
+
+  // Save workspace content to book draft
+  const handleSaveToBook = useCallback(async () => {
+    if (!canSaveToBook || !bookProjectId || !chapterId) return;
+
+    setSaveStatus('saving');
+
+    try {
+      const content = editContent || (Array.isArray(activeContent)
+        ? activeContent.map((i) => i.text).join('\n\n')
+        : activeContent?.text || '');
+
+      const result = await bookshelf.saveDraftVersion(
+        bookProjectId,
+        chapterId,
+        content,
+        { changes: 'Saved from workspace', createdBy: 'user' }
+      );
+
+      if (result) {
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } else {
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      }
+    } catch (err) {
+      console.error('[Workspace] Save to book failed:', err);
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  }, [canSaveToBook, bookProjectId, chapterId, editContent, activeContent, bookshelf]);
+
+  // Handle Add to Book dialog confirm
+  const handleAddToBook = useCallback((
+    targetBookUri: string,
+    action: AddAction,
+    chapterTitle: string,
+    targetChapterId?: string
+  ) => {
+    const content = editContent || (Array.isArray(activeContent)
+      ? activeContent.map((i) => i.text).join('\n\n')
+      : activeContent?.text || '');
+
+    if (action === 'new') {
+      // Create new chapter
+      const newChapter: DraftChapter = {
+        id: `chapter-${Date.now()}`,
+        number: (bookshelf.getBook(targetBookUri)?.chapters.length ?? 0) + 1,
+        title: chapterTitle,
+        content,
+        wordCount: content.trim().split(/\s+/).filter(Boolean).length,
+        version: 1,
+        versions: [{
+          version: 1,
+          timestamp: Date.now(),
+          content,
+          wordCount: content.trim().split(/\s+/).filter(Boolean).length,
+          changes: 'Initial version from workspace',
+          createdBy: 'user',
+        }],
+        status: 'drafting',
+        sections: [],
+        marginalia: [],
+        metadata: {
+          lastEditedBy: 'user',
+          lastEditedAt: Date.now(),
+        },
+        passageRefs: [],
+      };
+      bookshelf.addChapter(targetBookUri, newChapter);
+      console.log(`[Workspace] Added new chapter "${chapterTitle}" to book`);
+    } else if (action === 'append' && targetChapterId) {
+      // Append to existing chapter
+      const book = bookshelf.getBook(targetBookUri);
+      const chapter = book?.chapters.find((c) => c.id === targetChapterId);
+      if (chapter) {
+        const newContent = chapter.content + '\n\n' + content;
+        bookshelf.saveDraftVersion(targetBookUri, targetChapterId, newContent, {
+          changes: 'Appended content from workspace',
+          createdBy: 'user',
+        });
+        console.log(`[Workspace] Appended to chapter "${chapter.title}"`);
+      }
+    } else if (action === 'replace' && targetChapterId) {
+      // Replace chapter content
+      bookshelf.saveDraftVersion(targetBookUri, targetChapterId, content, {
+        changes: 'Replaced content from workspace',
+        createdBy: 'user',
+      });
+      console.log(`[Workspace] Replaced chapter content`);
+    }
+
+    setShowAddToBookDialog(false);
+  }, [editContent, activeContent, bookshelf]);
+
   // Keyboard shortcuts:
   // ⌘E - Toggle edit mode
+  // ⌘S - Save to book (when book content is active)
+  // ⌘B - Add to book dialog
   // ⌘1/2/3 - Set editor width (Narrow/Medium/Wide)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1666,6 +2781,20 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
             setViewMode(prev => prev === 'read' ? 'edit' : 'read');
             if (viewMode === 'read') {
               setTimeout(() => editorRef.current?.focus(), 0);
+            }
+            break;
+          case 's':
+            // Save to book if book content is active
+            if (canSaveToBook) {
+              e.preventDefault();
+              handleSaveToBook();
+            }
+            break;
+          case 'b':
+            // Open Add to Book dialog
+            if (activeContent) {
+              e.preventDefault();
+              setShowAddToBookDialog(true);
             }
             break;
           case '1':
@@ -1685,21 +2814,7 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode, setEditorWidth]);
-
-  // Handle edit content change
-  const handleEditChange = (newContent: string) => {
-    setEditContent(newContent);
-  };
-
-  // Apply edits to buffer (creates new node)
-  const applyEdits = useCallback(() => {
-    if (!activeNode || !activeBuffer) return;
-    // Import the edited text as a new node
-    const title = activeNode.metadata.title || 'Edited Content';
-    importText(editContent, title, activeNode.metadata.source);
-    setViewMode('read');
-  }, [activeNode, activeBuffer, editContent, importText]);
+  }, [viewMode, setEditorWidth, canSaveToBook, handleSaveToBook, activeContent]);
 
   // Resizable divider handlers
   const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
@@ -1754,7 +2869,8 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
     setNavLoading(true);
     try {
       const conv = await fetchConversation(source.conversationFolder);
-      const messages = getMessages(conv, conv.messages.length); // Get all messages
+      const archiveServer = getArchiveServerUrlSync() || '';
+      const messages = getMessages(conv, conv.messages.length, archiveServer); // Get all messages
       const targetMsg = messages[targetIndex];
 
       if (targetMsg) {
@@ -1786,14 +2902,18 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
     if (filePath.startsWith('local-media://')) {
       return filePath;
     }
-    // In Electron, use the custom protocol for direct file serving (no base64 encoding needed)
-    if (typeof window !== 'undefined' && (window as unknown as { isElectron?: boolean }).isElectron) {
+    // In Electron, use the custom protocol for direct file serving
+    if (isElectron) {
       // URL format: local-media://serve/<absolute-path>
       return `local-media://serve${filePath}`;
     }
-    // In browser, use archive server with base64 encoding
-    const encoded = btoa(filePath);
-    return `${ARCHIVE_SERVER}/api/facebook/image?path=${encoded}`;
+    // In browser, use archive server with URL encoding (dynamic port from platform config)
+    const archiveServer = getArchiveServerUrlSync();
+    if (!archiveServer) {
+      console.warn('Archive server URL not initialized, media may not load');
+      return filePath; // Return raw path as fallback
+    }
+    return `${archiveServer}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
   };
 
   const formatMediaDate = (ts: number) => {
@@ -1927,7 +3047,7 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
                   <div key={item.id} className="content-viewer__media-thumb">
                     {item.media_type === 'image' ? (
                       <img
-                        src={`${ARCHIVE_SERVER}/api/facebook/image?path=${btoa(item.file_path)}`}
+                        src={getMediaUrl(item.file_path)}
                         alt="Attached media"
                         loading="lazy"
                       />
@@ -2278,7 +3398,73 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
           <span className="workspace__view-hint">⌘E</span>
         </div>
 
+        {/* Book Selector Dropdown */}
+        <div className="workspace__book-selector">
+          <select
+            value={bookshelf.activeBookUri || ''}
+            onChange={(e) => {
+              const uri = e.target.value;
+              bookshelf.setActiveBookUri(uri ? (uri as `${string}://${string}`) : null);
+            }}
+            className="workspace__book-select"
+            title="Active book for Add to Book"
+          >
+            <option value="">No book selected</option>
+            {bookshelf.books.map(book => (
+              <option key={book.uri} value={book.uri}>
+                {book.name}
+              </option>
+            ))}
+          </select>
+          {bookshelf.activeBookUri && onGoToBook && (
+            <button
+              className="workspace__go-to-book-btn"
+              onClick={onGoToBook}
+              title="Go to this book in Archive"
+            >
+              →
+            </button>
+          )}
+        </div>
+
         <div className="workspace__actions">
+          {/* Save to Book - only shown when editing book content */}
+          {canSaveToBook && (
+            <>
+              <button
+                className={`workspace__action-btn workspace__action-btn--save ${saveStatus === 'saving' ? 'workspace__action-btn--saving' : ''} ${saveStatus === 'saved' ? 'workspace__action-btn--saved' : ''} ${saveStatus === 'error' ? 'workspace__action-btn--error' : ''}`}
+                onClick={handleSaveToBook}
+                disabled={saveStatus === 'saving'}
+                aria-label="Save content to book chapter"
+                title="Save to Book (⌘S)"
+              >
+                {saveStatus === 'idle' && '💾 Save'}
+                {saveStatus === 'saving' && '...'}
+                {saveStatus === 'saved' && '✓ Saved'}
+                {saveStatus === 'error' && '✗ Error'}
+              </button>
+              <span className="workspace__action-divider" />
+            </>
+          )}
+          {/* Save status announcement for screen readers */}
+          <span
+            role="status"
+            aria-live="polite"
+            className="sr-only"
+          >
+            {saveStatus === 'saved' && 'Draft saved successfully'}
+            {saveStatus === 'error' && 'Failed to save draft'}
+          </span>
+          {/* Add to Book button - always visible */}
+          <button
+            className="workspace__action-btn workspace__action-btn--add-to-book"
+            onClick={() => setShowAddToBookDialog(true)}
+            aria-label="Add content to a book"
+            title="Add to Book (⌘B)"
+          >
+            📚
+          </button>
+          <span className="workspace__action-divider" />
           <button
             className="workspace__action-btn"
             onClick={() => {
@@ -2412,6 +3598,17 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
           </div>
         </div>
       )}
+
+      {/* Add to Book Dialog */}
+      <AddToBookDialog
+        isOpen={showAddToBookDialog}
+        onClose={() => setShowAddToBookDialog(false)}
+        content={editContent || (Array.isArray(activeContent)
+          ? activeContent.map((i) => i.text).join('\n\n')
+          : activeContent?.text || '')}
+        title={activeNode?.metadata?.title || 'Untitled'}
+        onConfirm={handleAddToBook}
+      />
     </div>
   );
 }
@@ -2503,15 +3700,18 @@ interface TopBarProps {
   onTransformComplete?: (original: string, transformed: string, transformType: string) => void;
   onBreadcrumbClick?: (index: number, path: string[], archiveSource: ArchiveSource) => void;
   onSelectSearchResult?: (result: SearchResult) => void;
+  archiveTab?: ArchiveTabId;
+  onArchiveTabChange?: (tab: ArchiveTabId | undefined) => void;
+  onReviewInWorkspace?: (conversationId: string, conversationTitle: string, passage: import('@humanizer/core').SourcePassage) => void;
 }
 
-function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onTransformComplete, onBreadcrumbClick, onSelectSearchResult }: TopBarProps) {
+function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onTransformComplete, onBreadcrumbClick, onSelectSearchResult, archiveTab, onArchiveTabChange, onReviewInWorkspace }: TopBarProps) {
   const { user, isAuthenticated, logout } = useAuth();
   const { isPanelVisible, togglePanel } = useLayout();
   const { activeBuffer, activeNode, canUndo, canRedo, undo, redo } = useBuffers();
   const [visible, setVisible] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
-  const [archiveTab, setArchiveTab] = useState<ArchiveTabId | undefined>(undefined);
+  const setArchiveTab = onArchiveTabChange || (() => {});
 
   // Map archive source type to tab ID
   const mapSourceTypeToTab = (type: string): ArchiveTabId => {
@@ -2532,16 +3732,7 @@ function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBookConte
     }
   };
 
-  // Handle breadcrumb navigation
-  const handleBreadcrumbClick = useCallback((index: number, path: string[], archiveSource: ArchiveSource) => {
-    // Navigate to the appropriate tab based on archive source type
-    const targetTab = mapSourceTypeToTab(archiveSource.type);
-    setArchiveTab(targetTab);
-    // Call the external handler if provided
-    onBreadcrumbClick?.(index, path, archiveSource);
-  }, [onBreadcrumbClick]);
-
-  // Panel state from layout context
+  // Panel state from layout context - must be defined before callbacks that use them
   const leftOpen = isPanelVisible('archives');
   const rightOpen = isPanelVisible('tools');
   const setLeftOpen = (open: boolean) => {
@@ -2550,6 +3741,38 @@ function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBookConte
   const setRightOpen = (open: boolean) => {
     if (open !== rightOpen) togglePanel('tools');
   };
+
+  // Handle breadcrumb navigation
+  const handleBreadcrumbClick = useCallback((index: number, path: string[], archiveSource: ArchiveSource) => {
+    // Navigate to the appropriate tab based on archive source type
+    const targetTab = mapSourceTypeToTab(archiveSource.type);
+    setArchiveTab(targetTab);
+
+    // Open the archive panel if not already open
+    if (!leftOpen) {
+      togglePanel('archives');
+    }
+
+    // Call the external handler if provided
+    onBreadcrumbClick?.(index, path, archiveSource);
+  }, [onBreadcrumbClick, leftOpen, togglePanel]);
+
+  // Subscribe to GUI actions from AUI tools (e.g., open_panel)
+  useEffect(() => {
+    const unsubscribe = subscribeToGUIActions((action) => {
+      if (action.type === 'open_panel') {
+        const data = action.data as { panel?: string } | undefined;
+        const panel = data?.panel as 'archives' | 'tools' | undefined;
+        if (panel === 'archives' && !leftOpen) {
+          togglePanel('archives');
+        } else if (panel === 'tools' && !rightOpen) {
+          togglePanel('tools');
+        }
+        // TODO: Handle tab switching if action.data.tab is provided
+      }
+    });
+    return unsubscribe;
+  }, [leftOpen, rightOpen, togglePanel]);
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -2702,6 +3925,7 @@ function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBookConte
         <ToolsPanel
           onClose={() => setRightOpen(false)}
           onTransformComplete={onTransformComplete}
+          onReviewInWorkspace={onReviewInWorkspace}
         />
       </HoverPanel>
     </>
@@ -2754,8 +3978,8 @@ function AUIChat({ workspace }: AUIChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
-  // Book context for tool execution
-  const book = useBook();
+  // Bookshelf context for tool execution (BookContext deprecated)
+  const bookshelf = useBookshelf();
 
   // Dragging state
   const [isDragging, setIsDragging] = useState(false);
@@ -2836,18 +4060,31 @@ function AUIChat({ workspace }: AUIChatProps) {
       const apiUrl = import.meta.env.VITE_CHAT_API_URL || 'http://localhost:11434/api/chat';
       const isOllama = apiUrl.includes('11434');
 
-      // Create AUI context for tool execution
+      // Create AUI context for tool execution (using bookshelf simple methods)
       const auiContext: AUIContext = {
-        activeProject: book.activeProject,
-        updateChapter: book.updateChapter,
-        createChapter: book.createChapter,
-        deleteChapter: book.deleteChapter,
-        renderBook: book.renderBook,
-        getChapter: book.getChapter,
+        activeProject: bookshelf.activeBook,
+        updateChapter: (chapterId, content, changes) => {
+          void bookshelf.updateChapterSimple(chapterId, content, changes);
+        },
+        createChapter: (title, content) => {
+          void bookshelf.createChapterSimple(title, content);
+          // Return placeholder for sync interface
+          return { id: `ch-${Date.now()}`, number: 1, title, content: content || '', wordCount: 0, version: 1, versions: [], status: 'outline' as const };
+        },
+        deleteChapter: (chapterId) => {
+          void bookshelf.deleteChapterSimple(chapterId);
+        },
+        renderBook: () => bookshelf.renderActiveBook(),
+        getChapter: (chapterId) => bookshelf.getChapterSimple(chapterId) || null,
         // Passage operations
-        addPassage: book.addPassage,
-        updatePassage: book.updatePassage,
-        getPassages: book.getPassages,
+        addPassage: (passage) => {
+          void bookshelf.addPassageSimple(passage);
+          return { id: `p-${Date.now()}`, text: passage.content, wordCount: passage.content.split(/\s+/).length } as ReturnType<AUIContext['addPassage']>;
+        },
+        updatePassage: (passageId, updates) => {
+          void bookshelf.updatePassageSimple(passageId, updates);
+        },
+        getPassages: () => bookshelf.getPassagesSimple(),
         // Workspace state for context-aware tools
         workspace,
       };
@@ -3081,6 +4318,12 @@ function StudioContent() {
   const [showSocialGraph, setShowSocialGraph] = useState(false);
   const [bookContentMode, setBookContentMode] = useState<BookContentMode | null>(null);
 
+  // Harvest workspace review state
+  const [harvestReview, setHarvestReview] = useState<{
+    conversation: HarvestConversation;
+    stagedMessages: StagedMessage[];
+  } | null>(null);
+
   // Split-screen state
   const splitScreen = useSplitScreen();
   const { setMode: setSplitMode } = useSplitMode();
@@ -3094,29 +4337,31 @@ function StudioContent() {
   } | null>(null);
   const [mobileSplitPane, setMobileSplitPane] = useState<'left' | 'right'>('left');
 
+  // Archive tab state (lifted up so both TopBar and Workspace can access)
+  const [archiveTab, setArchiveTab] = useState<ArchiveTabId | undefined>(undefined);
+
   // Structure inspector state (peek behind the curtain)
   const [inspectorOpen, setInspectorOpen] = useState(false);
 
-  // Handle transformation completion - auto-enable split screen
-  const handleTransformComplete = useCallback((original: string, transformed: string, _transformType: string) => {
-    // Store original text in left pane
-    setSplitPaneContent({
-      id: 'transform-original',
-      title: 'Original',
-      subtitle: 'Before transformation',
-      text: original,
+  // Handle transformation completion - load into regular workspace
+  // User can use "Read | Edit" toggle to compare/modify
+  const handleTransformComplete = useCallback((original: string, transformed: string, transformType: string) => {
+    // Load transformed content into the buffer
+    // The user can then use the workspace's "Read | Edit" toggle
+    importText(transformed, `${transformType} transformation`, {
       type: 'transform',
-      transformedText: transformed,
+      original: original,
+      transformType: transformType,
     });
 
-    // Enable split screen if not already active
-    if (!splitScreen.isActive) {
+    // Clear any split pane content - use regular workspace edit mode
+    setSplitPaneContent(null);
+
+    // Disable split screen if active
+    if (splitScreen.isActive) {
       splitScreen.toggle();
     }
-
-    // Set split mode to 'transform' for diff highlighting
-    setSplitMode('transform');
-  }, [splitScreen, setSplitMode]);
+  }, [importText, splitScreen]);
 
   // Compute workspace state for AUI context
   const workspaceState = useMemo((): WorkspaceState => {
@@ -3143,8 +4388,15 @@ function StudioContent() {
       selectedMedia,
       selectedContent: selectedFacebookContent,
       viewMode,
+      selectedContainer,
     };
-  }, [activeContent, activeBuffer, selectedMedia, selectedFacebookContent, bookContentMode, showSocialGraph]);
+  }, [activeContent, activeBuffer, selectedMedia, selectedFacebookContent, bookContentMode, showSocialGraph, selectedContainer]);
+
+  // Sync workspace state with AUI context
+  const { setWorkspace } = useAUI();
+  useEffect(() => {
+    setWorkspace(workspaceState);
+  }, [workspaceState, setWorkspace]);
 
   // Handle Facebook content selection from archive panel
   const handleSelectFacebookContent = useCallback((content: SelectedFacebookContent) => {
@@ -3167,47 +4419,28 @@ function StudioContent() {
   }, [importText]);
 
   // Handle book content selection from archive panel
+  // Loads content into the regular Workspace for clean "Read | Edit" mode
   const handleSelectBookContent = useCallback((content: BookContent, project: BookProject) => {
-    setBookContentMode({ content, project });
-    // Clear other modes when entering book content mode
+    // Clear other modes when selecting book content
     setSelectedMedia(null);
     setSelectedFacebookContent(null);
     setShowSocialGraph(false);
+    setBookContentMode(null); // Don't use bookContentMode - use regular workspace
 
-    // Also set unified container (for book content, we keep the project reference)
-    const container: ArchiveContainer = {
-      id: content.source.itemId,
-      uri: `archive://book/${project.id}/${content.type}/${content.source.itemId}`,
-      type: content.type as 'chapter' | 'passage' | 'thinking',
-      content: {
-        raw: content.content,
-        contentType: 'markdown',
-      },
-      meta: {
-        title: content.title,
-        created: Date.now(),
-        tags: [],
-        wordCount: content.content.split(/\s+/).filter(w => w.length > 0).length,
-      },
-      source: {
-        type: 'book',
-        originalId: content.source.bookProjectId,
-      },
-      viewHints: {
-        preferredView: 'book',
-        allowEdit: true,
-        hasMetadataModal: true,
-      },
-    };
-    setSelectedContainer(container);
+    // Set book project for reference
     setBookProject(project);
 
-    // Also load into buffer so tools panel can work with it
+    // Load content into buffer - this will display in the regular Workspace
+    // with the clean "Read | Edit" toggle the user prefers
     importText(content.content, content.title, {
-      type: `book-${content.type}`,
+      type: `book-${content.type}` as ArchiveSourceType,
       bookProjectId: content.source.bookProjectId,
       itemId: content.source.itemId,
+      path: [project.name || 'Book', content.type, content.title],
     });
+
+    // Clear split pane content if any
+    setSplitPaneContent(null);
   }, [importText]);
 
   // Handle book content edit - sync with buffer
@@ -3269,7 +4502,8 @@ function StudioContent() {
     try {
       // Fetch the full conversation
       const conv = await fetchConversation(result.conversationFolder);
-      const messages = getMessages(conv, conv.messages.length);
+      const archiveServer = getArchiveServerUrlSync() || '';
+      const messages = getMessages(conv, conv.messages.length, archiveServer);
 
       // Find the specific message if we have a messageId
       const messageId = result.metadata?.messageId;
@@ -3326,18 +4560,119 @@ function StudioContent() {
     setBookProject(null);
   }, []);
 
+  // Handle harvest review - load full conversation into workspace
+  const handleReviewInWorkspace = useCallback(async (conversationId: string, conversationTitle: string, passage: import('@humanizer/core').SourcePassage) => {
+    try {
+      const { getArchiveServerUrl } = await import('./lib/platform');
+      const archiveServer = await getArchiveServerUrl();
+      const response = await fetch(`${archiveServer}/api/conversations/${encodeURIComponent(conversationId)}`);
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // DEBUG: Trace message extraction
+        console.log('[Review] Raw API data keys:', Object.keys(data));
+        console.log('[Review] Messages count:', data.messages?.length);
+        console.log('[Review] First message:', JSON.stringify(data.messages?.[0], null, 2)?.slice(0, 500));
+        console.log('[Review] First message content type:', typeof data.messages?.[0]?.content);
+        console.log('[Review] First message content sample:',
+          Array.isArray(data.messages?.[0]?.content)
+            ? JSON.stringify(data.messages[0].content[0], null, 2)
+            : data.messages?.[0]?.content?.slice?.(0, 200)
+        );
+
+        // Extract text from content array - API returns [{type: 'text', content: '...'}, ...]
+        const extractContent = (content: unknown): string => {
+          if (typeof content === 'string') return content;
+          if (Array.isArray(content)) {
+            return content
+              .filter((part: { type?: string }) => part?.type === 'text')
+              .map((part: { content?: string }) => part?.content || '')
+              .join('\n');
+          }
+          return '';
+        };
+
+        const messages = (data.messages || []).map((m: { id?: string; role: string; content: unknown }, idx: number) => ({
+          id: m.id || `msg-${idx}`,
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: extractContent(m.content),
+        }));
+
+        // DEBUG: Log extracted messages
+        console.log('[Review] Extracted messages count:', messages.length);
+        console.log('[Review] First extracted message:', messages[0]);
+        console.log('[Review] Messages with content:', messages.filter((m: { content: string }) => m.content.length > 0).length);
+
+        setHarvestReview({
+          conversation: {
+            conversationId,
+            title: conversationTitle,
+            messages,
+            passage,
+          },
+          stagedMessages: [],
+        });
+
+        // Clear other views
+        setShowSocialGraph(false);
+        setSelectedContainer(null);
+        setSelectedMedia(null);
+        setSelectedFacebookContent(null);
+      }
+    } catch (err) {
+      console.error('[StudioContent] Failed to load conversation for review:', err);
+    }
+  }, []);
+
   // Get the current workspace content as a ReactNode
   const renderWorkspaceContent = () => {
-    if (bookContentMode) {
+    // Harvest review takes priority - full conversation review in workspace
+    if (harvestReview) {
       return (
-        <BookContentView
-          content={bookContentMode.content}
-          project={bookContentMode.project}
-          onEdit={handleBookEdit}
-          onClose={handleCloseBookContent}
+        <HarvestWorkspaceView
+          conversation={harvestReview.conversation}
+          stagedMessages={harvestReview.stagedMessages}
+          onStageMessage={(msg) => {
+            setHarvestReview(prev => {
+              if (!prev) return null;
+              // Replace if already staged, otherwise add
+              const existing = prev.stagedMessages.findIndex(s => s.messageId === msg.messageId);
+              const newStaged = existing >= 0
+                ? [...prev.stagedMessages.slice(0, existing), msg, ...prev.stagedMessages.slice(existing + 1)]
+                : [...prev.stagedMessages, msg];
+              return { ...prev, stagedMessages: newStaged };
+            });
+          }}
+          onUnstageMessage={(messageId) => {
+            setHarvestReview(prev => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                stagedMessages: prev.stagedMessages.filter(s => s.messageId !== messageId),
+              };
+            });
+          }}
+          onCommitStaged={() => {
+            // TODO: Commit staged messages to book chapter
+            if (harvestReview?.stagedMessages.length) {
+              const combined = harvestReview.stagedMessages
+                .map(s => s.content)
+                .join('\n\n---\n\n');
+              importText(combined, `From: ${harvestReview.conversation.title}`, {
+                type: 'chatgpt',
+                conversationId: harvestReview.conversation.conversationId,
+              });
+              setHarvestReview(null);
+            }
+          }}
+          onClose={() => setHarvestReview(null)}
         />
       );
     }
+
+    // Book content now loads directly into the regular Workspace via importText
+    // so it gets the clean "Read | Edit" toggle that the user prefers
     if (showSocialGraph) {
       return (
         <div className="workspace workspace--graph">
@@ -3368,11 +4703,12 @@ function StudioContent() {
         onClearMedia={() => { setSelectedMedia(null); setSelectedContainer(null); }}
         onClearContent={() => { setSelectedFacebookContent(null); setSelectedContainer(null); }}
         onUpdateMedia={handleSelectMedia}
+        onGoToBook={() => setArchiveTab('books')}
       />
     );
   };
 
-  // Create split pane content objects
+  // Create split pane content objects (for conversation transforms, etc.)
   const leftPaneContent: SplitPaneContent | null = splitPaneContent ? {
     id: splitPaneContent.id,
     title: splitPaneContent.title,
@@ -3407,6 +4743,9 @@ function StudioContent() {
         onSelectBookContent={handleSelectBookContent}
         onTransformComplete={handleTransformComplete}
         onSelectSearchResult={handleSelectSearchResult}
+        archiveTab={archiveTab}
+        onArchiveTabChange={setArchiveTab}
+        onReviewInWorkspace={handleReviewInWorkspace}
       />
       <main className="studio__main">
         {/* Split-screen mode */}
@@ -3443,11 +4782,10 @@ export function Studio() {
     <ThemeProvider>
       <BufferProvider>
         <BookshelfProvider>
-          <BookProvider>
-            <AUIProvider>
-              <StudioContent />
-            </AUIProvider>
-          </BookProvider>
+          {/* BookProvider removed - consolidated into BookshelfProvider (Phase 4.2) */}
+          <AUIProvider>
+            <StudioContent />
+          </AUIProvider>
         </BookshelfProvider>
       </BufferProvider>
     </ThemeProvider>

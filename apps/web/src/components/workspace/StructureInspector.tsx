@@ -10,6 +10,26 @@
 
 import { useState, useMemo } from 'react';
 import type { ArchiveContainer } from '@humanizer/core';
+import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
+
+/**
+ * Get media URL from file path - handles Electron vs browser
+ */
+function getMediaUrl(filePath: string): string {
+  if (!filePath) return '';
+  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('local-media://')) {
+    return filePath;
+  }
+  if (isElectron) {
+    return `local-media://serve${filePath}`;
+  }
+  const archiveServer = getArchiveServerUrlSync();
+  if (!archiveServer) {
+    console.warn('Archive server URL not initialized');
+    return filePath;
+  }
+  return `${archiveServer}/media/${filePath}`;
+}
 
 interface StructureInspectorProps {
   container: ArchiveContainer | null;
@@ -220,7 +240,7 @@ export function StructureInspector({
                   <div key={i} className="structure-inspector__media-thumb">
                     {m.mediaType === 'image' && m.filePath && (
                       <img
-                        src={`http://localhost:3002/media/${m.filePath}`}
+                        src={getMediaUrl(m.filePath)}
                         alt={m.description || `Media ${i + 1}`}
                       />
                     )}

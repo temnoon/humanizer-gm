@@ -14,6 +14,7 @@ import { Router, Request, Response } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { getConfig, setArchivePath, getArchiveRoot, PATHS } from '../config';
+import { resetServices } from '../services/registry';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONVERSATION INDEX
@@ -258,6 +259,9 @@ export function createArchivesRouter(): Router {
         res.status(400).json({ error: 'archive name required' });
         return;
       }
+
+      // Reset service instances before switching (closes database connections)
+      resetServices();
 
       await setArchivePath(archive);
 

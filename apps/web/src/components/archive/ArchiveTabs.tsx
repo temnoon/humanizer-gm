@@ -10,7 +10,9 @@ import { BooksView } from './BooksView';
 import { FacebookView } from './FacebookView';
 import { ExploreView, type SearchResult } from './ExploreView';
 import { FilesView } from './FilesView';
+import { GutenbergView } from './GutenbergView';
 import { AUIChatTab } from '../aui/AUIChatTab';
+import { QueueTab } from '../queue';
 import type { ArchiveTabId, SelectedFacebookMedia, SelectedFacebookContent } from './types';
 import type { BookProject } from './book-project/types';
 import type { BookContent } from '../workspace/BookContentView';
@@ -30,13 +32,15 @@ interface ArchiveTabsProps {
   onSelectBookContent?: (content: BookContent, project: BookProject) => void;
   /** Callback when a semantic search result is selected */
   onSelectSearchResult?: (result: SearchResult) => void;
+  /** Callback when Gutenberg text is selected for workspace */
+  onSelectGutenbergText?: (text: string, title: string) => void;
   /** Controlled tab value (optional) */
   controlledTab?: ArchiveTabId;
   /** Callback when tab changes (for controlled mode) */
   onTabChange?: (tab: ArchiveTabId) => void;
 }
 
-export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onSelectSearchResult, controlledTab, onTabChange }: ArchiveTabsProps) {
+export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onSelectSearchResult, onSelectGutenbergText, controlledTab, onTabChange }: ArchiveTabsProps) {
   const [internalTab, setInternalTab] = useState<ArchiveTabId>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return (saved as ArchiveTabId) || 'conversations';
@@ -63,12 +67,16 @@ export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectConten
         return <ImportView />;
       case 'books':
         return <BooksView onSelectBookContent={onSelectBookContent} />;
+      case 'gutenberg':
+        return <GutenbergView onSelectText={onSelectGutenbergText} />;
       case 'facebook':
         return <FacebookView onSelectMedia={onSelectMedia} onSelectContent={onSelectContent} onOpenGraph={onOpenGraph} />;
       case 'explore':
         return <ExploreView onSelectResult={onSelectSearchResult} />;
       case 'files':
         return <FilesView />;
+      case 'queue':
+        return <QueueTab />;
       default:
         return renderConversations();
     }

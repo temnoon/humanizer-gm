@@ -21,7 +21,8 @@ import {
   embed,
   embedBatch,
 } from './EmbeddingGenerator.js';
-import type { IndexingProgress, Chunk } from './types.js';
+import { ContentChunker, type ChunkResult } from './ContentChunker.js';
+import type { IndexingProgress, Chunk, EnhancedChunk } from './types.js';
 
 export interface IndexingOptions {
   /** Only embed messages from conversations marked as interesting */
@@ -30,6 +31,8 @@ export interface IndexingOptions {
   includeParagraphs?: boolean;
   /** Include sentence-level embeddings for selected messages */
   includeSentences?: boolean;
+  /** Use content-aware chunking (detects code, math, tables) */
+  useContentAwareChunking?: boolean;
   /** Batch size for embedding generation */
   batchSize?: number;
   /** Progress callback */
@@ -40,6 +43,7 @@ const DEFAULT_OPTIONS: IndexingOptions = {
   interestingOnly: false,
   includeParagraphs: false,
   includeSentences: false,
+  useContentAwareChunking: false,
   batchSize: 32,
 };
 
@@ -236,52 +240,146 @@ export class ArchiveIndexer {
 
     let totalChunks = 0;
 
+    // Use content-aware chunker if enabled
+    const contentChunker = opts.useContentAwareChunking
+      ? new ContentChunker({ idPrefix: 'chunk' })
+      : null;
+
     for (const conv of conversations) {
       const messages = this.db.getMessagesForConversation(conv.id);
 
       for (const message of messages) {
-        // Split into paragraphs
-        const paragraphs = splitIntoParagraphs(message.content);
-
-        for (let i = 0; i < paragraphs.length; i++) {
-          const chunkId = generateChunkId(message.id, 'paragraph', i);
-          const paragraph = paragraphs[i];
-
-          // Skip very short paragraphs
-          if (paragraph.length < 20) continue;
-
-          // Store chunk in SQLite
-          const chunk: Omit<Chunk, 'embeddingId'> = {
-            id: chunkId,
-            messageId: message.id,
-            chunkIndex: i,
-            content: paragraph,
-            tokenCount: Math.ceil(paragraph.length / 4),
-            granularity: 'paragraph',
-          };
-          this.db.insertChunk(chunk);
-
-          // Generate and store embedding
-          const embedding = await embed(paragraph);
-          this.db.insertParagraphEmbedding(
-            chunkId,
+        if (contentChunker) {
+          // Content-aware chunking (Phase 5)
+          totalChunks += await this.embedWithContentAwareness(
+            message,
             conv.id,
-            message.id,
-            i,
-            embedding
+            contentChunker,
+            totalChunks,
+            opts
           );
-
-          totalChunks++;
-          this.progress.current = totalChunks;
-
-          if (totalChunks % 100 === 0) {
-            this.notifyProgress(opts.onProgress);
-          }
+        } else {
+          // Legacy paragraph chunking
+          totalChunks += await this.embedLegacyParagraphs(
+            message,
+            conv.id,
+            totalChunks,
+            opts
+          );
         }
       }
     }
 
     console.log(`Generated ${totalChunks} paragraph embeddings`);
+  }
+
+  /**
+   * Content-aware chunking using ContentChunker (Phase 5)
+   */
+  private async embedWithContentAwareness(
+    message: { id: string; content: string; conversationId: string },
+    conversationId: string,
+    chunker: ContentChunker,
+    currentTotal: number,
+    opts: IndexingOptions
+  ): Promise<number> {
+    const chunks = chunker.chunk(message.content);
+    let count = 0;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+
+      // Skip very short chunks
+      if (chunk.content.length < 20) continue;
+
+      const chunkId = generateChunkId(message.id, chunk.contentType, i);
+
+      // Store chunk in SQLite with content type
+      const chunkData: Omit<Chunk, 'embeddingId'> = {
+        id: chunkId,
+        messageId: message.id,
+        chunkIndex: i,
+        content: chunk.content,
+        tokenCount: chunk.tokenCount,
+        granularity: 'paragraph', // Legacy field - use contentType for new code
+      };
+      this.db.insertChunk(chunkData);
+
+      // TODO: Store enhanced chunk metadata when EmbeddingDatabase supports it
+      // (content_type, language, context columns already exist in pyramid_chunks table)
+      // For now, contentType is embedded in the chunk ID via generateChunkId()
+      // Future: this.db.insertEnhancedChunkMetadata(chunkId, chunk.contentType, chunk.language, ...);
+
+      // Generate and store embedding
+      const embedding = await embed(chunk.content);
+      this.db.insertParagraphEmbedding(
+        chunkId,
+        conversationId,
+        message.id,
+        i,
+        embedding
+      );
+
+      count++;
+      this.progress.current = currentTotal + count;
+
+      if ((currentTotal + count) % 100 === 0) {
+        this.notifyProgress(opts.onProgress);
+      }
+    }
+
+    return count;
+  }
+
+  /**
+   * Legacy paragraph chunking (pre-Phase 5)
+   */
+  private async embedLegacyParagraphs(
+    message: { id: string; content: string; conversationId: string },
+    conversationId: string,
+    currentTotal: number,
+    opts: IndexingOptions
+  ): Promise<number> {
+    const paragraphs = splitIntoParagraphs(message.content);
+    let count = 0;
+
+    for (let i = 0; i < paragraphs.length; i++) {
+      const chunkId = generateChunkId(message.id, 'paragraph', i);
+      const paragraph = paragraphs[i];
+
+      // Skip very short paragraphs
+      if (paragraph.length < 20) continue;
+
+      // Store chunk in SQLite
+      const chunk: Omit<Chunk, 'embeddingId'> = {
+        id: chunkId,
+        messageId: message.id,
+        chunkIndex: i,
+        content: paragraph,
+        tokenCount: Math.ceil(paragraph.length / 4),
+        granularity: 'paragraph',
+      };
+      this.db.insertChunk(chunk);
+
+      // Generate and store embedding
+      const embedding = await embed(paragraph);
+      this.db.insertParagraphEmbedding(
+        chunkId,
+        conversationId,
+        message.id,
+        i,
+        embedding
+      );
+
+      count++;
+      this.progress.current = currentTotal + count;
+
+      if ((currentTotal + count) % 100 === 0) {
+        this.notifyProgress(opts.onProgress);
+      }
+    }
+
+    return count;
   }
 
   /**
