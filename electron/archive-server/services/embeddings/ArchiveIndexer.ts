@@ -306,11 +306,13 @@ export class ArchiveIndexer {
       this.db.insertChunk(chunkData);
 
       // Phase 5: Store enhanced chunk metadata in pyramid_chunks
+      // Use currentTotal + i for conversation-wide unique chunk index
+      // (avoids UNIQUE(thread_id, chunk_index) collision across messages)
       this.db.insertPyramidChunk({
         id: chunkId,
         threadId: conversationId,
         threadType: 'conversation',
-        chunkIndex: i,
+        chunkIndex: currentTotal + i,
         content: chunk.content,
         wordCount: chunk.wordCount,
         startOffset: chunk.startOffset,

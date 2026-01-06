@@ -1639,6 +1639,7 @@ export class EmbeddingDatabase {
           author TEXT,
           description TEXT,
           status TEXT NOT NULL DEFAULT 'harvesting',  -- 'harvesting', 'drafting', 'revising', 'mastering'
+          book_type TEXT DEFAULT 'book',              -- 'book' (multi-chapter) or 'paper' (single essay)
 
           -- References (JSON arrays of URIs)
           persona_refs TEXT,                     -- ['persona://author/name', ...]
@@ -4922,6 +4923,7 @@ export class EmbeddingDatabase {
     author?: string;
     description?: string;
     status?: string;
+    bookType?: string;
     personaRefs?: string[];
     styleRefs?: string[];
     sourceRefs?: unknown[];
@@ -4938,11 +4940,11 @@ export class EmbeddingDatabase {
     const now = Date.now();
     this.db.prepare(`
       INSERT INTO books (
-        id, uri, name, subtitle, author, description, status,
+        id, uri, name, subtitle, author, description, status, book_type,
         persona_refs, style_refs, source_refs, threads, harvest_config,
         editorial, thinking, pyramid_id, stats, profile, tags, is_library,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         uri = excluded.uri,
         name = excluded.name,
@@ -4950,6 +4952,7 @@ export class EmbeddingDatabase {
         author = excluded.author,
         description = excluded.description,
         status = excluded.status,
+        book_type = excluded.book_type,
         persona_refs = excluded.persona_refs,
         style_refs = excluded.style_refs,
         source_refs = excluded.source_refs,
@@ -4971,6 +4974,7 @@ export class EmbeddingDatabase {
       book.author ?? null,
       book.description ?? null,
       book.status ?? 'harvesting',
+      book.bookType ?? 'book',
       book.personaRefs ? JSON.stringify(book.personaRefs) : null,
       book.styleRefs ? JSON.stringify(book.styleRefs) : null,
       book.sourceRefs ? JSON.stringify(book.sourceRefs) : null,
@@ -5026,6 +5030,7 @@ export class EmbeddingDatabase {
       author: row.author,
       description: row.description,
       status: row.status,
+      bookType: row.book_type ?? 'book',
       personaRefs: row.persona_refs ? JSON.parse(row.persona_refs as string) : [],
       styleRefs: row.style_refs ? JSON.parse(row.style_refs as string) : [],
       sourceRefs: row.source_refs ? JSON.parse(row.source_refs as string) : [],

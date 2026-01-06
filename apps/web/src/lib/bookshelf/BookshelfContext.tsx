@@ -405,6 +405,7 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         author: book.author,
         description: book.description,
         status: (book.status || 'harvesting') as 'harvesting' | 'drafting' | 'revising' | 'mastering' | 'complete',
+        bookType: book.bookType as 'book' | 'paper' | undefined,
         personaRefs: book.personaRefs,
         styleRefs: book.styleRefs,
         sourceRefs: book.sourceRefs,
@@ -433,6 +434,7 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
 
       // Build upsert payload explicitly to avoid type conflicts
       type XanaduBookStatus = 'harvesting' | 'drafting' | 'revising' | 'mastering' | 'complete';
+      type XanaduBookType = 'book' | 'paper';
       await window.electronAPI!.xanadu.books.upsert({
         id: book.id,
         uri,
@@ -441,6 +443,7 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         author: updates.author,
         description: updates.description,
         status: updates.status as XanaduBookStatus | undefined,
+        bookType: updates.bookType as XanaduBookType | undefined,
         personaRefs: updates.personaRefs,
         styleRefs: updates.styleRefs,
         sourceRefs: updates.sourceRefs,

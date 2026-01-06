@@ -458,6 +458,7 @@ export interface XanaduBook {
   author?: string;
   description?: string;
   status: BookStatus;
+  bookType?: 'book' | 'paper';
   personaRefs?: string[];
   styleRefs?: string[];
   sourceRefs?: unknown[];
