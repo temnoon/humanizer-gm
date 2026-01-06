@@ -20,6 +20,7 @@ import {
   useState,
   useEffect,
   useRef,
+  useMemo,
   type ReactNode,
 } from 'react';
 
@@ -28,6 +29,7 @@ import { loadAUISettings, saveAUISettings, type AUISettings } from './settings';
 import { executeAllTools, cleanToolsFromResponse, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
 import { useLayout } from '../../components/layout/LayoutContext';
 import { useBookOptional } from '../book';
+import { useBookshelf } from '../bookshelf';
 import { getArchiveServerUrl } from '../platform';
 import {
   getAgentBridge,
@@ -149,8 +151,32 @@ function buildWorkspaceContext(
 ): string {
   const parts: string[] = [];
 
-  // Active buffer content
-  if (workspace?.bufferContent) {
+  // Currently selected container (unified content model)
+  if (workspace?.selectedContainer) {
+    const container = workspace.selectedContainer;
+    const title = container.meta?.title || container.id;
+    const contentPreview = container.content?.raw?.slice(0, 300) || '';
+
+    parts.push(`Selected ${container.type}: "${title}"`);
+
+    // Add source info
+    if (container.source?.type) {
+      parts.push(`  Source: ${container.source.type}${container.source.originalId ? ` (${container.source.originalId})` : ''}`);
+    }
+
+    // Add content preview
+    if (contentPreview) {
+      parts.push(`  Preview: "${contentPreview}${container.content?.raw && container.content.raw.length > 300 ? '...' : ''}"`);
+    }
+
+    // Add metadata
+    if (container.meta?.tags?.length) {
+      parts.push(`  Tags: ${container.meta.tags.join(', ')}`);
+    }
+  }
+
+  // Active buffer content (if different from container)
+  if (workspace?.bufferContent && !workspace?.selectedContainer) {
     const preview = workspace.bufferContent.slice(0, 500);
     parts.push(`Buffer "${workspace.bufferName || 'untitled'}" (${workspace.bufferContent.length} chars): "${preview}${workspace.bufferContent.length > 500 ? '...' : ''}"`);
   }
@@ -160,8 +186,8 @@ function buildWorkspaceContext(
     parts.push(`View mode: ${workspace.viewMode}`);
   }
 
-  // Selected Facebook content
-  if (workspace?.selectedContent) {
+  // Legacy: Selected Facebook content (fallback if no container)
+  if (workspace?.selectedContent && !workspace?.selectedContainer) {
     parts.push(`Viewing: ${workspace.selectedContent.type} from ${workspace.selectedContent.source || 'unknown'}`);
   }
 
@@ -254,19 +280,74 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
   // Dependencies
   const layout = useLayout();
   const bookContext = useBookOptional();
+  const bookshelf = useBookshelf();
 
-  // Provide fallbacks if book context is not available
-  const book = bookContext ?? {
-    activeProject: null,
-    updateChapter: () => {},
-    createChapter: () => null,
-    deleteChapter: () => {},
-    renderBook: () => '',
-    getChapter: () => null,
-    addPassage: () => null,
-    updatePassage: () => {},
-    getPassages: () => [],
-  };
+  // Build book interface from bookshelf's simple methods (preferred) or fallback to bookContext
+  // IMPORTANT: Memoize to prevent infinite re-renders in useEffect dependencies
+  const book = useMemo(() => ({
+    activeProject: bookshelf.activeBook || bookContext?.activeProject || null,
+    createProject: bookContext?.createProject ?? (() => {
+      console.warn('[AUI] No BookContext - use bookshelf.createBook instead');
+      return null;
+    }) as unknown as (name: string, subtitle?: string) => import('../bookshelf/types').BookProject,
+    updateChapter: (chapterId: string, content: string, changes?: string) => {
+      if (bookshelf.updateChapterSimple) {
+        void bookshelf.updateChapterSimple(chapterId, content, changes);
+      } else if (bookContext?.updateChapter) {
+        bookContext.updateChapter(chapterId, content, changes);
+      }
+    },
+    createChapter: (title: string, content?: string) => {
+      if (bookshelf.createChapterSimple) {
+        void bookshelf.createChapterSimple(title, content);
+        // Return placeholder for sync interface
+        return { id: `ch-${Date.now()}`, number: 1, title, content: content || '', wordCount: 0, version: 1, versions: [], status: 'outline' as const };
+      }
+      return bookContext?.createChapter?.(title, content) ?? null;
+    },
+    deleteChapter: (chapterId: string) => {
+      if (bookshelf.deleteChapterSimple) {
+        void bookshelf.deleteChapterSimple(chapterId);
+      } else if (bookContext?.deleteChapter) {
+        bookContext.deleteChapter(chapterId);
+      }
+    },
+    renderBook: () => bookshelf.renderActiveBook?.() ?? bookContext?.renderBook?.() ?? '',
+    getChapter: (chapterId: string) => bookshelf.getChapterSimple?.(chapterId) ?? bookContext?.getChapter?.(chapterId) ?? null,
+    addPassage: (passage: {
+      content: string;
+      conversationId?: string;
+      conversationTitle: string;
+      role?: 'user' | 'assistant';
+      tags?: string[];
+    }) => {
+      if (bookshelf.addPassageSimple) {
+        void bookshelf.addPassageSimple(passage);
+        // Return placeholder
+        return { id: `p-${Date.now()}`, text: passage.content, wordCount: passage.content.split(/\s+/).length } as ReturnType<typeof bookContext.addPassage>;
+      }
+      return bookContext?.addPassage?.(passage) ?? null;
+    },
+    updatePassage: (passageId: string, updates: Partial<import('../bookshelf/types').SourcePassage>) => {
+      if (bookshelf.updatePassageSimple) {
+        void bookshelf.updatePassageSimple(passageId, updates);
+      } else if (bookContext?.updatePassage) {
+        bookContext.updatePassage(passageId, updates);
+      }
+    },
+    getPassages: () => bookshelf.getPassagesSimple?.() ?? bookContext?.getPassages?.() ?? [],
+  }), [
+    bookshelf.activeBook,
+    bookshelf.updateChapterSimple,
+    bookshelf.createChapterSimple,
+    bookshelf.deleteChapterSimple,
+    bookshelf.renderActiveBook,
+    bookshelf.getChapterSimple,
+    bookshelf.addPassageSimple,
+    bookshelf.updatePassageSimple,
+    bookshelf.getPassagesSimple,
+    bookContext,
+  ]);
 
   // State - settings must be loaded first since createNewConversation uses it
   const [settings, setSettings] = useState<AUISettings>(loadAUISettings);
@@ -303,6 +384,7 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
     // Build tool context for the bridge
     const toolContext: AUIToolContext = {
       activeProject: book.activeProject,
+      createProject: book.createProject,
       updateChapter: book.updateChapter,
       createChapter: book.createChapter,
       deleteChapter: book.deleteChapter,
@@ -473,6 +555,7 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
         // Execute tools FIRST (before displaying message)
         const toolContext: AUIToolContext = {
           activeProject: book.activeProject,
+          createProject: book.createProject,
           updateChapter: book.updateChapter,
           createChapter: book.createChapter,
           deleteChapter: book.deleteChapter,
