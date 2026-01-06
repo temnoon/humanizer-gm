@@ -3,6 +3,55 @@
 Last Updated: 2026-01-06
 Total Items: 7
 
+## FALLBACK POLICY (ESTABLISHED January 6, 2026)
+
+**Principle**: Operations must fail explicitly, not silently degrade.
+
+### Production Fallbacks (FORBIDDEN)
+
+The following patterns are **BANNED** from production code:
+
+1. **Silent API fallbacks**: `try semantic catch { use text }` → **NO**
+2. **Default empty collections without state**: `data || []` → **NO**
+3. **Storage backend fallbacks**: `xanadu || localStorage` → **NO**
+4. **Operation degradation as success**: `success: true` for partial failure → **NO**
+
+### Development Fallbacks (ALLOWED WITH GUARDS)
+
+Acceptable **ONLY** with explicit dev-mode check:
+
+```typescript
+if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+  console.warn('[DEV] Using fallback...');
+  return fallbackImpl();
+}
+throw new Error('Production path requires X');
+```
+
+### Why This Matters (User's Words)
+
+> "The user cannot be fooled. This will be released as open source, so any LLM 'tricks' where results that 'seem' to work will doom the perception of the software by eroding trust that our front-end claims are not doing what they say they are."
+
+---
+
+## Production Readiness Checklist
+
+Before shipping Book Making MVP:
+
+- [x] DEBT-001 fixed (commit 2a00f23): Remove semantic→text fallback
+- [x] DEBT-002 fixed (commit 2a00f23): Validate content before saving
+- [x] DEBT-003 fixed (commit 2a00f23): Show error in UI for full content load
+- [x] P1 pyramid chunk fix (commit 1755866): Use conversation-wide chunk index
+- [x] P2 bookType persistence (commit 1755866): Paper vs book survives reload
+- [x] P0 AUIContext type errors (commit ddc2b38): Build passes cleanly
+- [ ] Zero silent fallbacks in book-making pipeline
+- [ ] All user operations return explicit success/error states
+- [ ] Error messages include actionable next steps
+- [ ] localStorage only used for UI preferences (not book data)
+- [ ] Health check tool can diagnose all common failure modes
+
+---
+
 ## Critical Anti-Pattern: Silent Fallback Degradation
 
 **Priority**: URGENT - This pattern silently compromises book content quality without user notification.
@@ -269,11 +318,12 @@ Total Items: 7
 
 ## Immediate Actions (Next Session)
 
-1. **FIX DEBT-001** (2-4 hours): Remove semantic→text fallback, return explicit error
-2. **FIX DEBT-002** (1-2 hours): Validate content before saving passages
-3. **FIX DEBT-003** (1 hour): Show error in UI when full content load fails
-4. **AUDIT**: Create inventory of all `|| []` and `|| {}` in book-making pipeline
-5. **DOCUMENT**: Add "Error Handling Philosophy" to CLAUDE.md
+1. ✅ **DEBT-001 FIXED** (commit 2a00f23): Semantic→text fallback removed
+2. ✅ **DEBT-002 FIXED** (commit 2a00f23): Content validation before saving
+3. ✅ **DEBT-003 FIXED** (commit 2a00f23): UI error shown for full content load
+4. **IN PROGRESS**: Complete Xanadu migration (localStorage → SQLite for book data)
+5. **TODO**: Add ESLint rule to flag `|| []` in data operations
+6. **TODO**: Audit all 97 instances of `|| []` / `|| {}` patterns
 
 ---
 
