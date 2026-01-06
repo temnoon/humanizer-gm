@@ -51,7 +51,7 @@ import {
 import { useAuth } from './lib/auth';
 import { LoginPage } from './components/auth/LoginPage';
 // BookProvider removed - consolidated into BookshelfProvider (Phase 4.2)
-import { BookshelfProvider, useBookshelf, type DraftChapter } from './lib/bookshelf';
+import { BookshelfProvider, useBookshelf, type DraftChapter, type SourcePassage } from './lib/bookshelf';
 import { executeAllTools, executeTool, buildAUIContext, AUI_BOOK_SYSTEM_PROMPT, AUIProvider, useAUI, subscribeToGUIActions, type AUIContext, type WorkspaceState } from './lib/aui';
 import { ThemeProvider, useTheme } from './lib/theme/ThemeContext';
 import { ThemeSettingsModal } from './components/theme/ThemeSettingsModal';
@@ -4068,8 +4068,21 @@ function AUIChat({ workspace }: AUIChatProps) {
         },
         createChapter: (title, content) => {
           void bookshelf.createChapterSimple(title, content);
-          // Return placeholder for sync interface
-          return { id: `ch-${Date.now()}`, number: 1, title, content: content || '', wordCount: 0, version: 1, versions: [], status: 'outline' as const };
+          // Return placeholder for sync interface - actual chapter created async
+          return {
+            id: `ch-${Date.now()}`,
+            number: 1,
+            title,
+            content: content || `# ${title}\n\n`,
+            wordCount: 0,
+            version: 1,
+            versions: [],
+            status: 'outline' as const,
+            sections: [],
+            marginalia: [],
+            metadata: { lastEditedBy: 'aui' as const, lastEditedAt: Date.now(), notes: [], auiSuggestions: [] },
+            passageRefs: [],
+          };
         },
         deleteChapter: (chapterId) => {
           void bookshelf.deleteChapterSimple(chapterId);
@@ -4079,7 +4092,7 @@ function AUIChat({ workspace }: AUIChatProps) {
         // Passage operations
         addPassage: (passage) => {
           void bookshelf.addPassageSimple(passage);
-          return { id: `p-${Date.now()}`, text: passage.content, wordCount: passage.content.split(/\s+/).length } as ReturnType<AUIContext['addPassage']>;
+          return { id: `p-${Date.now()}`, text: passage.content, wordCount: passage.content.split(/\s+/).length } as SourcePassage;
         },
         updatePassage: (passageId, updates) => {
           void bookshelf.updatePassageSimple(passageId, updates);

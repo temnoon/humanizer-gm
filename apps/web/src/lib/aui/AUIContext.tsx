@@ -28,7 +28,6 @@ import { auiAnimator, teachingToAnimation, type AnimatorState } from './animator
 import { loadAUISettings, saveAUISettings, type AUISettings } from './settings';
 import { executeAllTools, cleanToolsFromResponse, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
 import { useLayout } from '../../components/layout/LayoutContext';
-import { useBookOptional } from '../book';
 import { useBookshelf } from '../bookshelf';
 import { getArchiveServerUrl } from '../platform';
 import {
@@ -279,21 +278,51 @@ interface AUIProviderProps {
 export function AUIProvider({ children, workspace: initialWorkspace }: AUIProviderProps) {
   // Dependencies
   const layout = useLayout();
-  const bookContext = useBookOptional();
   const bookshelf = useBookshelf();
 
-  // Build book interface from bookshelf's simple methods (preferred) or fallback to bookContext
+  // Build book interface from bookshelf's simple methods
   // IMPORTANT: Memoize to prevent infinite re-renders in useEffect dependencies
   const book = useMemo(() => ({
-    activeProject: bookshelf.activeBook || bookContext?.activeProject || null,
-    createProject: bookContext?.createProject ?? (async (name: string, subtitle?: string) => {
-      // Use bookshelf.createBook when BookContext not available
+    // Use both names for compatibility with different tool versions
+    activeProject: bookshelf.activeBook || null,
+    activeBook: bookshelf.activeBook || null,
+
+    createProject: (name: string, subtitle?: string) => {
+      const id = `book-${Date.now()}`;
+      const uri = `book://user/${name.toLowerCase().replace(/\s+/g, '-')}`;
       console.log('[AUI] Creating book via bookshelf.createBook:', name, subtitle);
-      const book = await bookshelf.createBook({
-        id: `book-${Date.now()}`,
+
+      // Fire and forget - actual creation is async
+      void (async () => {
+        const newBook = await bookshelf.createBook({
+          id,
+          name,
+          subtitle,
+          status: 'harvesting',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          personaRefs: [],
+          styleRefs: [],
+          threads: [],
+          sourceRefs: [],
+          passages: [],
+          chapters: [],
+          tags: [],
+          stats: { totalSources: 0, totalPassages: 0, approvedPassages: 0, gems: 0, chapters: 0, wordCount: 0 },
+        });
+        if (newBook?.uri) {
+          bookshelf.setActiveBookUri(newBook.uri);
+        }
+      })();
+
+      // Return placeholder for sync interface
+      return {
+        id,
+        uri,
+        type: 'book' as const,
         name,
         subtitle,
-        status: 'harvesting',
+        status: 'harvesting' as const,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         personaRefs: [],
@@ -302,38 +331,42 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
         sourceRefs: [],
         passages: [],
         chapters: [],
+        tags: [],
         stats: { totalSources: 0, totalPassages: 0, approvedPassages: 0, gems: 0, chapters: 0, wordCount: 0 },
-      });
-      // Set as active book
-      if (book?.uri) {
-        bookshelf.setActiveBookUri(book.uri);
-      }
-      return book;
-    }) as unknown as (name: string, subtitle?: string) => import('../bookshelf/types').BookProject,
+      };
+    },
+
     updateChapter: (chapterId: string, content: string, changes?: string) => {
-      if (bookshelf.updateChapterSimple) {
-        void bookshelf.updateChapterSimple(chapterId, content, changes);
-      } else if (bookContext?.updateChapter) {
-        bookContext.updateChapter(chapterId, content, changes);
-      }
+      void bookshelf.updateChapterSimple(chapterId, content, changes);
     },
+
     createChapter: (title: string, content?: string) => {
-      if (bookshelf.createChapterSimple) {
-        void bookshelf.createChapterSimple(title, content);
-        // Return placeholder for sync interface
-        return { id: `ch-${Date.now()}`, number: 1, title, content: content || '', wordCount: 0, version: 1, versions: [], status: 'outline' as const };
-      }
-      return bookContext?.createChapter?.(title, content) ?? null;
+      void bookshelf.createChapterSimple(title, content);
+      // Return placeholder for sync interface - actual chapter created async
+      return {
+        id: `ch-${Date.now()}`,
+        number: 1,
+        title,
+        content: content || `# ${title}\n\n`,
+        wordCount: 0,
+        version: 1,
+        versions: [],
+        status: 'outline' as const,
+        sections: [],
+        marginalia: [],
+        metadata: { lastEditedBy: 'aui' as const, lastEditedAt: Date.now(), notes: [], auiSuggestions: [] },
+        passageRefs: [],
+      };
     },
+
     deleteChapter: (chapterId: string) => {
-      if (bookshelf.deleteChapterSimple) {
-        void bookshelf.deleteChapterSimple(chapterId);
-      } else if (bookContext?.deleteChapter) {
-        bookContext.deleteChapter(chapterId);
-      }
+      void bookshelf.deleteChapterSimple(chapterId);
     },
-    renderBook: () => bookshelf.renderActiveBook?.() ?? bookContext?.renderBook?.() ?? '',
-    getChapter: (chapterId: string) => bookshelf.getChapterSimple?.(chapterId) ?? bookContext?.getChapter?.(chapterId) ?? null,
+
+    renderBook: () => bookshelf.renderActiveBook() || '',
+
+    getChapter: (chapterId: string) => bookshelf.getChapterSimple(chapterId) || null,
+
     addPassage: (passage: {
       content: string;
       conversationId?: string;
@@ -341,21 +374,20 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
       role?: 'user' | 'assistant';
       tags?: string[];
     }) => {
-      if (bookshelf.addPassageSimple) {
-        void bookshelf.addPassageSimple(passage);
-        // Return placeholder
-        return { id: `p-${Date.now()}`, text: passage.content, wordCount: passage.content.split(/\s+/).length } as ReturnType<typeof bookContext.addPassage>;
-      }
-      return bookContext?.addPassage?.(passage) ?? null;
+      void bookshelf.addPassageSimple(passage);
+      // Return placeholder - actual passage created async
+      return {
+        id: `p-${Date.now()}`,
+        text: passage.content,
+        wordCount: passage.content.split(/\s+/).length,
+      } as import('../bookshelf/types').SourcePassage;
     },
+
     updatePassage: (passageId: string, updates: Partial<import('../bookshelf/types').SourcePassage>) => {
-      if (bookshelf.updatePassageSimple) {
-        void bookshelf.updatePassageSimple(passageId, updates);
-      } else if (bookContext?.updatePassage) {
-        bookContext.updatePassage(passageId, updates);
-      }
+      void bookshelf.updatePassageSimple(passageId, updates);
     },
-    getPassages: () => bookshelf.getPassagesSimple?.() ?? bookContext?.getPassages?.() ?? [],
+
+    getPassages: () => bookshelf.getPassagesSimple() || [],
   }), [
     bookshelf.activeBook,
     bookshelf.createBook,
@@ -368,7 +400,6 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
     bookshelf.addPassageSimple,
     bookshelf.updatePassageSimple,
     bookshelf.getPassagesSimple,
-    bookContext,
   ]);
 
   // State - settings must be loaded first since createNewConversation uses it

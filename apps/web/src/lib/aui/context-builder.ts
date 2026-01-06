@@ -137,6 +137,10 @@ export function buildAUIContext(
           version: 1,
           versions: [],
           status: 'outline',
+          sections: [],
+          marginalia: [],
+          metadata: { lastEditedBy: 'aui' as const, lastEditedAt: Date.now(), notes: [], auiSuggestions: [] },
+          passageRefs: [],
         } as DraftChapter;
       }
       if (book?.createChapter) {

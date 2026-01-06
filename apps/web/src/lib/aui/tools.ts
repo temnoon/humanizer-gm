@@ -101,16 +101,17 @@ export interface WorkspaceState {
 }
 
 export interface AUIContext {
-  // Book operations
-  activeProject: BookProject | null;
+  // Book operations - supports both old (activeProject) and new (activeBook) APIs
+  activeProject?: BookProject | null;
+  activeBook?: BookProject | null;
   createProject?: (name: string, subtitle?: string) => BookProject;
   updateChapter: (chapterId: string, content: string, changes?: string) => void;
   createChapter: (title: string, content?: string) => DraftChapter | null;
   deleteChapter: (chapterId: string) => void;
   renderBook: () => string;
-  getChapter: (chapterId: string) => DraftChapter | null;
+  getChapter: (chapterId: string) => DraftChapter | null | undefined;
 
-  // Passage operations (new)
+  // Passage operations
   addPassage?: (passage: {
     content: string;
     conversationId?: string;
@@ -121,7 +122,7 @@ export interface AUIContext {
   updatePassage?: (passageId: string, updates: Partial<SourcePassage>) => void;
   getPassages?: () => SourcePassage[];
 
-  // Workspace state (new)
+  // Workspace state
   workspace?: WorkspaceState;
 
   // Pinned content (Items 9-12: tool integration with pins)
