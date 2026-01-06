@@ -385,7 +385,10 @@ async function migrateBook(book: Record<string, unknown>, result: MigrationResul
   await window.electronAPI!.xanadu.books.upsert(xanaduBook);
   result.migrated.books++;
 
-  // Migrate passages
+  // Migrate passages (handles legacy data formats)
+  if (!book.passages && !(book.sources as Record<string, unknown>)?.passages) {
+    console.warn('[Migration] Book has no passages or sources.passages - using empty array');
+  }
   const passages = (book.passages || (book.sources as Record<string, unknown>)?.passages || []) as unknown[];
   for (const passage of passages) {
     try {
@@ -417,7 +420,10 @@ async function migrateBook(book: Record<string, unknown>, result: MigrationResul
     }
   }
 
-  // Migrate chapters
+  // Migrate chapters (handles legacy data formats)
+  if (!book.chapters && !(book.drafts as Record<string, unknown>)?.chapters) {
+    console.warn('[Migration] Book has no chapters or drafts.chapters - using empty array');
+  }
   const chapters = (book.chapters || (book.drafts as Record<string, unknown>)?.chapters || []) as unknown[];
   for (const chapter of chapters) {
     try {

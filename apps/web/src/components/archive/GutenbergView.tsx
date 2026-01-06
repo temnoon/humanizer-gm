@@ -92,6 +92,10 @@ export function GutenbergView({ onSelectText, onClose }: GutenbergViewProps) {
       );
       const data = await response.json();
       if (data.error) throw new Error(data.error);
+      // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+      if (!data.books) {
+        console.warn('[GutenbergView.handleSearch] API response missing books field');
+      }
       setSearchResults(data.books || []);
     } catch (err) {
       setError('Failed to search Gutenberg. Please try again.');

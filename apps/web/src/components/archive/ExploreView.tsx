@@ -174,6 +174,10 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
       }
 
       const data = await response.json();
+      // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+      if (!data.results) {
+        console.warn('[ExploreView.search] API response missing results field');
+      }
       setResults(data.results || []);
     } catch (err) {
       setError('Semantic search requires embeddings. Build embeddings from the Import tab.');

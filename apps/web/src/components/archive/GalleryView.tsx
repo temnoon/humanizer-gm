@@ -105,6 +105,10 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
       }
 
       const data = await response.json();
+      // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+      if (!data.images && !data.media) {
+        console.warn('[GalleryView.loadImages] API response missing images/media field');
+      }
       const rawImages = data.images || data.media || [];
 
       // Normalize the image data to match GalleryImage interface

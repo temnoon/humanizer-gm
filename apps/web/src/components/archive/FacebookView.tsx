@@ -195,6 +195,10 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       const res = await fetch(`${archiveServer}/api/facebook/periods`);
       if (res.ok) {
         const data = await res.json();
+        // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+        if (!data.periods) {
+          console.warn('[FacebookView.loadPeriods] API response missing periods field');
+        }
         setPeriods(data.periods || []);
       }
     } catch (err) {
@@ -241,6 +245,10 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
+      // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+      if (!data.items) {
+        console.warn('[FacebookView.loadFeedItems] API response missing items field');
+      }
       let filteredItems = data.items || [];
 
       // Client-side filters
@@ -301,6 +309,10 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
+      // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+      if (!data.items) {
+        console.warn('[FacebookView.loadMediaItems] API response missing items field');
+      }
 
       if (reset) {
         setMedia(data.items || []);
@@ -328,6 +340,10 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
       const res = await fetch(`${archiveServer}/api/facebook/media/${mediaId}/context`);
       if (res.ok) {
         const data = await res.json();
+        // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+        if (!data.contentItems) {
+          console.warn('[FacebookView.loadMediaContext] API response missing contentItems field');
+        }
         // Transform API response to expected format
         const posts = data.contentItems || [];
         const albums: Array<{ name: string; photo_count: number }> = [];
@@ -558,6 +574,10 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
               const res = await fetch(`${archiveServer}/api/facebook/content/${item.id}/media`);
               if (res.ok) {
                 const data = await res.json();
+                // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+                if (!data.media) {
+                  console.warn('[FacebookView.handleSelectContent] API response missing media field');
+                }
                 mediaItems = (data.media || []).map((m: { id: string; file_path: string; media_type: string }) => ({
                   id: m.id,
                   file_path: normalizeMediaPath(m.file_path, archiveServerUrl),

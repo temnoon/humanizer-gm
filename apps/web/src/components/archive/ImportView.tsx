@@ -155,6 +155,10 @@ export function ImportView() {
       const response = await fetch(`${archiveServer}/api/archives`);
       if (response.ok) {
         const data = await response.json();
+        // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+        if (!data.archives) {
+          console.warn('[ImportView.fetchAvailableArchives] API response missing archives field');
+        }
         // Merge with persisted archives
         setIndexedArchives(prev => {
           const merged = [...prev];

@@ -993,6 +993,11 @@ async function executeSearchArchive(
 
     const data = await response.json();
 
+    // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+    if (!data.results) {
+      console.warn('[search_archive] API response missing results field');
+    }
+
     // Filter out JSON noise and system markers, then limit to requested amount
     const filteredResults = (data.results || [])
       .filter((r: { content: string }) => isValidSearchResult(r.content))
@@ -1223,6 +1228,11 @@ async function executeSearchFacebook(
     }
 
     const data = await response.json();
+
+    // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+    if (!data.items) {
+      console.warn('[search_facebook] API response missing items field');
+    }
 
     // Client-side filter by query (server may not support text search)
     const q = query.toLowerCase();
@@ -2939,6 +2949,11 @@ async function executeListConversations(
     }
 
     const data = await response.json();
+
+    // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+    if (!data.conversations) {
+      console.warn('[list_conversations] API response missing conversations field');
+    }
     let conversations = data.conversations || [];
 
     // Estimate word count from text_length (avg ~5 chars per word)
@@ -3066,6 +3081,11 @@ async function executeHarvestArchive(
     }
 
     const data = await response.json();
+
+    // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+    if (!data.results) {
+      console.warn('[harvest_archive] API response missing results field');
+    }
     const results = (data.results || []).filter(
       (r: { similarity: number }) => r.similarity >= minSimilarity
     ).slice(0, limit);
@@ -3933,6 +3953,11 @@ async function executeHarvestForThread(
         if (!response.ok) continue;
 
         const data = await response.json();
+
+        // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+        if (!data.results) {
+          console.warn('[search_images] API response missing results field');
+        }
         const results = (data.results || [])
           .filter((r: { similarity: number }) => r.similarity >= minSimilarity)
           .slice(0, resultsPerQuery);
@@ -4251,6 +4276,11 @@ async function executeTraceNarrativeArc(
 
       if (response.ok) {
         const data = await response.json();
+
+        // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+        if (!data.results) {
+          console.warn('[find_similar_images] API response missing results field');
+        }
         const results = data.results || [];
 
         for (const r of results) {
@@ -4435,6 +4465,11 @@ async function executeFindResonantMirrors(
     }
 
     const data = await response.json();
+
+    // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+    if (!data.results) {
+      console.warn('[cluster_images] API response missing results field');
+    }
     let results = data.results || [];
 
     // Filter by scope if book scope requested (would need book context)

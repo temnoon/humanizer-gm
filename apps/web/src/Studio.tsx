@@ -4594,6 +4594,11 @@ function StudioContent() {
             : data.messages?.[0]?.content?.slice?.(0, 200)
         );
 
+        // Validate API response (per FALLBACK POLICY: no silent fallbacks)
+        if (!data.messages) {
+          console.warn('[Studio.openConversationForReview] API response missing messages field');
+        }
+
         // Extract text from content array - API returns [{type: 'text', content: '...'}, ...]
         const extractContent = (content: unknown): string => {
           if (typeof content === 'string') return content;
