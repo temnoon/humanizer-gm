@@ -43,6 +43,45 @@ export interface Chunk {
 }
 
 // =============================================================================
+// Content-Type Aware Chunking (Phase 5)
+// =============================================================================
+
+/**
+ * Content types detected during chunking
+ */
+export type ContentType = 'prose' | 'code' | 'math' | 'table' | 'list' | 'heading';
+
+/**
+ * A segment of text with detected content type
+ */
+export interface ContentSegment {
+  type: ContentType;
+  content: string;
+  startOffset: number;
+  endOffset: number;
+  language?: string;  // For code: 'python', 'typescript', etc.
+}
+
+/**
+ * Enhanced chunk with content-type awareness
+ */
+export interface EnhancedChunk {
+  id: string;
+  content: string;
+  contentType: ContentType;
+  language?: string;
+  wordCount: number;
+  tokenCount: number;
+  startOffset: number;
+  endOffset: number;
+  contextBefore?: string;
+  contextAfter?: string;
+  // Optional link to parent message/document
+  messageId?: string;
+  chunkIndex?: number;
+}
+
+// =============================================================================
 // User Curation
 // =============================================================================
 
