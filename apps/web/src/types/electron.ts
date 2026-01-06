@@ -127,6 +127,59 @@ export interface XanaduChapterVersion {
   createdAt: number;
 }
 
+// Harvest bucket types
+export type HarvestBucketStatus = 'collecting' | 'reviewing' | 'staged' | 'committed' | 'discarded';
+export type NarrativeArcType = 'thematic' | 'chronological' | 'argumentative' | 'character';
+export type PassageLinkUsageType = 'quote' | 'reference' | 'paraphrase' | 'inspiration';
+
+export interface XanaduHarvestBucket {
+  id: string;
+  bookId: string;
+  bookUri: string;
+  status: HarvestBucketStatus;
+  queries?: string[];
+  candidates?: unknown[];
+  approved?: unknown[];
+  gems?: unknown[];
+  rejected?: unknown[];
+  duplicateIds?: string[];
+  config?: unknown;
+  threadUri?: string;
+  stats?: unknown;
+  initiatedBy?: 'user' | 'aui';
+  createdAt: number;
+  updatedAt?: number;
+  completedAt?: number;
+  finalizedAt?: number;
+}
+
+export interface XanaduNarrativeArc {
+  id: string;
+  bookId: string;
+  bookUri: string;
+  thesis: string;
+  arcType: NarrativeArcType;
+  evaluation?: {
+    status: 'pending' | 'approved' | 'rejected';
+    feedback?: string;
+    evaluatedAt?: number;
+  };
+  proposedBy?: 'user' | 'aui';
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface XanaduPassageLink {
+  id: string;
+  passageId: string;
+  chapterId: string;
+  position: number;
+  sectionId?: string;
+  usageType: PassageLinkUsageType;
+  createdBy?: 'user' | 'aui';
+  createdAt: number;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // XANADU API
 // ═══════════════════════════════════════════════════════════════════
@@ -170,6 +223,27 @@ export interface XanaduAPI {
   versions: {
     list: (chapterId: string) => Promise<XanaduChapterVersion[]>;
     save: (chapterId: string, version: number, content: string, changes?: string, createdBy?: string) => Promise<{ success: boolean }>;
+  };
+
+  harvestBuckets: {
+    list: (bookUri?: string) => Promise<XanaduHarvestBucket[]>;
+    get: (id: string) => Promise<XanaduHarvestBucket | null>;
+    upsert: (bucket: Partial<XanaduHarvestBucket> & { id: string; bookId: string; bookUri: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  narrativeArcs: {
+    list: (bookUri: string) => Promise<XanaduNarrativeArc[]>;
+    get: (id: string) => Promise<XanaduNarrativeArc | null>;
+    upsert: (arc: Partial<XanaduNarrativeArc> & { id: string; bookId: string; bookUri: string; thesis: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  passageLinks: {
+    listByChapter: (chapterId: string) => Promise<XanaduPassageLink[]>;
+    listByPassage: (passageId: string) => Promise<XanaduPassageLink[]>;
+    upsert: (link: Partial<XanaduPassageLink> & { id: string; passageId: string; chapterId: string; position: number }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
   };
 
   seedLibrary: () => Promise<{ success: boolean; alreadySeeded?: boolean; error?: string }>;

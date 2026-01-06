@@ -560,6 +560,58 @@ export interface XanaduChapterVersion {
   createdAt: number;
 }
 
+export type HarvestBucketStatus = 'collecting' | 'reviewing' | 'staged' | 'committed' | 'discarded';
+export type NarrativeArcType = 'thematic' | 'chronological' | 'argumentative' | 'character';
+export type PassageLinkUsageType = 'quote' | 'reference' | 'paraphrase' | 'inspiration';
+
+export interface XanaduHarvestBucket {
+  id: string;
+  bookId: string;
+  bookUri: string;
+  status: HarvestBucketStatus;
+  queries?: string[];
+  candidates?: unknown[];
+  approved?: unknown[];
+  gems?: unknown[];
+  rejected?: unknown[];
+  duplicateIds?: string[];
+  config?: unknown;
+  threadUri?: string;
+  stats?: unknown;
+  initiatedBy?: 'user' | 'aui';
+  createdAt: number;
+  updatedAt?: number;
+  completedAt?: number;
+  finalizedAt?: number;
+}
+
+export interface XanaduNarrativeArc {
+  id: string;
+  bookId: string;
+  bookUri: string;
+  thesis: string;
+  arcType: NarrativeArcType;
+  evaluation?: {
+    status: 'pending' | 'approved' | 'rejected';
+    feedback?: string;
+    evaluatedAt?: number;
+  };
+  proposedBy?: 'user' | 'aui';
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface XanaduPassageLink {
+  id: string;
+  passageId: string;
+  chapterId: string;
+  position: number;
+  sectionId?: string;
+  usageType: PassageLinkUsageType;
+  createdBy?: 'user' | 'aui';
+  createdAt: number;
+}
+
 export interface XanaduAPI {
   // Book operations
   books: {
@@ -605,6 +657,30 @@ export interface XanaduAPI {
   versions: {
     list: (chapterId: string) => Promise<XanaduChapterVersion[]>;
     save: (chapterId: string, version: number, content: string, changes?: string, createdBy?: string) => Promise<{ success: boolean }>;
+  };
+
+  // Harvest bucket operations
+  harvestBuckets: {
+    list: (bookUri?: string) => Promise<XanaduHarvestBucket[]>;
+    get: (id: string) => Promise<XanaduHarvestBucket | null>;
+    upsert: (bucket: Partial<XanaduHarvestBucket> & { id: string; bookId: string; bookUri: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  // Narrative arc operations
+  narrativeArcs: {
+    list: (bookUri: string) => Promise<XanaduNarrativeArc[]>;
+    get: (id: string) => Promise<XanaduNarrativeArc | null>;
+    upsert: (arc: Partial<XanaduNarrativeArc> & { id: string; bookId: string; bookUri: string; thesis: string }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
+  };
+
+  // Passage link operations
+  passageLinks: {
+    listByChapter: (chapterId: string) => Promise<XanaduPassageLink[]>;
+    listByPassage: (passageId: string) => Promise<XanaduPassageLink[]>;
+    upsert: (link: Partial<XanaduPassageLink> & { id: string; passageId: string; chapterId: string; position: number }) => Promise<{ success: boolean; id: string }>;
+    delete: (id: string) => Promise<{ success: boolean }>;
   };
 
   // Library seeding
@@ -872,6 +948,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
       list: (chapterId: string) => ipcRenderer.invoke('xanadu:version:list', chapterId),
       save: (chapterId: string, version: number, content: string, changes?: string, createdBy?: string) =>
         ipcRenderer.invoke('xanadu:version:save', chapterId, version, content, changes, createdBy),
+    },
+    harvestBuckets: {
+      list: (bookUri?: string) => ipcRenderer.invoke('xanadu:harvest-bucket:list', bookUri),
+      get: (id: string) => ipcRenderer.invoke('xanadu:harvest-bucket:get', id),
+      upsert: (bucket) => ipcRenderer.invoke('xanadu:harvest-bucket:upsert', bucket),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:harvest-bucket:delete', id),
+    },
+    narrativeArcs: {
+      list: (bookUri: string) => ipcRenderer.invoke('xanadu:narrative-arc:list', bookUri),
+      get: (id: string) => ipcRenderer.invoke('xanadu:narrative-arc:get', id),
+      upsert: (arc) => ipcRenderer.invoke('xanadu:narrative-arc:upsert', arc),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:narrative-arc:delete', id),
+    },
+    passageLinks: {
+      listByChapter: (chapterId: string) => ipcRenderer.invoke('xanadu:passage-link:list-by-chapter', chapterId),
+      listByPassage: (passageId: string) => ipcRenderer.invoke('xanadu:passage-link:list-by-passage', passageId),
+      upsert: (link) => ipcRenderer.invoke('xanadu:passage-link:upsert', link),
+      delete: (id: string) => ipcRenderer.invoke('xanadu:passage-link:delete', id),
     },
     seedLibrary: () => ipcRenderer.invoke('xanadu:seed-library'),
   },

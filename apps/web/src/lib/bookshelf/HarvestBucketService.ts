@@ -5,7 +5,8 @@
  * - Creates and manages harvest buckets
  * - Tracks passage curation (approve/reject/gem)
  * - Handles commit to book project
- * - Persists to localStorage (auto-cleanup after commit)
+ * - PRIMARY: Uses Xanadu (SQLite) storage when available
+ * - FALLBACK: localStorage (DEV mode only per FALLBACK POLICY)
  */
 
 import type {
@@ -28,7 +29,17 @@ import {
 import { bookshelfService } from './BookshelfService';
 
 // ═══════════════════════════════════════════════════════════════════
-// STORAGE KEYS
+// XANADU AVAILABILITY CHECK
+// ═══════════════════════════════════════════════════════════════════
+
+function isXanaduHarvestAvailable(): boolean {
+  return typeof window !== 'undefined' &&
+    window.isElectron === true &&
+    window.electronAPI?.xanadu?.harvestBuckets !== undefined;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STORAGE KEYS (localStorage fallback only)
 // ═══════════════════════════════════════════════════════════════════
 
 const STORAGE_KEYS = {
@@ -60,16 +71,28 @@ class HarvestBucketService {
   initialize(): void {
     if (this.loaded) return;
 
-    this.loadFromStorage();
-    this.cleanupExpiredBuckets();
-
-    this.loaded = true;
+    if (isXanaduHarvestAvailable()) {
+      // Xanadu is primary storage - data loads on-demand via async methods
+      console.log('[HarvestBucketService] Using Xanadu storage');
+      this.loaded = true;
+    } else if (import.meta.env.DEV) {
+      // DEV fallback to localStorage
+      console.warn('[HarvestBucketService] [DEV] Using localStorage fallback');
+      this.loadFromLocalStorage();
+      this.cleanupExpiredBuckets();
+      this.loaded = true;
+    } else {
+      // Production without Xanadu - log warning but don't crash
+      // HarvestBucketService is optional, book-making can work without it
+      console.warn('[HarvestBucketService] Xanadu not available. Harvest bucket features disabled.');
+      this.loaded = true;
+    }
   }
 
   /**
-   * Load from localStorage
+   * Load from localStorage (DEV fallback only)
    */
-  private loadFromStorage(): void {
+  private loadFromLocalStorage(): void {
     try {
       // Load buckets
       const bucketsJson = localStorage.getItem(STORAGE_KEYS.buckets);
@@ -98,14 +121,16 @@ class HarvestBucketService {
         }
       }
     } catch (e) {
-      console.error('Failed to load harvest data:', e);
+      console.error('[HarvestBucketService] Failed to load from localStorage:', e);
     }
   }
 
   /**
-   * Save to localStorage
+   * Save to localStorage (DEV fallback only)
    */
-  private saveToStorage(): void {
+  private saveToLocalStorage(): void {
+    if (!import.meta.env.DEV) return; // Only in DEV mode
+
     try {
       localStorage.setItem(
         STORAGE_KEYS.buckets,
@@ -120,8 +145,55 @@ class HarvestBucketService {
         JSON.stringify(Array.from(this.links.values()))
       );
     } catch (e) {
-      console.error('Failed to save harvest data:', e);
+      console.error('[HarvestBucketService] Failed to save to localStorage:', e);
     }
+  }
+
+  /**
+   * Save bucket to Xanadu (async, fire-and-forget)
+   */
+  private saveBucketToXanadu(bucket: HarvestBucket): void {
+    if (!isXanaduHarvestAvailable()) return;
+
+    const bookId = bucket.bookUri.replace('book://', '').replace(/\//g, '-');
+    // Fire and forget - errors logged but don't block
+    void window.electronAPI!.xanadu.harvestBuckets.upsert({
+      id: bucket.id,
+      bookId,
+      bookUri: bucket.bookUri,
+      status: bucket.status,
+      queries: bucket.queries,
+      candidates: bucket.candidates,
+      approved: bucket.approved,
+      gems: bucket.gems,
+      rejected: bucket.rejected,
+      duplicateIds: bucket.duplicateIds,
+      config: bucket.config,
+      threadUri: bucket.threadUri as string | undefined,
+      stats: bucket.stats,
+      initiatedBy: bucket.initiatedBy,
+      completedAt: bucket.completedAt,
+      finalizedAt: bucket.finalizedAt,
+    }).catch(err => {
+      console.error('[HarvestBucketService] Failed to save bucket to Xanadu:', err);
+    });
+  }
+
+  /**
+   * Unified save method - persists to Xanadu (primary) or localStorage (DEV fallback)
+   */
+  private saveToStorage(): void {
+    if (isXanaduHarvestAvailable()) {
+      // Xanadu: save each bucket individually (async, fire-and-forget)
+      for (const bucket of this.buckets.values()) {
+        this.saveBucketToXanadu(bucket);
+      }
+      // TODO: Also save arcs and links to Xanadu when methods are ready
+    } else if (import.meta.env.DEV) {
+      // DEV fallback to localStorage
+      this.saveToLocalStorage();
+    }
+    // Production without Xanadu: silently skip (feature disabled)
   }
 
   /**

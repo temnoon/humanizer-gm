@@ -28,7 +28,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 10;  // Added unified book/persona/style tables (Xanadu consolidation)
+const SCHEMA_VERSION = 11;  // Added harvest_buckets, narrative_arcs tables (HarvestBucketService → Xanadu)
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 /**
@@ -1820,6 +1820,83 @@ export class EmbeddingDatabase {
         );
 
         -- ========================================================================
+        -- HARVEST BUCKET TABLES (migrated from localStorage HarvestBucketService)
+        -- ========================================================================
+
+        -- Harvest buckets (temporary staging for book content)
+        CREATE TABLE IF NOT EXISTS harvest_buckets (
+          id TEXT PRIMARY KEY,
+          book_id TEXT NOT NULL,               -- References books.id via bookUri
+          book_uri TEXT NOT NULL,              -- book://user/slug
+          status TEXT NOT NULL DEFAULT 'collecting',  -- collecting, reviewing, staged, committed, discarded
+
+          -- Queries used for this harvest
+          queries TEXT,                        -- JSON array of search queries
+
+          -- Passage arrays (JSON serialized SourcePassage[])
+          candidates TEXT,                     -- Passages awaiting review
+          approved TEXT,                       -- Approved passages
+          gems TEXT,                           -- Gem passages (best of the best)
+          rejected TEXT,                       -- Rejected passages
+          duplicate_ids TEXT,                  -- IDs of detected duplicates
+
+          -- Configuration
+          config TEXT,                         -- JSON: HarvestConfig (dedupeByContent, dedupeThreshold, etc.)
+          thread_uri TEXT,                     -- Optional thread context
+
+          -- Statistics (JSON)
+          stats TEXT,                          -- {totalCandidates, reviewed, approved, rejected, gems, duplicates, avgSimilarity, approvedWordCount}
+
+          -- Metadata
+          initiated_by TEXT,                   -- 'user' or 'aui'
+          created_at REAL NOT NULL,
+          updated_at REAL,
+          completed_at REAL,
+          finalized_at REAL,
+
+          FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+        );
+
+        -- Narrative arcs (thematic through-lines for books)
+        CREATE TABLE IF NOT EXISTS narrative_arcs (
+          id TEXT PRIMARY KEY,
+          book_id TEXT NOT NULL,
+          book_uri TEXT NOT NULL,
+
+          thesis TEXT NOT NULL,                -- Core argument/theme
+          arc_type TEXT DEFAULT 'thematic',    -- 'thematic', 'chronological', 'argumentative', 'character'
+
+          -- Evaluation
+          evaluation_status TEXT,              -- 'pending', 'approved', 'rejected'
+          evaluation_feedback TEXT,
+          evaluated_at REAL,
+
+          -- Metadata
+          proposed_by TEXT,                    -- 'user' or 'aui'
+          created_at REAL NOT NULL,
+          updated_at REAL,
+
+          FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+        );
+
+        -- Passage links (connects passages to chapters at specific positions)
+        CREATE TABLE IF NOT EXISTS passage_links (
+          id TEXT PRIMARY KEY,
+          passage_id TEXT NOT NULL,
+          chapter_id TEXT NOT NULL,
+          position INTEGER NOT NULL,           -- Order within chapter
+
+          section_id TEXT,                     -- Optional section reference
+          usage_type TEXT DEFAULT 'quote',     -- 'quote', 'reference', 'paraphrase', 'inspiration'
+          created_by TEXT,                     -- 'user' or 'aui'
+
+          created_at REAL NOT NULL,
+
+          FOREIGN KEY (passage_id) REFERENCES book_passages(id) ON DELETE CASCADE,
+          FOREIGN KEY (chapter_id) REFERENCES book_chapters(id) ON DELETE CASCADE
+        );
+
+        -- ========================================================================
         -- INDEXES FOR BOOK TABLES
         -- ========================================================================
 
@@ -1847,6 +1924,16 @@ export class EmbeddingDatabase {
 
         CREATE INDEX IF NOT EXISTS idx_chapter_versions_chapter ON chapter_versions(chapter_id);
         CREATE INDEX IF NOT EXISTS idx_chapter_versions_num ON chapter_versions(chapter_id, version);
+
+        CREATE INDEX IF NOT EXISTS idx_harvest_buckets_book ON harvest_buckets(book_id);
+        CREATE INDEX IF NOT EXISTS idx_harvest_buckets_book_uri ON harvest_buckets(book_uri);
+        CREATE INDEX IF NOT EXISTS idx_harvest_buckets_status ON harvest_buckets(status);
+
+        CREATE INDEX IF NOT EXISTS idx_narrative_arcs_book ON narrative_arcs(book_id);
+        CREATE INDEX IF NOT EXISTS idx_narrative_arcs_book_uri ON narrative_arcs(book_uri);
+
+        CREATE INDEX IF NOT EXISTS idx_passage_links_passage ON passage_links(passage_id);
+        CREATE INDEX IF NOT EXISTS idx_passage_links_chapter ON passage_links(chapter_id);
       `);
 
       // Add content_type columns to pyramid_chunks for content-aware chunking
@@ -1889,6 +1976,88 @@ export class EmbeddingDatabase {
       }
 
       console.log('[migration] Completed Xanadu unified book storage migration');
+    }
+
+    // Migration from version 10 to 11: add harvest bucket tables
+    if (fromVersion < 11) {
+      this.db.exec(`
+        -- Harvest buckets (temporary staging for book content)
+        CREATE TABLE IF NOT EXISTS harvest_buckets (
+          id TEXT PRIMARY KEY,
+          book_id TEXT NOT NULL,
+          book_uri TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'collecting',
+
+          queries TEXT,
+          candidates TEXT,
+          approved TEXT,
+          gems TEXT,
+          rejected TEXT,
+          duplicate_ids TEXT,
+
+          config TEXT,
+          thread_uri TEXT,
+          stats TEXT,
+
+          initiated_by TEXT,
+          created_at REAL NOT NULL,
+          updated_at REAL,
+          completed_at REAL,
+          finalized_at REAL,
+
+          FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+        );
+
+        -- Narrative arcs
+        CREATE TABLE IF NOT EXISTS narrative_arcs (
+          id TEXT PRIMARY KEY,
+          book_id TEXT NOT NULL,
+          book_uri TEXT NOT NULL,
+
+          thesis TEXT NOT NULL,
+          arc_type TEXT DEFAULT 'thematic',
+
+          evaluation_status TEXT,
+          evaluation_feedback TEXT,
+          evaluated_at REAL,
+
+          proposed_by TEXT,
+          created_at REAL NOT NULL,
+          updated_at REAL,
+
+          FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+        );
+
+        -- Passage links
+        CREATE TABLE IF NOT EXISTS passage_links (
+          id TEXT PRIMARY KEY,
+          passage_id TEXT NOT NULL,
+          chapter_id TEXT NOT NULL,
+          position INTEGER NOT NULL,
+
+          section_id TEXT,
+          usage_type TEXT DEFAULT 'quote',
+          created_by TEXT,
+
+          created_at REAL NOT NULL,
+
+          FOREIGN KEY (passage_id) REFERENCES book_passages(id) ON DELETE CASCADE,
+          FOREIGN KEY (chapter_id) REFERENCES book_chapters(id) ON DELETE CASCADE
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_harvest_buckets_book ON harvest_buckets(book_id);
+        CREATE INDEX IF NOT EXISTS idx_harvest_buckets_book_uri ON harvest_buckets(book_uri);
+        CREATE INDEX IF NOT EXISTS idx_harvest_buckets_status ON harvest_buckets(status);
+
+        CREATE INDEX IF NOT EXISTS idx_narrative_arcs_book ON narrative_arcs(book_id);
+        CREATE INDEX IF NOT EXISTS idx_narrative_arcs_book_uri ON narrative_arcs(book_uri);
+
+        CREATE INDEX IF NOT EXISTS idx_passage_links_passage ON passage_links(passage_id);
+        CREATE INDEX IF NOT EXISTS idx_passage_links_chapter ON passage_links(chapter_id);
+      `);
+
+      console.log('[migration] Completed harvest bucket tables migration');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
@@ -5506,6 +5675,304 @@ export class EmbeddingDatabase {
       passageRefs: row.passage_refs ? JSON.parse(row.passage_refs as string) : [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    };
+  }
+
+  // ===========================================================================
+  // Harvest Bucket Operations
+  // ===========================================================================
+
+  /**
+   * Insert or update a harvest bucket
+   */
+  upsertHarvestBucket(bucket: {
+    id: string;
+    bookId: string;
+    bookUri: string;
+    status?: string;
+    queries?: string[];
+    candidates?: unknown[];
+    approved?: unknown[];
+    gems?: unknown[];
+    rejected?: unknown[];
+    duplicateIds?: string[];
+    config?: unknown;
+    threadUri?: string;
+    stats?: unknown;
+    initiatedBy?: string;
+    completedAt?: number;
+    finalizedAt?: number;
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO harvest_buckets (
+        id, book_id, book_uri, status, queries, candidates, approved, gems, rejected,
+        duplicate_ids, config, thread_uri, stats, initiated_by, created_at, updated_at,
+        completed_at, finalized_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        status = excluded.status,
+        queries = excluded.queries,
+        candidates = excluded.candidates,
+        approved = excluded.approved,
+        gems = excluded.gems,
+        rejected = excluded.rejected,
+        duplicate_ids = excluded.duplicate_ids,
+        config = excluded.config,
+        thread_uri = excluded.thread_uri,
+        stats = excluded.stats,
+        updated_at = excluded.updated_at,
+        completed_at = excluded.completed_at,
+        finalized_at = excluded.finalized_at
+    `).run(
+      bucket.id,
+      bucket.bookId,
+      bucket.bookUri,
+      bucket.status ?? 'collecting',
+      bucket.queries ? JSON.stringify(bucket.queries) : null,
+      bucket.candidates ? JSON.stringify(bucket.candidates) : null,
+      bucket.approved ? JSON.stringify(bucket.approved) : null,
+      bucket.gems ? JSON.stringify(bucket.gems) : null,
+      bucket.rejected ? JSON.stringify(bucket.rejected) : null,
+      bucket.duplicateIds ? JSON.stringify(bucket.duplicateIds) : null,
+      bucket.config ? JSON.stringify(bucket.config) : null,
+      bucket.threadUri ?? null,
+      bucket.stats ? JSON.stringify(bucket.stats) : null,
+      bucket.initiatedBy ?? null,
+      now,
+      now,
+      bucket.completedAt ?? null,
+      bucket.finalizedAt ?? null
+    );
+  }
+
+  /**
+   * Get a harvest bucket by ID
+   */
+  getHarvestBucket(id: string): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT * FROM harvest_buckets WHERE id = ?
+    `).get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.parseHarvestBucketRow(row);
+  }
+
+  /**
+   * Get harvest buckets for a book
+   */
+  getHarvestBucketsForBook(bookUri: string): Record<string, unknown>[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM harvest_buckets WHERE book_uri = ? ORDER BY created_at DESC
+    `).all(bookUri) as Record<string, unknown>[];
+    return rows.map(row => this.parseHarvestBucketRow(row));
+  }
+
+  /**
+   * Get all harvest buckets
+   */
+  getAllHarvestBuckets(): Record<string, unknown>[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM harvest_buckets ORDER BY created_at DESC
+    `).all() as Record<string, unknown>[];
+    return rows.map(row => this.parseHarvestBucketRow(row));
+  }
+
+  /**
+   * Delete a harvest bucket
+   */
+  deleteHarvestBucket(id: string): void {
+    this.db.prepare('DELETE FROM harvest_buckets WHERE id = ?').run(id);
+  }
+
+  private parseHarvestBucketRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      bookId: row.book_id,
+      bookUri: row.book_uri,
+      status: row.status,
+      queries: row.queries ? JSON.parse(row.queries as string) : [],
+      candidates: row.candidates ? JSON.parse(row.candidates as string) : [],
+      approved: row.approved ? JSON.parse(row.approved as string) : [],
+      gems: row.gems ? JSON.parse(row.gems as string) : [],
+      rejected: row.rejected ? JSON.parse(row.rejected as string) : [],
+      duplicateIds: row.duplicate_ids ? JSON.parse(row.duplicate_ids as string) : [],
+      config: row.config ? JSON.parse(row.config as string) : {},
+      threadUri: row.thread_uri,
+      stats: row.stats ? JSON.parse(row.stats as string) : {},
+      initiatedBy: row.initiated_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      completedAt: row.completed_at,
+      finalizedAt: row.finalized_at,
+    };
+  }
+
+  // ===========================================================================
+  // Narrative Arc Operations
+  // ===========================================================================
+
+  /**
+   * Insert or update a narrative arc
+   */
+  upsertNarrativeArc(arc: {
+    id: string;
+    bookId: string;
+    bookUri: string;
+    thesis: string;
+    arcType?: string;
+    evaluationStatus?: string;
+    evaluationFeedback?: string;
+    evaluatedAt?: number;
+    proposedBy?: string;
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO narrative_arcs (
+        id, book_id, book_uri, thesis, arc_type, evaluation_status, evaluation_feedback,
+        evaluated_at, proposed_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        thesis = excluded.thesis,
+        arc_type = excluded.arc_type,
+        evaluation_status = excluded.evaluation_status,
+        evaluation_feedback = excluded.evaluation_feedback,
+        evaluated_at = excluded.evaluated_at,
+        updated_at = excluded.updated_at
+    `).run(
+      arc.id,
+      arc.bookId,
+      arc.bookUri,
+      arc.thesis,
+      arc.arcType ?? 'thematic',
+      arc.evaluationStatus ?? null,
+      arc.evaluationFeedback ?? null,
+      arc.evaluatedAt ?? null,
+      arc.proposedBy ?? null,
+      now,
+      now
+    );
+  }
+
+  /**
+   * Get a narrative arc by ID
+   */
+  getNarrativeArc(id: string): Record<string, unknown> | null {
+    const row = this.db.prepare(`
+      SELECT * FROM narrative_arcs WHERE id = ?
+    `).get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.parseNarrativeArcRow(row);
+  }
+
+  /**
+   * Get narrative arcs for a book
+   */
+  getNarrativeArcsForBook(bookUri: string): Record<string, unknown>[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM narrative_arcs WHERE book_uri = ? ORDER BY created_at DESC
+    `).all(bookUri) as Record<string, unknown>[];
+    return rows.map(row => this.parseNarrativeArcRow(row));
+  }
+
+  /**
+   * Delete a narrative arc
+   */
+  deleteNarrativeArc(id: string): void {
+    this.db.prepare('DELETE FROM narrative_arcs WHERE id = ?').run(id);
+  }
+
+  private parseNarrativeArcRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      bookId: row.book_id,
+      bookUri: row.book_uri,
+      thesis: row.thesis,
+      arcType: row.arc_type,
+      evaluation: row.evaluation_status ? {
+        status: row.evaluation_status,
+        feedback: row.evaluation_feedback,
+        evaluatedAt: row.evaluated_at,
+      } : null,
+      proposedBy: row.proposed_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ===========================================================================
+  // Passage Link Operations
+  // ===========================================================================
+
+  /**
+   * Insert or update a passage link
+   */
+  upsertPassageLink(link: {
+    id: string;
+    passageId: string;
+    chapterId: string;
+    position: number;
+    sectionId?: string;
+    usageType?: string;
+    createdBy?: string;
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO passage_links (
+        id, passage_id, chapter_id, position, section_id, usage_type, created_by, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        position = excluded.position,
+        section_id = excluded.section_id,
+        usage_type = excluded.usage_type
+    `).run(
+      link.id,
+      link.passageId,
+      link.chapterId,
+      link.position,
+      link.sectionId ?? null,
+      link.usageType ?? 'quote',
+      link.createdBy ?? 'user',
+      now
+    );
+  }
+
+  /**
+   * Get passage links for a chapter
+   */
+  getPassageLinksForChapter(chapterId: string): Record<string, unknown>[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM passage_links WHERE chapter_id = ? ORDER BY position
+    `).all(chapterId) as Record<string, unknown>[];
+    return rows.map(row => this.parsePassageLinkRow(row));
+  }
+
+  /**
+   * Get passage links for a passage
+   */
+  getPassageLinksForPassage(passageId: string): Record<string, unknown>[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM passage_links WHERE passage_id = ?
+    `).all(passageId) as Record<string, unknown>[];
+    return rows.map(row => this.parsePassageLinkRow(row));
+  }
+
+  /**
+   * Delete a passage link
+   */
+  deletePassageLink(id: string): void {
+    this.db.prepare('DELETE FROM passage_links WHERE id = ?').run(id);
+  }
+
+  private parsePassageLinkRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: row.id,
+      passageId: row.passage_id,
+      chapterId: row.chapter_id,
+      position: row.position,
+      sectionId: row.section_id,
+      usageType: row.usage_type,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
     };
   }
 

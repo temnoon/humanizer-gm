@@ -941,6 +941,87 @@ function registerXanaduHandlers() {
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // HARVEST BUCKET OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:harvest-bucket:list', (_e, bookUri?: string) => {
+    const db = ensureDb();
+    if (bookUri) {
+      return db.getHarvestBucketsForBook(bookUri);
+    }
+    return db.getAllHarvestBuckets();
+  });
+
+  ipcMain.handle('xanadu:harvest-bucket:get', (_e, id: string) => {
+    const db = ensureDb();
+    return db.getHarvestBucket(id);
+  });
+
+  ipcMain.handle('xanadu:harvest-bucket:upsert', (_e, bucket: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+    return { success: true, id: bucket.id };
+  });
+
+  ipcMain.handle('xanadu:harvest-bucket:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteHarvestBucket(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // NARRATIVE ARC OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:narrative-arc:list', (_e, bookUri: string) => {
+    const db = ensureDb();
+    return db.getNarrativeArcsForBook(bookUri);
+  });
+
+  ipcMain.handle('xanadu:narrative-arc:get', (_e, id: string) => {
+    const db = ensureDb();
+    return db.getNarrativeArc(id);
+  });
+
+  ipcMain.handle('xanadu:narrative-arc:upsert', (_e, arc: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertNarrativeArc(arc as Parameters<typeof db.upsertNarrativeArc>[0]);
+    return { success: true, id: arc.id };
+  });
+
+  ipcMain.handle('xanadu:narrative-arc:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deleteNarrativeArc(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // PASSAGE LINK OPERATIONS
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:passage-link:list-by-chapter', (_e, chapterId: string) => {
+    const db = ensureDb();
+    return db.getPassageLinksForChapter(chapterId);
+  });
+
+  ipcMain.handle('xanadu:passage-link:list-by-passage', (_e, passageId: string) => {
+    const db = ensureDb();
+    return db.getPassageLinksForPassage(passageId);
+  });
+
+  ipcMain.handle('xanadu:passage-link:upsert', (_e, link: Record<string, unknown>) => {
+    const db = ensureDb();
+    db.upsertPassageLink(link as Parameters<typeof db.upsertPassageLink>[0]);
+    return { success: true, id: link.id };
+  });
+
+  ipcMain.handle('xanadu:passage-link:delete', (_e, id: string) => {
+    const db = ensureDb();
+    db.deletePassageLink(id);
+    return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // SEED LIBRARY DATA (First Run)
   // ─────────────────────────────────────────────────────────────────
 
