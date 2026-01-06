@@ -13,6 +13,7 @@ import { useBuffers } from '../../lib/buffer/BufferContext';
 import { useAuthenticatedFetch } from '../../lib/auth';
 // useBook removed - consolidated into useBookshelf (Phase 4.2)
 import { useBookshelf, type BookProject as BookshelfBookProject } from '../../lib/bookshelf';
+import { usePromptDialog, PromptDialog } from '../dialogs/PromptDialog';
 import {
   type BookProject,
   type SourcePassage,
@@ -110,6 +111,9 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
   // Bookshelf context - unified storage for books, personas, styles
   // (BookContext removed - consolidated in Phase 4.2)
   const bookshelf = useBookshelf();
+
+  // Prompt dialog hook (window.prompt() not supported in Electron)
+  const { prompt, dialogProps } = usePromptDialog();
 
   // Convert bookshelf book to internal BookProject format
   // Note: Types don't fully align, so we cast through unknown where needed
@@ -239,34 +243,52 @@ Start writing here...
 
   // Create a new book project with persistence
   const handleNewProject = useCallback(async () => {
-    const name = window.prompt('Enter book project name:', 'My Book Project');
+    const name = await prompt('New Book Project', {
+      message: 'Enter a name for your book project:',
+      defaultValue: 'My Book Project',
+      placeholder: 'Book name...',
+    });
     if (!name || !name.trim()) return; // User cancelled or empty name
 
-    const subtitle = window.prompt('Enter subtitle (optional):', '') || undefined;
+    const subtitle = await prompt('Book Subtitle', {
+      message: 'Enter a subtitle (optional):',
+      defaultValue: '',
+      placeholder: 'Subtitle...',
+    }) || undefined;
 
     // Create via bookshelf (unified storage)
     const now = Date.now();
-    const project = await bookshelf.createBook({
-      id: `book-${now}-${Math.random().toString(36).slice(2, 8)}`,
-      name: name.trim(),
-      subtitle: subtitle?.trim(),
-      createdAt: now,
-      updatedAt: now,
-      tags: [],
-      bookType: 'book',
-      chapters: [],
-      passages: [],
-      threads: [],
-      sourceRefs: [],
-      personaRefs: [],
-      styleRefs: [],
-      stats: { totalSources: 0, totalPassages: 0, approvedPassages: 0, gems: 0, chapters: 0, wordCount: 0 },
-      status: 'drafting',
-    });
+    console.log('[BooksView.handleNewProject] Creating book:', name.trim());
 
-    setSelectedProjectId(project.id);
-    setViewMode('navigation');
-  }, [bookshelf]);
+    try {
+      const project = await bookshelf.createBook({
+        id: `book-${now}-${Math.random().toString(36).slice(2, 8)}`,
+        name: name.trim(),
+        subtitle: subtitle?.trim(),
+        createdAt: now,
+        updatedAt: now,
+        tags: [],
+        bookType: 'book',
+        chapters: [],
+        passages: [],
+        threads: [],
+        sourceRefs: [],
+        personaRefs: [],
+        styleRefs: [],
+        stats: { totalSources: 0, totalPassages: 0, approvedPassages: 0, gems: 0, chapters: 0, wordCount: 0 },
+        status: 'drafting',
+      });
+
+      console.log('[BooksView.handleNewProject] Book created:', project.id, project.uri);
+      console.log('[BooksView.handleNewProject] Current bookProjects count:', bookProjects.length);
+
+      setSelectedProjectId(project.id);
+      setViewMode('navigation');
+    } catch (err) {
+      console.error('[BooksView.handleNewProject] Error creating book:', err);
+      alert(`Failed to create book: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }, [bookshelf, prompt]);
 
   // Open book project in navigation view
   const handleOpenProject = useCallback((projectId: string) => {
@@ -408,7 +430,11 @@ Start writing here...
 
   // Create a new chapter
   const handleNewChapter = useCallback(async () => {
-    const title = window.prompt('Chapter title:');
+    const title = await prompt('New Chapter', {
+      message: 'Enter a title for the new chapter:',
+      defaultValue: '',
+      placeholder: 'Chapter title...',
+    });
     if (!title) return;
 
     // Create chapter via bookshelf (unified storage)
@@ -430,7 +456,7 @@ Start writing here...
         }, project);
       }
     }
-  }, [bookshelf, bookProjects, selectedProjectId, onSelectBookContent]);
+  }, [bookshelf, bookProjects, selectedProjectId, onSelectBookContent, prompt]);
 
   // Start a harvest for the current project - runs semantic search immediately
   const handleStartHarvest = useCallback(async () => {
@@ -599,6 +625,7 @@ Start writing here...
   // Navigation view for selected project
   if (viewMode === 'navigation' && selectedProject) {
     return (
+      <>
       <div className="book-nav">
         {/* Header */}
         <header className="book-nav__header">
@@ -867,6 +894,10 @@ Start writing here...
           )}
         </div>
       </div>
+
+      {/* Prompt dialog (window.prompt() not supported in Electron) */}
+      <PromptDialog {...dialogProps} />
+    </>
     );
   }
 
@@ -1024,6 +1055,9 @@ Start writing here...
           <span className="tool-panel__muted">Create your first book to get started</span>
         </div>
       )}
+
+      {/* Prompt dialog (window.prompt() not supported in Electron) */}
+      <PromptDialog {...dialogProps} />
     </div>
   );
 }

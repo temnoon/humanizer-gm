@@ -13,6 +13,21 @@ import { createReadStream, existsSync } from 'fs';
 import path from 'path';
 import { getArchiveRoot } from '../config';
 import { getConversationsFromIndex } from './archives';
+import { EmbeddingDatabase } from '../services/embeddings/EmbeddingDatabase';
+
+// Lazy-loaded database for conversation lookups by ID
+let embeddingDb: EmbeddingDatabase | null = null;
+function getEmbeddingDb(): EmbeddingDatabase | null {
+  if (!embeddingDb) {
+    try {
+      const archivePath = getArchiveRoot();
+      embeddingDb = new EmbeddingDatabase(archivePath);
+    } catch {
+      return null;
+    }
+  }
+  return embeddingDb;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // CONVERSATION PARSER
@@ -291,17 +306,39 @@ export function createConversationsRouter(): Router {
     }
   });
 
-  // Get single conversation
-  router.get('/:folder', async (req: Request, res: Response) => {
+  // Get single conversation (accepts folder name OR conversation UUID)
+  router.get('/:folderOrId', async (req: Request, res: Response) => {
     try {
-      const { folder } = req.params;
+      const { folderOrId } = req.params;
       const archiveRoot = getArchiveRoot();
-      const folderPath = path.join(archiveRoot, folder);
+      let folder = folderOrId;
+      let folderPath = path.join(archiveRoot, folder);
 
-      // Verify folder exists
+      // Try direct folder lookup first
+      let folderExists = false;
       try {
         await fs.access(folderPath);
+        folderExists = true;
       } catch {
+        // Folder doesn't exist directly - maybe it's a UUID?
+        // Try to look up the folder from the embeddings database
+        const db = getEmbeddingDb();
+        if (db) {
+          const conv = db.getConversation(folderOrId);
+          if (conv?.folder) {
+            folder = conv.folder;
+            folderPath = path.join(archiveRoot, folder);
+            try {
+              await fs.access(folderPath);
+              folderExists = true;
+            } catch {
+              // Folder from DB also doesn't exist
+            }
+          }
+        }
+      }
+
+      if (!folderExists) {
         res.status(404).json({ error: 'Conversation not found' });
         return;
       }

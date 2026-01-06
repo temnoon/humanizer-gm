@@ -28,7 +28,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 11;  // Added harvest_buckets, narrative_arcs tables (HarvestBucketService → Xanadu)
+const SCHEMA_VERSION = 12;  // Added book_type column to books table
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 /**
@@ -2058,6 +2058,22 @@ export class EmbeddingDatabase {
       `);
 
       console.log('[migration] Completed harvest bucket tables migration');
+    }
+
+    // Migration from version 11 to 12: add book_type column to books table
+    if (fromVersion < 12) {
+      // Check if column already exists (in case of partial migration)
+      const tableInfo = this.db.prepare("PRAGMA table_info(books)").all() as { name: string }[];
+      const hasBookType = tableInfo.some(col => col.name === 'book_type');
+
+      if (!hasBookType) {
+        this.db.exec(`
+          ALTER TABLE books ADD COLUMN book_type TEXT DEFAULT 'book';
+        `);
+        console.log('[migration] Added book_type column to books table');
+      } else {
+        console.log('[migration] book_type column already exists');
+      }
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);

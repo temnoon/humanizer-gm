@@ -177,6 +177,7 @@ export interface SearchResult {
   similarity: number;
   metadata: Record<string, unknown>;
   conversationId: string;
+  conversationFolder?: string;  // Folder name for API calls (different from UUID id)
   conversationTitle?: string;
   messageRole?: string;
 }

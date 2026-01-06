@@ -401,6 +401,9 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   }, [books, personas, styles]);
 
   const createBook = useCallback(async (book: Omit<BookProject, 'uri' | 'type'>) => {
+    console.log('[Bookshelf.createBook] Starting book creation:', book.name);
+    console.log('[Bookshelf.createBook] isXanaduAvailable:', isXanaduAvailable());
+
     const uri = generateURI('book', book.author || 'user', book.name);
     const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -413,29 +416,40 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       updatedAt: Date.now(),
     };
 
+    console.log('[Bookshelf.createBook] Generated URI:', uri, 'ID:', id);
+
     if (isXanaduAvailable()) {
-      await window.electronAPI!.xanadu.books.upsert({
-        id,
-        uri,
-        name: book.name,
-        subtitle: book.subtitle,
-        author: book.author,
-        description: book.description,
-        status: (book.status || 'harvesting') as 'harvesting' | 'drafting' | 'revising' | 'mastering' | 'complete',
-        bookType: book.bookType as 'book' | 'paper' | undefined,
-        personaRefs: book.personaRefs,
-        styleRefs: book.styleRefs,
-        sourceRefs: book.sourceRefs,
-        threads: book.threads,
-        harvestConfig: book.harvestConfig,
-        editorial: book.editorial,
-        thinking: book.thinking,
-        stats: book.stats,
-        profile: book.profile,
-        tags: book.tags,
-      });
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
+      console.log('[Bookshelf.createBook] Using Xanadu storage');
+      try {
+        await window.electronAPI!.xanadu.books.upsert({
+          id,
+          uri,
+          name: book.name,
+          subtitle: book.subtitle,
+          author: book.author,
+          description: book.description,
+          status: (book.status || 'harvesting') as 'harvesting' | 'drafting' | 'revising' | 'mastering' | 'complete',
+          bookType: book.bookType as 'book' | 'paper' | undefined,
+          personaRefs: book.personaRefs,
+          styleRefs: book.styleRefs,
+          sourceRefs: book.sourceRefs,
+          threads: book.threads,
+          harvestConfig: book.harvestConfig,
+          editorial: book.editorial,
+          thinking: book.thinking,
+          stats: book.stats,
+          profile: book.profile,
+          tags: book.tags,
+        });
+        console.log('[Bookshelf.createBook] Upsert complete');
+
+        const xBooks = await window.electronAPI!.xanadu.books.list(true);
+        console.log('[Bookshelf.createBook] Fetched books count:', xBooks?.length);
+        setBooks(xBooks as unknown as BookProject[]);
+      } catch (err) {
+        console.error('[Bookshelf.createBook] Xanadu error:', err);
+        throw err;
+      }
     } else if (import.meta.env.DEV) {
       console.warn('[DEV] Using localStorage fallback for createBook');
       bookshelfService.createBook(book);
