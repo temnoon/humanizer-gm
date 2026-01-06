@@ -188,19 +188,33 @@ USE_TOOL(apply_persona, {"persona": "xxx", "text": "..."})
 
 ## Critical Gaps Identified
 
-### 1. No SIC Integration in Harvest
+### 1. FIXED: Harvest Returning Short Snippets ⚠️ → ✅
+**Problem**: GUI harvest wasn't filtering by `role='assistant'`, so it returned user navigation messages like "Language and Beyond" (3 words) instead of substantive AI responses.
+
+**Root Cause** (BooksView.tsx:502):
+```javascript
+// WAS: body: JSON.stringify({ query, limit: 20 })
+// NOW: body: JSON.stringify({ query, limit: 40, role: 'assistant' })
+```
+
+**Fix Applied**:
+1. Added `role: 'assistant'` filter to search API call
+2. Added minimum 50-word threshold before adding to harvest bucket
+3. Increased limit to 40 to account for filtering
+
+### 2. No SIC Integration in Harvest
 **Current**: Passages ranked only by embedding similarity
 **Needed**: Quantum analysis scores (purity, entropy, tetralemma) to identify load-bearing sentences
 
-### 2. No Auto-Curate Flow
+### 3. No Auto-Curate Flow
 **Current**: Manual approve/reject for each of 40+ candidates
 **Needed**: `auto_curate(threshold=0.6)` to bulk-approve high-quality
 
-### 3. Persona Not in Draft Generation
+### 4. Persona Not in Draft Generation
 **Current**: `generate_first_draft` has optional `style` param
 **Needed**: Proper persona injection from extracted notebook persona
 
-### 4. MCP vs AUI Tool Mismatch
+### 5. MCP vs AUI Tool Mismatch
 **MCP BookBuilder**: create_book, add_chapter, add_section, add_page
 **humanizer-gm AUI**: create_book, generate_first_draft, add_passage
 **Different models** - not compatible

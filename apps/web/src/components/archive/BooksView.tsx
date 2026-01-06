@@ -499,17 +499,25 @@ Start writing here...
           const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, limit: 20 }),
+            // Filter to assistant messages only for substantive content
+            body: JSON.stringify({ query, limit: 40, role: 'assistant' }),
           });
 
           if (response.ok) {
             const data = await response.json();
             if (data.results && data.results.length > 0) {
               for (const result of data.results) {
+                // Skip content that's too short (less than 50 words)
+                const wordCount = result.content?.split(/\s+/).length || 0;
+                if (wordCount < 50) {
+                  console.log(`[BooksView] Skipping short content (${wordCount} words):`, result.content?.slice(0, 50));
+                  continue;
+                }
+
                 const passage = {
                   id: result.id || `harvest-${Date.now()}-${Math.random().toString(36).slice(2)}`,
                   text: result.content,
-                  wordCount: result.content?.split(/\s+/).length || 0,
+                  wordCount,
                   similarity: result.similarity,
                   timestamp: Date.now(),
                   sourceRef: {
