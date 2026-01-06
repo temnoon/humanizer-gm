@@ -224,4 +224,21 @@ throw new Error('Production requires X');
 
 ---
 
+## Best Practice: End of Context Protocol
+
+**Always store a ChromaDB memory summary before compacting context.**
+
+```typescript
+// Use mcp__chromadb-memory__store_memory with:
+// - Comprehensive session summary
+// - Tags: "handoff,session-summary,<date>,<topic>"
+// - Type: "session-handoff"
+```
+
+This preserves session context for future retrieval and maintains continuity across conversations.
+
+**Memory stored this session**: `42de168b...` (tags: handoff, house-council, fallback-policy, xanadu-migration)
+
+---
+
 **End of Handoff**
