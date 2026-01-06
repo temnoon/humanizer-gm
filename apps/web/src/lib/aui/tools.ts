@@ -967,43 +967,27 @@ async function executeSearchArchive(
     });
 
     if (!response.ok) {
-      // Fallback to text search if embeddings not available
-      const fallbackResponse = await fetch(
-        `${archiveServer}/api/conversations?search=${encodeURIComponent(query)}&limit=${limit}`
-      );
+      // NO SILENT FALLBACK - User must be informed when semantic search fails
+      // Text search only returns conversation metadata (titles), not message content
+      // Using text results for harvest would corrupt the book with empty passages
+      const statusCode = response.status;
+      const statusText = response.statusText;
 
-      if (fallbackResponse.ok) {
-        const data = await fallbackResponse.json();
-        const textResults = (data.conversations || []).slice(0, limit).map((c: { id: string; title: string; folder: string; message_count: number; created_at: number }) => ({
-          id: c.id,
-          conversationId: c.id,
-          title: c.title,
-          folder: c.folder,
-          messageCount: c.message_count,
-          created: c.created_at,
-        }));
-
-        // GUI Bridge: Dispatch text search results
-        dispatchSearchResults({
-          results: textResults,
-          query: query,
-          searchType: 'text',
-          total: textResults.length,
-        }, 'search_archive');
-
-        dispatchOpenPanel('archives', 'explore');
-
-        return {
-          success: true,
-          message: `Found ${data.conversations?.length || 0} conversations (text search)`,
-          data: {
-            results: textResults,
-            searchType: 'text',
-          },
-        };
-      }
-
-      return { success: false, error: 'Archive search failed' };
+      return {
+        success: false,
+        error: `Semantic search failed (${statusCode}). Embeddings may not be built yet.`,
+        teaching: {
+          whatHappened: `The archive search API returned an error (HTTP ${statusCode}: ${statusText}). This usually means embeddings have not been built for your archive.`,
+          guiPath: [
+            'Open the Archive panel (left side)',
+            'Click the "Explore" tab',
+            'Look for the "Build Embeddings" button',
+            'Click it and wait for the process to complete',
+            'Then try your search again',
+          ],
+          why: 'Semantic search finds content by meaning, not just keywords. It requires embeddings (vector representations of your messages) to be built first. This is a one-time process that takes a few minutes.',
+        },
+      };
     }
 
     const data = await response.json();
@@ -1014,12 +998,23 @@ async function executeSearchArchive(
       .slice(0, limit);
 
     const resultCount = filteredResults.length;
-    const mappedResults = filteredResults.map((r: { message_id: string; conversation_id: string; content: string; similarity: number; role: string }) => ({
-      messageId: r.message_id,
-      conversationId: r.conversation_id,
-      content: r.content?.slice(0, 200),
+    // Map to SearchResultsPayload format - API returns camelCase fields
+    const mappedResults = filteredResults.map((r: {
+      id: string;
+      conversationId: string;
+      conversationFolder?: string;
+      conversationTitle?: string;
+      content: string;
+      similarity: number;
+      messageRole?: string;
+    }) => ({
+      id: r.id,
+      messageId: r.id,
+      conversationId: r.conversationId,
+      content: r.content,  // Full content - don't truncate for harvest
       similarity: r.similarity,
-      role: r.role,
+      role: r.messageRole || 'assistant',
+      title: r.conversationTitle,
     }));
 
     // GUI Bridge: Dispatch results to Archive pane (Show Don't Tell)
@@ -3089,18 +3084,40 @@ async function executeHarvestArchive(
 
     // Add each result as a passage to the book
     const addedPassages: Array<{ id: string; content: string; similarity: number }> = [];
+    const skippedPassages: Array<{ reason: string; conversationTitle?: string }> = [];
 
+    // API returns camelCase fields (conversationId, conversationTitle, messageRole)
     for (const result of results as Array<{
       content: string;
-      conversation_id: string;
-      role: string;
+      conversationId: string;
+      conversationTitle?: string;
+      messageRole?: string;
       similarity: number;
     }>) {
+      // DEBT-002 FIX: Validate content before saving to prevent corrupted passages
+      if (!result.content) {
+        skippedPassages.push({ reason: 'Missing content', conversationTitle: result.conversationTitle });
+        continue;
+      }
+
+      // Check for placeholder/degraded content patterns
+      if (result.content.startsWith('[Conversation:') || result.content.includes('Use semantic search for full')) {
+        skippedPassages.push({ reason: 'Placeholder content detected', conversationTitle: result.conversationTitle });
+        continue;
+      }
+
+      // Minimum content threshold (at least 10 words)
+      const wordCount = result.content.split(/\s+/).length;
+      if (wordCount < 10) {
+        skippedPassages.push({ reason: `Content too short (${wordCount} words)`, conversationTitle: result.conversationTitle });
+        continue;
+      }
+
       const passage = context.addPassage({
         content: result.content,
-        conversationId: result.conversation_id,
-        conversationTitle: `Harvested: ${query}`,
-        role: (result.role as 'user' | 'assistant') || 'assistant',
+        conversationId: result.conversationId,
+        conversationTitle: result.conversationTitle || `Harvested: ${query}`,
+        role: (result.messageRole as 'user' | 'assistant') || 'assistant',
         tags: ['harvested', query.split(' ')[0]],
       });
 
@@ -3113,23 +3130,40 @@ async function executeHarvestArchive(
       }
     }
 
+    // Report any skipped passages to user
+    if (skippedPassages.length > 0) {
+      console.warn('[harvest_archive] Skipped passages due to validation:', skippedPassages);
+    }
+
+    // Build informative message including any skipped passages
+    const skippedInfo = skippedPassages.length > 0
+      ? ` (${skippedPassages.length} skipped due to validation)`
+      : '';
+
     return {
-      success: true,
-      message: `Harvested ${addedPassages.length} passages for "${query}"`,
+      success: addedPassages.length > 0,
+      message: addedPassages.length > 0
+        ? `Harvested ${addedPassages.length} passages for "${query}"${skippedInfo}`
+        : `No valid passages found for "${query}". ${results.length} results were skipped due to content validation.`,
       data: {
         harvested: addedPassages.length,
         passages: addedPassages,
+        skipped: skippedPassages,
         query,
         minSimilarity,
       },
       teaching: {
-        whatHappened: `Found ${results.length} semantically relevant passages and added ${addedPassages.length} to your bookshelf`,
+        whatHappened: addedPassages.length > 0
+          ? `Found ${results.length} semantically relevant passages, validated content, and added ${addedPassages.length} to your bookshelf${skippedInfo}`
+          : `Search returned ${results.length} results, but none passed content validation. This may indicate an issue with embeddings or data quality.`,
         guiPath: [
           'Archive Panel → Explore Tab → Semantic Search',
           'Select passages you want',
           'Click "Add to Bookshelf"',
         ],
-        why: 'Harvesting brings relevant content from your archive into your book project for curation.',
+        why: addedPassages.length > 0
+          ? 'Harvesting brings relevant content from your archive into your book project for curation.'
+          : 'Content validation ensures only meaningful passages are added to your book. Check that embeddings are built and try different search terms.',
       },
     };
   } catch (e) {

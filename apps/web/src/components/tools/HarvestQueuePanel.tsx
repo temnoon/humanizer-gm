@@ -59,6 +59,7 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
   const [isExpanded, setIsExpanded] = useState(false);
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [loadingContent, setLoadingContent] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);  // DEBT-003 FIX: Track errors
   const status = passage.curation?.status || 'candidate';
   const text = passage.text || '';
   const conversationId = passage.sourceRef?.conversationId;
@@ -73,6 +74,7 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
   // Load full conversation content on expand
   const handleToggleExpand = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setLoadError(null);  // Clear any previous error
 
     // Use conversationFolder for API calls (folder name), fall back to conversationId
     const folderOrId = conversationFolder || conversationId;
@@ -95,10 +97,18 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
               )
               .join('\n\n---\n\n');
             setFullContent(fullText);
+          } else {
+            // DEBT-003 FIX: Show error when no messages found
+            setLoadError('Conversation has no messages. The indexed text shown above may be all that is available.');
           }
+        } else {
+          // DEBT-003 FIX: Show HTTP error to user
+          setLoadError(`Failed to load conversation (HTTP ${response.status}). The indexed text shown above may be all that is available.`);
         }
       } catch (err) {
+        // DEBT-003 FIX: Show error to user instead of just logging
         console.warn('[PassageCard] Failed to load full content:', err);
+        setLoadError(`Error loading conversation: ${err instanceof Error ? err.message : 'Unknown error'}. The indexed text shown above may be all that is available.`);
       } finally {
         setLoadingContent(false);
       }
@@ -164,6 +174,12 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
           >
             {loadingContent ? '⏳ Loading full conversation...' : isExpanded ? '▲ Show less' : '▼ Load full conversation'}
           </button>
+        )}
+        {/* DEBT-003 FIX: Show load errors to user */}
+        {loadError && (
+          <div className="harvest-card__error" role="alert">
+            ⚠️ {loadError}
+          </div>
         )}
         <div className="harvest-card__meta">
           {passage.wordCount} words
