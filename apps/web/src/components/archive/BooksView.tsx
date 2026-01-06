@@ -507,9 +507,9 @@ Start writing here...
             const data = await response.json();
             if (data.results && data.results.length > 0) {
               for (const result of data.results) {
-                // Skip content that's too short (less than 50 words)
+                // Skip content that's too short (less than 20 words)
                 const wordCount = result.content?.split(/\s+/).length || 0;
-                if (wordCount < 50) {
+                if (wordCount < 20) {
                   console.log(`[BooksView] Skipping short content (${wordCount} words):`, result.content?.slice(0, 50));
                   continue;
                 }
