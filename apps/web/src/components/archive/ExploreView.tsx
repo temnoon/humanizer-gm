@@ -34,6 +34,14 @@ interface ExploreViewProps {
   onSelectResult?: (result: SearchResult) => void;
 }
 
+// Content types for filtering (Phase 5)
+const CONTENT_TYPES = [
+  { id: 'prose', label: 'Prose', icon: '📝' },
+  { id: 'code', label: 'Code', icon: '💻' },
+  { id: 'math', label: 'Math', icon: '📐' },
+  { id: 'table', label: 'Tables', icon: '📊' },
+] as const;
+
 export function ExploreView({ onSelectResult }: ExploreViewProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -42,6 +50,8 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
   const [hasSearched, setHasSearched] = useState(false);
   const [fromAUI, setFromAUI] = useState(false);
   const [savedToHarvest, setSavedToHarvest] = useState(false);
+  const [useChunkSearch, setUseChunkSearch] = useState(false);
+  const [contentFilters, setContentFilters] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Archive health check - detect missing embeddings
@@ -130,7 +140,7 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
     }
   };
 
-  const search = useCallback(async (searchQuery: string) => {
+  const search = useCallback(async (searchQuery: string, filters: string[] = []) => {
     if (!searchQuery.trim()) {
       setResults([]);
       setHasSearched(false);
@@ -143,12 +153,19 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
 
     try {
       const archiveServer = await getArchiveServerUrl();
-      const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+
+      // Use chunk search if filters active or explicitly enabled
+      const endpoint = (useChunkSearch || filters.length > 0)
+        ? '/api/embeddings/search/chunks'
+        : '/api/embeddings/search/messages';
+
+      const response = await fetch(`${archiveServer}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: searchQuery,
           limit: 20,
+          contentTypes: filters.length > 0 ? filters : undefined,
         }),
       });
 
@@ -164,7 +181,7 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [useChunkSearch]);
 
   // Listen for explore-search events from Find Similar button
   useEffect(() => {
@@ -189,7 +206,7 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
 
     if (query.trim()) {
       debounceRef.current = setTimeout(() => {
-        search(query);
+        search(query, contentFilters);
       }, 300);
     } else {
       setResults([]);
@@ -201,7 +218,16 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, search]);
+  }, [query, search, contentFilters]);
+
+  // Toggle content type filter
+  const toggleFilter = (typeId: string) => {
+    setContentFilters(prev =>
+      prev.includes(typeId)
+        ? prev.filter(t => t !== typeId)
+        : [...prev, typeId]
+    );
+  };
 
   const getScoreClass = (score: number): string => {
     if (score >= 0.7) return 'explore-result__score--high';
@@ -232,6 +258,31 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
           <span className="explore-search__aui-badge" title="Results from AUI assistant">
             ✦ AUI
           </span>
+        )}
+      </div>
+
+      {/* Content type filters (Phase 5) */}
+      <div className="explore-filters">
+        <span className="explore-filters__label">Filter by type:</span>
+        {CONTENT_TYPES.map(type => (
+          <button
+            key={type.id}
+            className={`explore-filters__chip ${contentFilters.includes(type.id) ? 'explore-filters__chip--active' : ''}`}
+            onClick={() => toggleFilter(type.id)}
+            title={`Filter to ${type.label} content`}
+          >
+            <span className="explore-filters__chip-icon">{type.icon}</span>
+            <span className="explore-filters__chip-label">{type.label}</span>
+          </button>
+        ))}
+        {contentFilters.length > 0 && (
+          <button
+            className="explore-filters__clear"
+            onClick={() => setContentFilters([])}
+            title="Clear all filters"
+          >
+            ✕
+          </button>
         )}
       </div>
 

@@ -345,6 +345,44 @@ export function createEmbeddingsRouter(): Router {
     }
   });
 
+  // Search pyramid chunks with content-type filtering (Phase 5)
+  router.post('/search/chunks', async (req: Request, res: Response) => {
+    try {
+      const { query, limit = 20, contentTypes } = req.body;
+
+      if (!query) {
+        res.status(400).json({ error: 'query required' });
+        return;
+      }
+
+      // Initialize embedding model if needed
+      if (!embeddingModule.isInitialized()) {
+        await embeddingModule.initializeEmbedding();
+      }
+
+      // Generate query embedding
+      const queryEmbedding = await embeddingModule.embed(query);
+
+      // Search pyramid chunks with optional content type filter
+      const db = getEmbeddingDb();
+      const results = db.searchPyramidChunks(
+        queryEmbedding,
+        limit,
+        contentTypes // array like ['code', 'math'] or undefined for all
+      );
+
+      res.json({
+        query,
+        results,
+        total: results.length,
+        contentTypes: contentTypes || ['all'],
+      });
+    } catch (err) {
+      console.error('[embeddings] Chunk search error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // ─────────────────────────────────────────────────────────────────
   // CLUSTERING
   // ─────────────────────────────────────────────────────────────────

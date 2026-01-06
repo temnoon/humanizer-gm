@@ -2208,6 +2208,69 @@ export class EmbeddingDatabase {
     }));
   }
 
+  /**
+   * Search pyramid chunks with optional content-type filtering
+   * Returns chunks ranked by similarity to the query embedding
+   */
+  searchPyramidChunks(
+    queryEmbedding: number[],
+    limit: number = 20,
+    contentTypes?: string[]
+  ): Array<{
+    id: string;
+    threadId: string;
+    content: string;
+    contentType: string;
+    language?: string;
+    similarity: number;
+  }> {
+    if (!this.vecLoaded) {
+      console.warn('[EmbeddingDatabase] Vector search not available');
+      return [];
+    }
+
+    // Join with pyramid_chunks to get content and filter by type
+    let sql = `
+      SELECT
+        v.id,
+        v.thread_id,
+        p.content,
+        p.content_type,
+        p.language,
+        1 - vec_distance_cosine(v.embedding, ?) as similarity
+      FROM vec_pyramid_chunks v
+      JOIN pyramid_chunks p ON v.id = p.id
+    `;
+
+    const params: unknown[] = [new Float32Array(queryEmbedding)];
+
+    // Add content type filter if specified
+    if (contentTypes && contentTypes.length > 0) {
+      const placeholders = contentTypes.map(() => '?').join(', ');
+      sql += ` WHERE p.content_type IN (${placeholders})`;
+      params.push(...contentTypes);
+    }
+
+    sql += ` ORDER BY similarity DESC LIMIT ?`;
+    params.push(limit);
+
+    try {
+      const rows = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+
+      return rows.map(row => ({
+        id: row.id as string,
+        threadId: row.thread_id as string,
+        content: row.content as string,
+        contentType: row.content_type as string,
+        language: row.language as string | undefined,
+        similarity: row.similarity as number,
+      }));
+    } catch (err) {
+      console.error('[EmbeddingDatabase] Pyramid chunk search error:', err);
+      return [];
+    }
+  }
+
   updateChunkEmbeddingId(id: string, embeddingId: string): void {
     this.db.prepare('UPDATE chunks SET embedding_id = ? WHERE id = ?').run(embeddingId, id);
   }

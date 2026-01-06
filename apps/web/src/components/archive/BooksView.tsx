@@ -132,22 +132,22 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
       updatedAt: bsBook.updatedAt,
       status: mapStatus(bsBook.status),
       sources: {
-        conversations: bsBook.sourceRefs.map((ref) => ({
+        conversations: (bsBook.sourceRefs || []).map((ref) => ({
           id: ref.uri,
           title: ref.label || ref.uri,
           source: 'archive',
           addedAt: bsBook.createdAt,
           status: 'active',
         })),
-        passages: bsBook.passages.map(p => ({
+        passages: (bsBook.passages || []).map(p => ({
           id: p.id,
-          conversationId: p.sourceRef.uri,
+          conversationId: p.sourceRef?.uri || '',
           text: p.text,
-          source: p.sourceRef.label || 'Unknown',
-          timestamp: p.curation.curatedAt || Date.now(),
-          status: p.curation.status,
+          source: p.sourceRef?.label || 'Unknown',
+          timestamp: p.curation?.curatedAt || Date.now(),
+          status: p.curation?.status || 'pending',
         })),
-        threads: bsBook.threads.map(t => ({
+        threads: (bsBook.threads || []).map(t => ({
           id: t.id,
           name: t.name,
           color: t.color,
@@ -157,26 +157,26 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
       thinking: {
         decisions: [],
         context: {
-          recentQueries: bsBook.threads.flatMap(t => t.queries),
+          recentQueries: (bsBook.threads || []).flatMap(t => t.queries || []),
           pinnedConcepts: bsBook.editorial?.principles || [],
           auiNotes: [],
         },
       },
       drafts: {
-        chapters: bsBook.chapters as unknown as DraftChapter[],
+        chapters: (bsBook.chapters || []) as unknown as DraftChapter[],
       },
       stats: {
-        totalConversations: bsBook.stats.totalSources,
-        totalPassages: bsBook.stats.totalPassages,
-        approvedPassages: bsBook.stats.approvedPassages,
-        gems: bsBook.stats.gems,
-        chapters: bsBook.stats.chapters,
-        wordCount: bsBook.stats.wordCount,
+        totalConversations: bsBook.stats?.totalSources || 0,
+        totalPassages: bsBook.stats?.totalPassages || 0,
+        approvedPassages: bsBook.stats?.approvedPassages || 0,
+        gems: bsBook.stats?.gems || 0,
+        chapters: bsBook.stats?.chapters || 0,
+        wordCount: bsBook.stats?.wordCount || 0,
       },
       // Library metadata
       _isLibrary: true,
-      _personaRefs: bsBook.personaRefs,
-      _styleRefs: bsBook.styleRefs,
+      _personaRefs: bsBook.personaRefs || [],
+      _styleRefs: bsBook.styleRefs || [],
     } as unknown as BookProject;
 
     return converted;
