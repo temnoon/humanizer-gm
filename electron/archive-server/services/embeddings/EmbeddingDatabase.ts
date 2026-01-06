@@ -2081,6 +2081,133 @@ export class EmbeddingDatabase {
     return rows.map(this.rowToChunk);
   }
 
+  // ===========================================================================
+  // Pyramid Chunk Operations (Content-Type Aware)
+  // ===========================================================================
+
+  /**
+   * Insert a content-type aware chunk into pyramid_chunks
+   * Phase 5: Stores content_type, language, and context metadata
+   */
+  insertPyramidChunk(chunk: {
+    id: string;
+    threadId: string;
+    threadType: string;
+    chunkIndex: number;
+    content: string;
+    wordCount: number;
+    startOffset?: number;
+    endOffset?: number;
+    boundaryType?: string;
+    contentType?: string;
+    language?: string;
+    contextBefore?: string;
+    contextAfter?: string;
+    linkedChunkIds?: string[];
+  }): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO pyramid_chunks
+      (id, thread_id, thread_type, chunk_index, content, word_count,
+       start_offset, end_offset, boundary_type, created_at,
+       content_type, language, context_before, context_after, linked_chunk_ids)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      chunk.id,
+      chunk.threadId,
+      chunk.threadType,
+      chunk.chunkIndex,
+      chunk.content,
+      chunk.wordCount,
+      chunk.startOffset ?? null,
+      chunk.endOffset ?? null,
+      chunk.boundaryType ?? null,
+      Date.now(),
+      chunk.contentType ?? null,
+      chunk.language ?? null,
+      chunk.contextBefore ?? null,
+      chunk.contextAfter ?? null,
+      chunk.linkedChunkIds ? JSON.stringify(chunk.linkedChunkIds) : null
+    );
+  }
+
+  /**
+   * Batch insert pyramid chunks (for performance)
+   */
+  insertPyramidChunksBatch(chunks: Array<{
+    id: string;
+    threadId: string;
+    threadType: string;
+    chunkIndex: number;
+    content: string;
+    wordCount: number;
+    startOffset?: number;
+    endOffset?: number;
+    boundaryType?: string;
+    contentType?: string;
+    language?: string;
+    contextBefore?: string;
+    contextAfter?: string;
+    linkedChunkIds?: string[];
+  }>): void {
+    const insert = this.db.prepare(`
+      INSERT OR REPLACE INTO pyramid_chunks
+      (id, thread_id, thread_type, chunk_index, content, word_count,
+       start_offset, end_offset, boundary_type, created_at,
+       content_type, language, context_before, context_after, linked_chunk_ids)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertMany = this.db.transaction((items: typeof chunks) => {
+      const now = Date.now();
+      for (const chunk of items) {
+        insert.run(
+          chunk.id,
+          chunk.threadId,
+          chunk.threadType,
+          chunk.chunkIndex,
+          chunk.content,
+          chunk.wordCount,
+          chunk.startOffset ?? null,
+          chunk.endOffset ?? null,
+          chunk.boundaryType ?? null,
+          now,
+          chunk.contentType ?? null,
+          chunk.language ?? null,
+          chunk.contextBefore ?? null,
+          chunk.contextAfter ?? null,
+          chunk.linkedChunkIds ? JSON.stringify(chunk.linkedChunkIds) : null
+        );
+      }
+    });
+
+    insertMany(chunks);
+  }
+
+  /**
+   * Get pyramid chunks by content type
+   */
+  getPyramidChunksByContentType(contentType: string): Array<{
+    id: string;
+    threadId: string;
+    content: string;
+    contentType: string;
+    language?: string;
+  }> {
+    const rows = this.db.prepare(`
+      SELECT id, thread_id, content, content_type, language
+      FROM pyramid_chunks
+      WHERE content_type = ?
+    `).all(contentType) as Array<Record<string, unknown>>;
+
+    return rows.map(row => ({
+      id: row.id as string,
+      threadId: row.thread_id as string,
+      content: row.content as string,
+      contentType: row.content_type as string,
+      language: row.language as string | undefined,
+    }));
+  }
+
   updateChunkEmbeddingId(id: string, embeddingId: string): void {
     this.db.prepare('UPDATE chunks SET embedding_id = ? WHERE id = ?').run(embeddingId, id);
   }

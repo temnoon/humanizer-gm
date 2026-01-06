@@ -85,7 +85,7 @@ export function createEmbeddingsRouter(): Router {
         return;
       }
 
-      const { includeParagraphs = false, includeSentences = false, batchSize = 32 } = req.body || {};
+      const { includeParagraphs = false, includeSentences = false, useContentAwareChunking = false, batchSize = 32 } = req.body || {};
 
       const archivePath = getArchiveRoot();
       const indexer = getOrCreateIndexer();
@@ -110,6 +110,7 @@ export function createEmbeddingsRouter(): Router {
       const options: IndexingOptions = {
         includeParagraphs,
         includeSentences,
+        useContentAwareChunking,
         batchSize,
         onProgress: (progress) => {
           indexingProgress = progress;

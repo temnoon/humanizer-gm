@@ -294,7 +294,7 @@ export class ArchiveIndexer {
 
       const chunkId = generateChunkId(message.id, chunk.contentType, i);
 
-      // Store chunk in SQLite with content type
+      // Store chunk in legacy chunks table (for backwards compatibility)
       const chunkData: Omit<Chunk, 'embeddingId'> = {
         id: chunkId,
         messageId: message.id,
@@ -305,10 +305,22 @@ export class ArchiveIndexer {
       };
       this.db.insertChunk(chunkData);
 
-      // TODO: Store enhanced chunk metadata when EmbeddingDatabase supports it
-      // (content_type, language, context columns already exist in pyramid_chunks table)
-      // For now, contentType is embedded in the chunk ID via generateChunkId()
-      // Future: this.db.insertEnhancedChunkMetadata(chunkId, chunk.contentType, chunk.language, ...);
+      // Phase 5: Store enhanced chunk metadata in pyramid_chunks
+      this.db.insertPyramidChunk({
+        id: chunkId,
+        threadId: conversationId,
+        threadType: 'conversation',
+        chunkIndex: i,
+        content: chunk.content,
+        wordCount: chunk.wordCount,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+        boundaryType: chunk.contentType, // For legacy compatibility
+        contentType: chunk.contentType,
+        language: chunk.language,
+        contextBefore: chunk.contextBefore,
+        contextAfter: chunk.contextAfter,
+      });
 
       // Generate and store embedding
       const embedding = await embed(chunk.content);
