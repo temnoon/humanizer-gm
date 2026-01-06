@@ -230,13 +230,15 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         setPersonas(xPersonas as unknown as Persona[]);
         setStyles(xStyles as unknown as Style[]);
         setBooks(xBooks as unknown as BookProject[]);
-      } else {
-        // Fallback to localStorage
-        console.log('[Bookshelf] Using localStorage (fallback mode)');
+      } else if (import.meta.env.DEV) {
+        // DEV fallback to localStorage
+        console.warn('[Bookshelf] [DEV] Using localStorage fallback');
         await bookshelfService.initialize();
         setPersonas(bookshelfService.getAllPersonas());
         setStyles(bookshelfService.getAllStyles());
         setBooks(bookshelfService.getAllBooks());
+      } else {
+        throw new Error('Xanadu storage unavailable. Run in Electron app.');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load bookshelf');
@@ -258,8 +260,10 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     if (isXanaduAvailable()) {
       // Find in state (already loaded from Xanadu)
       return personas.find(p => p.uri === uri);
+    } else if (import.meta.env.DEV) {
+      return bookshelfService.getPersona(uri);
     }
-    return bookshelfService.getPersona(uri);
+    return undefined;
   }, [personas]);
 
   const createPersona = useCallback(async (persona: Omit<Persona, 'uri' | 'type'>) => {
@@ -293,9 +297,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       // Reload to get updated list
       const xPersonas = await window.electronAPI!.xanadu.personas.list(true);
       setPersonas(xPersonas as unknown as Persona[]);
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for createPersona');
       bookshelfService.createPersona(persona);
       setPersonas(bookshelfService.getAllPersonas());
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
 
     return full;
@@ -308,8 +315,10 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   const getStyle = useCallback((uri: EntityURI) => {
     if (isXanaduAvailable()) {
       return styles.find(s => s.uri === uri);
+    } else if (import.meta.env.DEV) {
+      return bookshelfService.getStyle(uri);
     }
-    return bookshelfService.getStyle(uri);
+    return undefined;
   }, [styles]);
 
   const createStyle = useCallback(async (style: Omit<Style, 'uri' | 'type'>) => {
@@ -340,9 +349,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       });
       const xStyles = await window.electronAPI!.xanadu.styles.list(true);
       setStyles(xStyles as unknown as Style[]);
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for createStyle');
       bookshelfService.createStyle(style);
       setStyles(bookshelfService.getAllStyles());
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
 
     return full;
@@ -355,14 +367,19 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   const getBook = useCallback((uri: EntityURI) => {
     if (isXanaduAvailable()) {
       return books.find(b => b.uri === uri);
+    } else if (import.meta.env.DEV) {
+      return bookshelfService.getBook(uri);
     }
-    return bookshelfService.getBook(uri);
+    return undefined;
   }, [books]);
 
   const getResolvedBook = useCallback((uri: EntityURI): ResolvedBookProject | undefined => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === uri)
-      : bookshelfService.getBook(uri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === uri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(uri);
+    }
 
     if (!book) return undefined;
 
@@ -419,9 +436,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       });
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for createBook');
       bookshelfService.createBook(book);
       setBooks(bookshelfService.getAllBooks());
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
 
     return full;
@@ -458,12 +478,15 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
       return xBooks.find(b => b.uri === uri) as unknown as BookProject;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for updateBook');
       const updated = bookshelfService.updateBook(uri, updates);
       if (updated) {
         setBooks(bookshelfService.getAllBooks());
       }
       return updated;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 
@@ -480,7 +503,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         setActiveBookUri(null);
       }
       return true;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for deleteBook');
       const deleted = bookshelfService.deleteBook(uri);
       if (deleted) {
         setBooks(bookshelfService.getAllBooks());
@@ -489,6 +513,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         }
       }
       return deleted;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books, activeBookUri]);
 
@@ -535,12 +561,15 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
       return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for addChapter');
       const updated = bookshelfService.addChapter(bookUri, chapter);
       if (updated) {
         setBooks(bookshelfService.getAllBooks());
       }
       return updated;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 
@@ -571,12 +600,15 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
       return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for updateChapter');
       const updated = bookshelfService.updateChapter(bookUri, chapterId, updates);
       if (updated) {
         setBooks(bookshelfService.getAllBooks());
       }
       return updated;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 
@@ -590,7 +622,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
       return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for deleteChapter');
       const book = bookshelfService.getBook(bookUri);
       if (!book) return undefined;
 
@@ -610,13 +643,18 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         setBooks(bookshelfService.getAllBooks());
       }
       return updated;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 
   const getChapter = useCallback((bookUri: EntityURI, chapterId: string): DraftChapter | undefined => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === bookUri)
-      : bookshelfService.getBook(bookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === bookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(bookUri);
+    }
     return book?.chapters?.find(ch => ch.id === chapterId);
   }, [books]);
 
@@ -636,9 +674,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     content: string,
     metadata: { changes: string; createdBy: 'user' | 'aui' }
   ): Promise<DraftChapter | undefined> => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === bookUri)
-      : bookshelfService.getBook(bookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === bookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(bookUri);
+    }
 
     if (!book) {
       console.error('[saveDraftVersion] Book not found:', bookUri);
@@ -686,7 +727,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       // Return updated chapter from fresh state
       const updatedBook = xBooks.find(b => b.uri === bookUri);
       return updatedBook?.chapters?.find((ch: unknown) => (ch as DraftChapter).id === chapterId) as DraftChapter | undefined;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for saveDraftVersion');
       // Create new version entry
       const newVersion: DraftVersion = {
         version: newVersionNum,
@@ -716,6 +758,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       }
 
       return undefined;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 
@@ -727,9 +771,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     chapterId: string,
     version: number
   ): Promise<DraftChapter | undefined> => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === bookUri)
-      : bookshelfService.getBook(bookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === bookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(bookUri);
+    }
 
     if (!book) return undefined;
 
@@ -752,9 +799,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
    * Get all versions for a chapter
    */
   const getChapterVersions = useCallback((bookUri: EntityURI, chapterId: string): DraftVersion[] => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === bookUri)
-      : bookshelfService.getBook(bookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === bookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(bookUri);
+    }
     const chapter = book?.chapters?.find(ch => ch.id === chapterId);
     return chapter?.versions || [];
   }, [books]);
@@ -767,9 +817,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     chapterId: string,
     notes: string
   ): Promise<DraftChapter | undefined> => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === bookUri)
-      : bookshelfService.getBook(bookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === bookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(bookUri);
+    }
 
     if (!book) return undefined;
 
@@ -792,9 +845,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
    * Render book to markdown
    */
   const renderBook = useCallback((bookUri: EntityURI): string => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === bookUri)
-      : bookshelfService.getBook(bookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === bookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(bookUri);
+    }
 
     if (!book) return '';
 
@@ -859,9 +915,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   ): Promise<DraftChapter | undefined> => {
     if (!activeBookUri) return undefined;
 
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === activeBookUri)
-      : bookshelfService.getBook(activeBookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === activeBookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(activeBookUri);
+    }
     if (!book) return undefined;
 
     const existingChapters = book.chapters || [];
@@ -951,13 +1010,25 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   // DERIVED STATE
   // ─────────────────────────────────────────────────────────────────
 
-  const activeBook = activeBookUri
-    ? (isXanaduAvailable() ? books.find(b => b.uri === activeBookUri) : bookshelfService.getBook(activeBookUri)) || null
-    : null;
+  const activeBook = (() => {
+    if (!activeBookUri) return null;
+    if (isXanaduAvailable()) {
+      return books.find(b => b.uri === activeBookUri) || null;
+    } else if (import.meta.env.DEV) {
+      return bookshelfService.getBook(activeBookUri) || null;
+    }
+    return null;
+  })();
   const activeResolvedBook = activeBookUri ? getResolvedBook(activeBookUri) || null : null;
-  const activePersona = activePersonaUri
-    ? (isXanaduAvailable() ? personas.find(p => p.uri === activePersonaUri) : bookshelfService.getPersona(activePersonaUri)) || null
-    : null;
+  const activePersona = (() => {
+    if (!activePersonaUri) return null;
+    if (isXanaduAvailable()) {
+      return personas.find(p => p.uri === activePersonaUri) || null;
+    } else if (import.meta.env.DEV) {
+      return bookshelfService.getPersona(activePersonaUri) || null;
+    }
+    return null;
+  })();
 
   // ─────────────────────────────────────────────────────────────────
   // SEARCH
@@ -977,8 +1048,10 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         if (b.tags?.includes(tag)) results.push(b);
       }
       return results;
+    } else if (import.meta.env.DEV) {
+      return bookshelfService.findByTag(tag);
     }
-    return bookshelfService.findByTag(tag);
+    return [];
   }, [personas, styles, books]);
 
   const findByAuthor = useCallback((author: string) => {
@@ -994,8 +1067,10 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         if (b.author === author) results.push(b);
       }
       return results;
+    } else if (import.meta.env.DEV) {
+      return bookshelfService.findByAuthor(author);
     }
-    return bookshelfService.findByAuthor(author);
+    return [];
   }, [personas, styles, books]);
 
   // ─────────────────────────────────────────────────────────────────
@@ -1045,8 +1120,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
 
   const commitBucket = useCallback((bucketId: string) => {
     const result = harvestBucketService.commitBucket(bucketId);
-    if (result) {
-      // Refresh books after commit
+    if (result && import.meta.env.DEV) {
+      // Refresh books after commit (DEV only - Xanadu handles refresh automatically)
       setBooks(bookshelfService.getAllBooks());
     }
     return result;
@@ -1061,9 +1136,12 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   // ─────────────────────────────────────────────────────────────────
 
   const getPassages = useCallback((bookUri: EntityURI) => {
-    const book = isXanaduAvailable()
-      ? books.find(b => b.uri === bookUri)
-      : bookshelfService.getBook(bookUri);
+    let book: BookProject | undefined;
+    if (isXanaduAvailable()) {
+      book = books.find(b => b.uri === bookUri);
+    } else if (import.meta.env.DEV) {
+      book = bookshelfService.getBook(bookUri);
+    }
     return book?.passages || [];
   }, [books]);
 
@@ -1091,7 +1169,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
       return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for addPassageToBook');
       const book = bookshelfService.getBook(bookUri);
       if (!book) return undefined;
 
@@ -1108,6 +1187,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         setBooks(bookshelfService.getAllBooks());
       }
       return updated;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 
@@ -1124,7 +1205,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
       return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for updatePassageStatus');
       const book = bookshelfService.getBook(bookUri);
       if (!book) return undefined;
 
@@ -1139,6 +1221,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         setBooks(bookshelfService.getAllBooks());
       }
       return updated;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 
@@ -1152,7 +1236,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       const xBooks = await window.electronAPI!.xanadu.books.list(true);
       setBooks(xBooks as unknown as BookProject[]);
       return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else {
+    } else if (import.meta.env.DEV) {
+      console.warn('[DEV] Using localStorage fallback for deletePassage');
       const book = bookshelfService.getBook(bookUri);
       if (!book) return undefined;
 
@@ -1177,6 +1262,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
         setBooks(bookshelfService.getAllBooks());
       }
       return updated;
+    } else {
+      throw new Error('Xanadu storage unavailable. Run in Electron app.');
     }
   }, [books]);
 

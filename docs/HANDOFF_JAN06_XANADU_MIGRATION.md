@@ -2,7 +2,7 @@
 
 ## Context
 
-Session continued from previous handoff. Completed significant P1 infrastructure work for HarvestBucketService Xanadu migration.
+Session continued from previous handoff. Completed P1-P2 work for FALLBACK POLICY enforcement.
 
 ---
 
@@ -37,83 +37,87 @@ Session continued from previous handoff. Completed significant P1 infrastructure
 
 ---
 
-## Remaining Tasks
+### P1.5: Dev-Mode Guards (DONE)
 
-### P1.5: Add Dev-Mode Guards to BookshelfContext (1-2 hours)
+**Pattern applied to 30+ instances in BookshelfContext.tsx:**
 
-**Goal**: Add `import.meta.env.DEV` guards to all localStorage fallbacks in BookshelfContext.tsx.
-
-**Pattern to apply** (per FALLBACK POLICY):
 ```typescript
-// CURRENT
+// BEFORE
 if (isXanaduAvailable()) {
   await window.electronAPI!.xanadu.books.upsert({...});
 } else {
   bookshelfService.createBook(book); // BAD - silent fallback
 }
 
-// REQUIRED
+// AFTER
 if (isXanaduAvailable()) {
   await window.electronAPI!.xanadu.books.upsert({...});
 } else if (import.meta.env.DEV) {
-  console.warn('[DEV] Using localStorage fallback');
+  console.warn('[DEV] Using localStorage fallback for createBook');
   bookshelfService.createBook(book);
 } else {
   throw new Error('Xanadu storage unavailable. Run in Electron app.');
 }
 ```
 
-**Files to update**:
-- `BookshelfContext.tsx`: 30+ instances of `if (isXanaduAvailable())` need dev guards
-- `persona-store.ts`: Consider if "user preference" (OK) or "book data" (must migrate)
+**Functions updated:**
+- loadAll
+- getPersona, createPersona
+- getStyle, createStyle
+- getBook, getResolvedBook, createBook, updateBook, deleteBook
+- addChapter, updateChapter, deleteChapter, getChapter
+- saveDraftVersion, revertToVersion, getChapterVersions
+- updateWriterNotes, renderBook
+- createChapterSimple
+- activeBook, activePersona (derived state)
+- findByTag, findByAuthor
+- getPassages, addPassageToBook, updatePassageStatus, deletePassage
 
 ---
 
-### P2: Add ESLint Rule for `|| []` Patterns (1 hour)
+### P2: Silent Fallback Detection (DONE - Alternative Approach)
 
-**Goal**: Prevent silent fallback patterns from being introduced.
+**Note**: ESLint is not set up in this project. Created a detection script instead.
 
-**Location**: Create `eslint-local-rules/no-silent-fallback.js`
+**Created**: `scripts/detect-silent-fallbacks.js`
 
-**Rule Logic**:
-```javascript
-// Warn on patterns like:
-data || []
-result.items || []
-response.data || {}
-
-// Allow patterns like (display defaults):
-name || 'Unknown'
-count || 0
+```bash
+# Run detection
+npm run fallback:check
 ```
 
-**Configuration** in `.eslintrc.js`:
-```javascript
-rules: {
-  'local/no-silent-fallback': 'warn',
-}
-```
+**Output categories:**
+- `DATA_OPERATION` (36 found): Dangerous - operations on API/storage responses
+- `NEEDS_REVIEW` (56 found): Ambiguous - needs human review
+
+**Total instances detected: 92**
 
 ---
 
-### P3: Audit All 97 Fallback Instances (4-6 hours)
+## Remaining Tasks
+
+### P3: Audit All 92 Fallback Instances (4-6 hours)
 
 **Goal**: Classify and fix all `|| []` and `|| {}` patterns.
 
-**Found via**: `grep -r "\|\| \[\]" apps/web/src --include="*.ts" --include="*.tsx"`
+**Run**: `npm run fallback:check`
 
-**Classification needed**:
+**Current breakdown:**
+- DATA_OPERATION (dangerous): 36
+- NEEDS_REVIEW: 56
+
+**Critical paths to audit first:**
+- `apps/web/src/lib/aui/tools.ts` (12 dangerous instances)
+- `apps/web/src/components/archive/FacebookView.tsx` (6 dangerous instances)
+- `apps/web/src/components/archive/BooksView.tsx` (4 dangerous instances)
+
+**Classification needed:**
 
 | Category | Example | Action |
 |----------|---------|--------|
 | Display default | `person.nickname \|\| 'Unknown'` | OK - leave as is |
 | Data operation | `response.data \|\| []` | FIX - explicit error handling |
 | Dev fallback | `storage \|\| localStorageShim` | FIX - add `import.meta.env.DEV` guard |
-
-**Critical paths to audit first**:
-- `apps/web/src/lib/aui/tools.ts` (book-making tools)
-- `apps/web/src/lib/bookshelf/BookshelfContext.tsx`
-- `apps/web/src/components/tools/HarvestQueuePanel.tsx`
 
 ---
 
@@ -122,6 +126,9 @@ rules: {
 ```bash
 cd /Users/tem/humanizer_root/humanizer-gm
 npm run electron:dev
+
+# Check fallback patterns
+npm run fallback:check
 
 # Check current localStorage keys in browser console:
 Object.keys(localStorage).filter(k => k.startsWith('humanizer-'))
@@ -135,17 +142,14 @@ Object.keys(localStorage).filter(k => k.startsWith('humanizer-'))
 ## Commits This Session
 
 ```
-fcc89b3 feat(xanadu): Add harvest_buckets, narrative_arcs tables for HarvestBucketService migration
+(pending commit)
 ```
 
 **Previous session commits**:
 ```
+fcc89b3 feat(xanadu): Add harvest_buckets, narrative_arcs tables for HarvestBucketService migration
 509349b docs: Add handoff for book making crisis - data layer fragmentation
 2a00f23 fix(harvest): Eliminate silent fallbacks that corrupt book data (DEBT-001, DEBT-002, DEBT-003)
-d1c6a20 docs: Add handoff for House Council session fixes
-d3ba690 docs: Add FALLBACK POLICY to TECHNICAL_DEBT.md
-ddc2b38 fix(aui): Fix AUIContext type errors (P0)
-1755866 fix(data): Fix pyramid chunk overwrites and bookType (Codex P1, P2)
 ```
 
 ---
@@ -159,6 +163,7 @@ ddc2b38 fix(aui): Fix AUIContext type errors (P0)
 | Migration logic | `apps/web/src/lib/migration/LocalStorageMigration.ts` |
 | BookshelfContext | `apps/web/src/lib/bookshelf/BookshelfContext.tsx` |
 | HarvestBucketService | `apps/web/src/lib/bookshelf/HarvestBucketService.ts` |
+| Fallback detection | `scripts/detect-silent-fallbacks.js` |
 | FALLBACK POLICY | `TECHNICAL_DEBT.md` (lines 6-52) |
 
 ---
@@ -193,8 +198,6 @@ throw new Error('Production requires X');
 ```
 
 This preserves session context for future retrieval and maintains continuity across conversations.
-
-**Memory stored this session**: `42de168b...` (tags: handoff, house-council, fallback-policy, xanadu-migration)
 
 ---
 

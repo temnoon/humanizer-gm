@@ -14,6 +14,7 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "style:check": "node scripts/style-check.js",
+    "fallback:check": "node scripts/detect-silent-fallbacks.js",
     "cli": "node apps/cli/dist/index.js",
     "electron:dev": "npm run build:electron && concurrently \"npm run dev --workspace=apps/web\" \"wait-on http://localhost:5174 && VITE_DEV_SERVER_URL=http://localhost:5174 electron .\"",
     "electron:build": "npm run build --workspace=apps/web && npm run build:electron && electron-builder",
