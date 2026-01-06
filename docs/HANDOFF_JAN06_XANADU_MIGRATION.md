@@ -2,39 +2,57 @@
 
 ## Context
 
-Session ran out of context after fixing P0 issues and establishing FALLBACK POLICY. The remaining work is P1-P3 from the House Council audit.
+Session continued from previous handoff. Completed significant P1 infrastructure work for HarvestBucketService Xanadu migration.
+
+---
+
+## Completed This Session
+
+### P1 Infrastructure (DONE)
+
+**Commit**: `fcc89b3` - feat(xanadu): Add harvest_buckets, narrative_arcs tables
+
+1. **Schema Changes** (`EmbeddingDatabase.ts`):
+   - SCHEMA_VERSION 10 → 11
+   - Added `harvest_buckets` table with all HarvestBucket fields
+   - Added `narrative_arcs` table with thesis, arcType, evaluation
+   - Added `passage_links` table for chapter-passage connections
+   - Added migration from v10 to v11
+   - Added 12 new database methods
+
+2. **Xanadu API** (`preload.ts`, `apps/web/src/types/electron.ts`):
+   - XanaduHarvestBucket, XanaduNarrativeArc, XanaduPassageLink types
+   - harvestBuckets.list/get/upsert/delete
+   - narrativeArcs.list/get/upsert/delete
+   - passageLinks.listByChapter/listByPassage/upsert/delete
+
+3. **IPC Handlers** (`main.ts`):
+   - All 12 handlers for harvest buckets, narrative arcs, passage links
+
+4. **HarvestBucketService** (partially updated):
+   - isXanaduHarvestAvailable() check
+   - initialize() uses Xanadu when available
+   - saveBucketToXanadu() for async persistence
+   - saveToStorage() with dual-write pattern
 
 ---
 
 ## Remaining Tasks
 
-### P1: Complete Xanadu Migration (PRIORITY - 1-2 days)
+### P1.5: Add Dev-Mode Guards to BookshelfContext (1-2 hours)
 
-**Goal**: Remove all localStorage fallbacks for book data. All book-related data must live in SQLite via Xanadu API.
+**Goal**: Add `import.meta.env.DEV` guards to all localStorage fallbacks in BookshelfContext.tsx.
 
-#### Files That Need Migration
-
-| File | Storage Keys | Current State | Action Needed |
-|------|-------------|---------------|---------------|
-| `BookshelfService.ts` | `humanizer-bookshelf-{personas,styles,books,index}` | Used as fallback when Xanadu unavailable | Remove fallback, fail loudly in production |
-| `HarvestBucketService.ts` | `humanizer-harvest-{buckets,arcs,links}` | PRIMARY storage (no Xanadu) | Integrate with Xanadu API |
-| `persona-store.ts` | `humanizer-curator-persona` | localStorage only | Consider if this is "user preference" (OK to keep) or "book data" (must migrate) |
-
-#### BookshelfContext.tsx Pattern
-
-Current code uses this pattern throughout:
+**Pattern to apply** (per FALLBACK POLICY):
 ```typescript
+// CURRENT
 if (isXanaduAvailable()) {
-  // Use Xanadu
   await window.electronAPI!.xanadu.books.upsert({...});
 } else {
-  // FALLBACK to localStorage - THIS MUST GO
-  bookshelfService.createBook(book);
+  bookshelfService.createBook(book); // BAD - silent fallback
 }
-```
 
-**Required change** (per FALLBACK POLICY):
-```typescript
+// REQUIRED
 if (isXanaduAvailable()) {
   await window.electronAPI!.xanadu.books.upsert({...});
 } else if (import.meta.env.DEV) {
@@ -45,77 +63,9 @@ if (isXanaduAvailable()) {
 }
 ```
 
-#### HarvestBucketService.ts - Full Migration Needed
-
-This service has NO Xanadu integration. It needs:
-
-1. **Add Xanadu API methods** to `electron/preload.ts`:
-```typescript
-xanadu: {
-  // existing...
-  harvestBuckets: {
-    list: (bookId?: string) => Promise<HarvestBucket[]>,
-    get: (bucketId: string) => Promise<HarvestBucket | null>,
-    upsert: (bucket: HarvestBucket) => Promise<void>,
-    delete: (bucketId: string) => Promise<void>,
-  },
-  narrativeArcs: {
-    list: (bookId?: string) => Promise<NarrativeArc[]>,
-    upsert: (arc: NarrativeArc) => Promise<void>,
-    delete: (arcId: string) => Promise<void>,
-  },
-}
-```
-
-2. **Add SQLite tables** to `EmbeddingDatabase.ts`:
-```sql
-CREATE TABLE IF NOT EXISTS harvest_buckets (
-  id TEXT PRIMARY KEY,
-  book_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  candidates TEXT,  -- JSON array
-  approved TEXT,    -- JSON array
-  gems TEXT,        -- JSON array
-  rejected TEXT,    -- JSON array
-  config TEXT,      -- JSON object
-  created_at INTEGER,
-  updated_at INTEGER,
-  FOREIGN KEY (book_id) REFERENCES books(id)
-);
-
-CREATE TABLE IF NOT EXISTS narrative_arcs (
-  id TEXT PRIMARY KEY,
-  book_id TEXT NOT NULL,
-  thesis TEXT,
-  arc_type TEXT,
-  evaluation TEXT,  -- JSON object
-  created_at INTEGER,
-  FOREIGN KEY (book_id) REFERENCES books(id)
-);
-```
-
-3. **Update HarvestBucketService** to use Xanadu when available
-
-#### Migration Infrastructure Already Exists
-
-File: `apps/web/src/lib/migration/LocalStorageMigration.ts`
-
-```typescript
-// Already implemented:
-export async function migrateToUnifiedStorage(options?: MigrationOptions): Promise<MigrationResult>
-export function hasDataToMigrate(): boolean
-export function isMigrationComplete(): boolean
-
-// Migration marker key: 'xanadu-migration-complete'
-```
-
-The migration runs automatically in `BookshelfContext.tsx` line 213:
-```typescript
-if (!isMigrationComplete() && hasDataToMigrate()) {
-  console.log('[Bookshelf] Running localStorage -> Xanadu migration');
-  await migrateToUnifiedStorage({ clearAfterMigration: true });
-}
-```
+**Files to update**:
+- `BookshelfContext.tsx`: 30+ instances of `if (isXanaduAvailable())` need dev guards
+- `persona-store.ts`: Consider if "user preference" (OK) or "book data" (must migrate)
 
 ---
 
@@ -185,6 +135,13 @@ Object.keys(localStorage).filter(k => k.startsWith('humanizer-'))
 ## Commits This Session
 
 ```
+fcc89b3 feat(xanadu): Add harvest_buckets, narrative_arcs tables for HarvestBucketService migration
+```
+
+**Previous session commits**:
+```
+509349b docs: Add handoff for book making crisis - data layer fragmentation
+2a00f23 fix(harvest): Eliminate silent fallbacks that corrupt book data (DEBT-001, DEBT-002, DEBT-003)
 d1c6a20 docs: Add handoff for House Council session fixes
 d3ba690 docs: Add FALLBACK POLICY to TECHNICAL_DEBT.md
 ddc2b38 fix(aui): Fix AUIContext type errors (P0)
