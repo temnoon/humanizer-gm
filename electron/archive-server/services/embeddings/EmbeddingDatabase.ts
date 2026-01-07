@@ -2775,26 +2775,63 @@ export class EmbeddingDatabase {
 
   /**
    * Search for similar messages by embedding
+   * @param role - Optional filter for message role ('user' or 'assistant')
    */
-  searchMessages(queryEmbedding: number[], limit: number = 20): SearchResult[] {
+  searchMessages(queryEmbedding: number[], limit: number = 20, role?: string): SearchResult[] {
     if (!this.vecLoaded) throw new Error('Vector operations not available');
 
-    const results = this.db.prepare(`
-      SELECT
-        vec_messages.id,
-        vec_messages.conversation_id,
-        vec_messages.message_id,
-        vec_messages.role,
-        vec_messages.distance,
-        messages.content,
-        conversations.title as conversation_title,
-        conversations.folder as conversation_folder
-      FROM vec_messages
-      JOIN messages ON messages.id = vec_messages.message_id
-      JOIN conversations ON conversations.id = vec_messages.conversation_id
-      WHERE embedding MATCH ? AND k = ?
-      ORDER BY distance
-    `).all(this.embeddingToJson(queryEmbedding), limit) as Array<Record<string, unknown>>;
+    // Build query with optional role filter
+    // Note: sqlite-vec requires filtering AFTER the vector search via a subquery
+    // because the MATCH clause doesn't support AND with other columns directly
+    let sql: string;
+    let params: unknown[];
+
+    if (role) {
+      // Fetch more results initially, then filter by role and limit
+      // This ensures we get enough results after role filtering
+      sql = `
+        SELECT * FROM (
+          SELECT
+            vec_messages.id,
+            vec_messages.conversation_id,
+            vec_messages.message_id,
+            vec_messages.role,
+            vec_messages.distance,
+            messages.content,
+            conversations.title as conversation_title,
+            conversations.folder as conversation_folder
+          FROM vec_messages
+          JOIN messages ON messages.id = vec_messages.message_id
+          JOIN conversations ON conversations.id = vec_messages.conversation_id
+          WHERE embedding MATCH ? AND k = ?
+          ORDER BY distance
+        )
+        WHERE role = ?
+        LIMIT ?
+      `;
+      // Fetch 5x more results initially to account for role filtering
+      params = [this.embeddingToJson(queryEmbedding), limit * 5, role, limit];
+    } else {
+      sql = `
+        SELECT
+          vec_messages.id,
+          vec_messages.conversation_id,
+          vec_messages.message_id,
+          vec_messages.role,
+          vec_messages.distance,
+          messages.content,
+          conversations.title as conversation_title,
+          conversations.folder as conversation_folder
+        FROM vec_messages
+        JOIN messages ON messages.id = vec_messages.message_id
+        JOIN conversations ON conversations.id = vec_messages.conversation_id
+        WHERE embedding MATCH ? AND k = ?
+        ORDER BY distance
+      `;
+      params = [this.embeddingToJson(queryEmbedding), limit];
+    }
+
+    const results = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
 
     return results.map(row => ({
       id: row.id as string,

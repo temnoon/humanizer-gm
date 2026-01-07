@@ -364,11 +364,26 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   // BOOK OPERATIONS
   // ─────────────────────────────────────────────────────────────────
 
-  const getBook = useCallback((uri: EntityURI) => {
+  const getBook = useCallback((uriOrId: EntityURI | string) => {
     if (isXanaduAvailable()) {
-      return books.find(b => b.uri === uri);
+      // Try finding by exact URI match first
+      let book = books.find(b => b.uri === uriOrId);
+      if (book) return book;
+
+      // Try finding by ID if URI didn't match (handles format differences)
+      const idFromUri = uriOrId.replace('book://', '').replace(/^user\//, '');
+      book = books.find(b => b.id === idFromUri || b.id === uriOrId);
+      if (book) return book;
+
+      // Also check if the URI path matches (handles book://user/xyz vs book://xyz)
+      book = books.find(b => {
+        const bookPath = b.uri.replace('book://', '').replace(/^user\//, '');
+        const searchPath = uriOrId.replace('book://', '').replace(/^user\//, '');
+        return bookPath === searchPath;
+      });
+      return book;
     } else if (import.meta.env.DEV) {
-      return bookshelfService.getBook(uri);
+      return bookshelfService.getBook(uriOrId as EntityURI);
     }
     return undefined;
   }, [books]);

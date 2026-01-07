@@ -297,14 +297,9 @@ export function createEmbeddingsRouter(): Router {
       // Generate query embedding
       const queryEmbedding = await embeddingModule.embed(query);
 
-      // Search
+      // Search (role filter is applied in the query for efficiency)
       const db = getEmbeddingDb();
-      let results = db.searchMessages(queryEmbedding, limit);
-
-      // Filter by role if specified
-      if (role) {
-        results = results.filter(r => r.metadata?.role === role);
-      }
+      const results = db.searchMessages(queryEmbedding, limit, role);
 
       res.json({
         query,
