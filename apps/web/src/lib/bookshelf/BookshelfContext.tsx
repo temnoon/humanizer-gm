@@ -140,7 +140,7 @@ interface BookshelfContextType {
   // Bucket lifecycle
   finishCollecting: (bucketId: string) => HarvestBucket | undefined;
   stageBucket: (bucketId: string) => HarvestBucket | undefined;
-  commitBucket: (bucketId: string) => BookProject | undefined;
+  commitBucket: (bucketId: string) => Promise<BookProject | undefined>;
   discardBucket: (bucketId: string) => boolean;
 
   // Bucket refresh (call after external changes to buckets)
@@ -1147,11 +1147,17 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     return harvestBucketService.stageBucket(bucketId);
   }, []);
 
-  const commitBucket = useCallback((bucketId: string) => {
-    const result = harvestBucketService.commitBucket(bucketId);
-    if (result && import.meta.env.DEV) {
-      // Refresh books after commit (DEV only - Xanadu handles refresh automatically)
-      setBooks(bookshelfService.getAllBooks());
+  const commitBucket = useCallback(async (bucketId: string) => {
+    const result = await harvestBucketService.commitBucket(bucketId);
+    if (result) {
+      if (isXanaduAvailable()) {
+        // Refresh books from Xanadu after commit
+        const xBooks = await window.electronAPI!.xanadu.books.list(true);
+        setBooks(xBooks as unknown as BookProject[]);
+      } else if (import.meta.env.DEV) {
+        // DEV fallback - refresh from localStorage
+        setBooks(bookshelfService.getAllBooks());
+      }
     }
     return result;
   }, []);

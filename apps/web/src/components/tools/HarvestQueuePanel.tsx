@@ -518,8 +518,13 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
     bookshelf.stageBucket(bucketId);
   }, [bookshelf]);
 
-  const handleCommitBucket = useCallback((bucketId: string) => {
-    bookshelf.commitBucket(bucketId);
+  const handleCommitBucket = useCallback(async (bucketId: string) => {
+    const result = await bookshelf.commitBucket(bucketId);
+    if (result) {
+      console.log('[HarvestQueuePanel] Commit successful, passages saved to Xanadu');
+    } else {
+      console.error('[HarvestQueuePanel] Commit failed');
+    }
   }, [bookshelf]);
 
   const handleDiscardBucket = useCallback((bucketId: string) => {

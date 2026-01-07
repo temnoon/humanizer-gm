@@ -38,6 +38,12 @@ function isXanaduHarvestAvailable(): boolean {
     window.electronAPI?.xanadu?.harvestBuckets !== undefined;
 }
 
+function isXanaduPassagesAvailable(): boolean {
+  return typeof window !== 'undefined' &&
+    window.isElectron === true &&
+    window.electronAPI?.xanadu?.passages !== undefined;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // STORAGE KEYS (localStorage fallback only)
 // ═══════════════════════════════════════════════════════════════════
@@ -652,52 +658,105 @@ class HarvestBucketService {
 
   /**
    * Commit bucket to book project
+   * PRIMARY: Uses Xanadu IPC for passage persistence
+   * FALLBACK: localStorage (DEV mode only per FALLBACK POLICY)
    */
-  commitBucket(bucketId: string): BookProject | undefined {
+  async commitBucket(bucketId: string): Promise<BookProject | undefined> {
     const bucket = this.buckets.get(bucketId);
     if (!bucket || bucket.status !== 'staged') {
       console.warn('[HarvestBucketService] Bucket not staged:', bucket?.status);
       return undefined;
     }
 
-    // Get the book
-    const book = bookshelfService.getBook(bucket.bookUri);
-    if (!book) {
-      console.error('[HarvestBucketService] Book not found:', bucket.bookUri);
-      return undefined;
-    }
-
-    // Merge approved passages into book
+    // Merge approved passages
     const allApproved = getAllApproved(bucket);
-    const newPassages = [...book.passages, ...allApproved];
-
-    // Update book stats
     const gemCount = bucket.gems.length;
     const approvedCount = allApproved.length;
 
-    const updatedBook = bookshelfService.updateBook(bucket.bookUri, {
-      passages: newPassages,
-      stats: {
-        ...book.stats,
-        totalPassages: newPassages.length,
-        approvedPassages: book.stats.approvedPassages + approvedCount,
-        gems: book.stats.gems + gemCount,
-      },
-    });
+    if (isXanaduPassagesAvailable()) {
+      // PRIMARY: Use Xanadu IPC for persistence
+      try {
+        // Look up book by URI or ID
+        let book = await window.electronAPI!.xanadu.books.get(bucket.bookUri);
+        if (!book) {
+          const possibleId = bucket.bookUri.replace('book://', '').replace(/^user\//, '');
+          book = await window.electronAPI!.xanadu.books.get(possibleId);
+        }
 
-    if (updatedBook) {
-      // Mark bucket as committed
-      this.updateBucket(bucketId, {
-        status: 'committed',
-        finalizedAt: Date.now(),
+        if (!book) {
+          console.error('[HarvestBucketService] Book not found for commit:', bucket.bookUri);
+          return undefined;
+        }
+
+        // Upsert each passage to Xanadu
+        for (const passage of allApproved) {
+          const curationStatus = passage.curation?.status === 'gem' ? 'gem' : 'approved';
+          await window.electronAPI!.xanadu.passages.upsert({
+            id: passage.id,
+            bookId: book.id,
+            sourceRef: passage.sourceRef,
+            text: passage.text || passage.content || '',
+            wordCount: passage.wordCount,
+            role: passage.role,
+            harvestedBy: passage.harvestedBy,
+            threadId: (passage as unknown as Record<string, unknown>).threadId as string | undefined,
+            curationStatus,
+            curationNote: passage.curation?.notes,
+            tags: passage.tags,
+          });
+        }
+
+        // Mark bucket as committed
+        this.updateBucket(bucketId, {
+          status: 'committed',
+          finalizedAt: Date.now(),
+        });
+
+        console.log(
+          `[HarvestBucketService] Committed ${approvedCount} passages (${gemCount} gems) to ${bucket.bookUri} via Xanadu`
+        );
+
+        // Return updated book
+        const updatedBook = await window.electronAPI!.xanadu.books.get(book.id);
+        return updatedBook as unknown as BookProject;
+      } catch (err) {
+        console.error('[HarvestBucketService] Failed to commit via Xanadu:', err);
+        return undefined;
+      }
+    } else if (import.meta.env.DEV) {
+      // FALLBACK: DEV mode only - use localStorage
+      console.warn('[HarvestBucketService] [DEV] Using localStorage fallback for commit');
+      const book = bookshelfService.getBook(bucket.bookUri);
+      if (!book) {
+        console.error('[HarvestBucketService] Book not found:', bucket.bookUri);
+        return undefined;
+      }
+
+      const newPassages = [...book.passages, ...allApproved];
+      const updatedBook = bookshelfService.updateBook(bucket.bookUri, {
+        passages: newPassages,
+        stats: {
+          ...book.stats,
+          totalPassages: newPassages.length,
+          approvedPassages: book.stats.approvedPassages + approvedCount,
+          gems: book.stats.gems + gemCount,
+        },
       });
 
-      console.log(
-        `[HarvestBucketService] Committed ${approvedCount} passages (${gemCount} gems) to ${bucket.bookUri}`
-      );
+      if (updatedBook) {
+        this.updateBucket(bucketId, {
+          status: 'committed',
+          finalizedAt: Date.now(),
+        });
+        console.log(
+          `[HarvestBucketService] Committed ${approvedCount} passages (${gemCount} gems) to ${bucket.bookUri}`
+        );
+      }
+      return updatedBook;
+    } else {
+      console.error('[HarvestBucketService] Xanadu unavailable and not in DEV mode');
+      return undefined;
     }
-
-    return updatedBook;
   }
 
   /**
