@@ -2787,8 +2787,9 @@ export class EmbeddingDatabase {
     let params: unknown[];
 
     if (role) {
-      // Fetch more results initially, then filter by role and limit
-      // This ensures we get enough results after role filtering
+      // Fetch more results initially, then filter by role and content quality
+      // This ensures we get enough substantive results after filtering
+      // Filter out: tool calls (search(...)), very short content, JSON-like content
       sql = `
         SELECT * FROM (
           SELECT
@@ -2807,10 +2808,14 @@ export class EmbeddingDatabase {
           ORDER BY distance
         )
         WHERE role = ?
+          AND LENGTH(content) > 200
+          AND content NOT LIKE 'search("%'
+          AND content NOT LIKE '{"query":%'
+          AND content NOT LIKE '{"type":%'
         LIMIT ?
       `;
-      // Fetch 5x more results initially to account for role filtering
-      params = [this.embeddingToJson(queryEmbedding), limit * 5, role, limit];
+      // Fetch 10x more results initially to account for filtering
+      params = [this.embeddingToJson(queryEmbedding), limit * 10, role, limit];
     } else {
       sql = `
         SELECT

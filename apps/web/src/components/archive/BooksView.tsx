@@ -532,13 +532,10 @@ Start writing here...
           if (response.ok) {
             const data = await response.json();
             if (data.results && data.results.length > 0) {
+              console.log(`[BooksView] Got ${data.results.length} results for query "${query}"`);
               for (const result of data.results) {
-                // Skip content that's too short (less than 20 words)
+                // SQL already filters for: role=assistant, length>200, no tool calls
                 const wordCount = result.content?.split(/\s+/).length || 0;
-                if (wordCount < 20) {
-                  console.log(`[BooksView] Skipping short content (${wordCount} words):`, result.content?.slice(0, 50));
-                  continue;
-                }
 
                 const passage = {
                   id: result.id || `harvest-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -561,6 +558,8 @@ Start writing here...
                 harvestBucketService.addCandidate(bucket.id, passage);
                 totalResults++;
               }
+            } else {
+              console.log(`[BooksView] No results for query "${query}"`);
             }
           }
         } catch (err) {
