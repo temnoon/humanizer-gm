@@ -472,11 +472,37 @@ Start writing here...
     }
 
     // Get book URI from library book or construct one
-    const bookUri = (project as unknown as { _uri?: string })?._uri
+    let bookUri = (project as unknown as { _uri?: string })?._uri
       || (project as unknown as { uri?: string })?.uri
       || `book://${project.id}`;
 
     console.log('[BooksView] Starting harvest for book:', bookUri, 'queries:', queries);
+
+    // Ensure book exists in database (library seed books may not be persisted yet)
+    const existingBook = bookshelf.getBook(bookUri);
+    if (!existingBook) {
+      console.log('[BooksView] Book not in database, creating it first...');
+      try {
+        // Import createBookProject helper
+        const { createBookProject } = await import('../../lib/bookshelf/types');
+        const bookData = createBookProject(
+          project.name,
+          (project as unknown as { author?: string })?.author || 'user'
+        );
+        // Add optional fields
+        if (project.subtitle) bookData.subtitle = project.subtitle;
+        if (project.description) bookData.description = project.description;
+        bookData.status = 'harvesting';
+
+        const newBook = await bookshelf.createBook(bookData);
+        bookUri = newBook.uri;
+        console.log('[BooksView] Created book in database:', bookUri);
+      } catch (err) {
+        console.error('[BooksView] Failed to create book:', err);
+        alert('Failed to create book in database. Please try again.');
+        return;
+      }
+    }
 
     // Set as active book in bookshelf context
     bookshelf.setActiveBookUri(bookUri);
