@@ -155,28 +155,47 @@ class HarvestBucketService {
   private saveBucketToXanadu(bucket: HarvestBucket): void {
     if (!isXanaduHarvestAvailable()) return;
 
-    const bookId = bucket.bookUri.replace('book://', '').replace(/\//g, '-');
-    // Fire and forget - errors logged but don't block
-    void window.electronAPI!.xanadu.harvestBuckets.upsert({
-      id: bucket.id,
-      bookId,
-      bookUri: bucket.bookUri,
-      status: bucket.status,
-      queries: bucket.queries,
-      candidates: bucket.candidates,
-      approved: bucket.approved,
-      gems: bucket.gems,
-      rejected: bucket.rejected,
-      duplicateIds: bucket.duplicateIds,
-      config: bucket.config,
-      threadUri: bucket.threadUri as string | undefined,
-      stats: bucket.stats,
-      initiatedBy: bucket.initiatedBy,
-      completedAt: bucket.completedAt,
-      finalizedAt: bucket.finalizedAt,
-    }).catch(err => {
-      console.error('[HarvestBucketService] Failed to save bucket to Xanadu:', err);
-    });
+    // Look up actual book ID from Xanadu by URI
+    void (async () => {
+      try {
+        // Try to get book by URI first
+        let book = await window.electronAPI!.xanadu.books.get(bucket.bookUri);
+
+        // If not found by URI, the bookUri might actually be the ID (e.g., "book://1767733846537-nq5fokr1x")
+        if (!book) {
+          const possibleId = bucket.bookUri.replace('book://', '');
+          book = await window.electronAPI!.xanadu.books.get(possibleId);
+        }
+
+        if (!book) {
+          console.error('[HarvestBucketService] Book not found for URI:', bucket.bookUri);
+          return;
+        }
+
+        const bookId = book.id;
+
+        await window.electronAPI!.xanadu.harvestBuckets.upsert({
+          id: bucket.id,
+          bookId,
+          bookUri: bucket.bookUri,
+          status: bucket.status,
+          queries: bucket.queries,
+          candidates: bucket.candidates,
+          approved: bucket.approved,
+          gems: bucket.gems,
+          rejected: bucket.rejected,
+          duplicateIds: bucket.duplicateIds,
+          config: bucket.config,
+          threadUri: bucket.threadUri as string | undefined,
+          stats: bucket.stats,
+          initiatedBy: bucket.initiatedBy,
+          completedAt: bucket.completedAt,
+          finalizedAt: bucket.finalizedAt,
+        });
+      } catch (err) {
+        console.error('[HarvestBucketService] Failed to save bucket to Xanadu:', err);
+      }
+    })();
   }
 
   /**
