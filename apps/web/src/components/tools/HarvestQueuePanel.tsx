@@ -475,7 +475,41 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
 
       // If we got results, transition to reviewing status
       if (uniqueResults.length > 0) {
-        harvestBucketService.finishCollecting(bucketId);
+        // Use IPC to transition bucket status
+        if (window.isElectron && window.electronAPI?.xanadu?.harvestBuckets) {
+          // CRITICAL: Save bucket with candidates to DB BEFORE calling finishCollecting
+          // This fixes the race condition where async fire-and-forget saves haven't completed
+          const currentBucket = harvestBucketService.getBucket(bucketId);
+          if (currentBucket) {
+            console.log(`[HarvestQueue] Saving bucket with ${currentBucket.candidates.length} candidates to Xanadu`);
+            await window.electronAPI.xanadu.harvestBuckets.upsert({
+              id: currentBucket.id,
+              bookId: currentBucket.bookUri.replace('book://', '').replace(/^user\//, ''),
+              bookUri: currentBucket.bookUri,
+              status: currentBucket.status,
+              queries: currentBucket.queries,
+              candidates: currentBucket.candidates,
+              approved: currentBucket.approved,
+              gems: currentBucket.gems,
+              rejected: currentBucket.rejected,
+              duplicateIds: currentBucket.duplicateIds,
+              config: currentBucket.config,
+              stats: currentBucket.stats,
+              initiatedBy: currentBucket.initiatedBy,
+            });
+          }
+
+          // Now safe to call finishCollecting - bucket has candidates in DB
+          const result = await window.electronAPI.xanadu.harvest.finishCollecting(bucketId);
+          if (!result.success) {
+            console.warn('[HarvestQueue] finishCollecting failed:', result.error);
+          }
+          await harvestBucketService.refreshBucketFromXanadu(bucketId);
+          bookshelf.refreshBuckets();
+        } else {
+          // Fallback for dev mode
+          harvestBucketService.finishCollecting(bucketId);
+        }
         console.log(`[HarvestQueue] Added ${uniqueResults.length} candidates from ${bucket.queries.length} queries`);
       } else {
         setHarvestError('No results found. Try different search queries.');
@@ -492,44 +526,127 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
     }
   }, [bookshelf]);
 
-  // Handle passage curation
+  // Handle passage curation - calls IPC directly, then refreshes from DB
   const handlePassageAction = useCallback(
-    (bucketId: string, passageId: string, action: CurationAction) => {
-      switch (action) {
-        case 'approve':
-          bookshelf.approvePassage(bucketId, passageId);
-          break;
-        case 'reject':
-          bookshelf.rejectPassage(bucketId, passageId);
-          break;
-        case 'gem':
-          bookshelf.markAsGem(bucketId, passageId);
-          break;
-        case 'undo':
-          bookshelf.moveToCandidates(bucketId, passageId);
-          break;
+    async (bucketId: string, passageId: string, action: CurationAction) => {
+      // Check if Xanadu IPC is available
+      if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
+        console.error('[HarvestQueuePanel] Xanadu harvest IPC not available');
+        setHarvestError('Harvest operations not available. Restart the app.');
+        return;
+      }
+
+      try {
+        let result: { success: boolean; error?: string };
+
+        // Call appropriate IPC handler
+        switch (action) {
+          case 'approve':
+            result = await window.electronAPI.xanadu.harvest.approvePassage(bucketId, passageId);
+            break;
+          case 'reject':
+            result = await window.electronAPI.xanadu.harvest.rejectPassage(bucketId, passageId);
+            break;
+          case 'gem':
+            result = await window.electronAPI.xanadu.harvest.gemPassage(bucketId, passageId);
+            break;
+          case 'undo':
+            result = await window.electronAPI.xanadu.harvest.undoPassage(bucketId, passageId);
+            break;
+          default:
+            console.warn('[HarvestQueuePanel] Unknown action:', action);
+            return;
+        }
+
+        if (!result.success) {
+          console.error(`[HarvestQueuePanel] ${action} failed:`, result.error);
+          setHarvestError(`Failed to ${action} passage: ${result.error}`);
+          return;
+        }
+
+        // Refresh bucket from database to sync in-memory state
+        await harvestBucketService.refreshBucketFromXanadu(bucketId);
+
+        // Trigger UI re-render
+        bookshelf.refreshBuckets();
+
+        console.log(`[HarvestQueuePanel] ${action} succeeded for passage ${passageId}`);
+      } catch (err) {
+        console.error(`[HarvestQueuePanel] ${action} error:`, err);
+        setHarvestError(`Error during ${action}: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     },
     [bookshelf]
   );
 
-  // Handle bucket lifecycle
-  const handleStageBucket = useCallback((bucketId: string) => {
-    bookshelf.stageBucket(bucketId);
-  }, [bookshelf]);
+  // Handle bucket lifecycle - calls IPC directly, then refreshes from DB
+  const handleStageBucket = useCallback(async (bucketId: string) => {
+    if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
+      setHarvestError('Harvest operations not available. Restart the app.');
+      return;
+    }
 
-  const handleCommitBucket = useCallback(async (bucketId: string) => {
-    const result = await bookshelf.commitBucket(bucketId);
-    if (result) {
-      console.log('[HarvestQueuePanel] Commit successful, passages saved to Xanadu');
-    } else {
-      console.error('[HarvestQueuePanel] Commit failed');
+    try {
+      const result = await window.electronAPI.xanadu.harvest.stageBucket(bucketId);
+      if (!result.success) {
+        setHarvestError(`Failed to stage bucket: ${result.error}`);
+        return;
+      }
+
+      await harvestBucketService.refreshBucketFromXanadu(bucketId);
+      bookshelf.refreshBuckets();
+      console.log(`[HarvestQueuePanel] Staged bucket with ${result.approvedCount} approved, ${result.gemCount} gems`);
+    } catch (err) {
+      console.error('[HarvestQueuePanel] Stage error:', err);
+      setHarvestError(`Error staging bucket: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   }, [bookshelf]);
 
-  const handleDiscardBucket = useCallback((bucketId: string) => {
-    if (window.confirm('Discard this harvest? All candidates will be lost.')) {
-      bookshelf.discardBucket(bucketId);
+  const handleCommitBucket = useCallback(async (bucketId: string) => {
+    if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
+      setHarvestError('Harvest operations not available. Restart the app.');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.xanadu.harvest.commitBucket(bucketId);
+      if (!result.success) {
+        setHarvestError(`Failed to commit bucket: ${result.error}`);
+        return;
+      }
+
+      await harvestBucketService.refreshBucketFromXanadu(bucketId);
+      bookshelf.refreshBuckets();
+      console.log(`[HarvestQueuePanel] Committed ${result.passageCount} passages to book`);
+    } catch (err) {
+      console.error('[HarvestQueuePanel] Commit error:', err);
+      setHarvestError(`Error committing bucket: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }, [bookshelf]);
+
+  const handleDiscardBucket = useCallback(async (bucketId: string) => {
+    if (!window.confirm('Discard this harvest? All candidates will be lost.')) {
+      return;
+    }
+
+    if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
+      setHarvestError('Harvest operations not available. Restart the app.');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.xanadu.harvest.discardBucket(bucketId);
+      if (!result.success) {
+        setHarvestError(`Failed to discard bucket: ${result.error}`);
+        return;
+      }
+
+      await harvestBucketService.refreshBucketFromXanadu(bucketId);
+      bookshelf.refreshBuckets();
+      console.log('[HarvestQueuePanel] Bucket discarded');
+    } catch (err) {
+      console.error('[HarvestQueuePanel] Discard error:', err);
+      setHarvestError(`Error discarding bucket: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   }, [bookshelf]);
 

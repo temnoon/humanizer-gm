@@ -181,10 +181,45 @@ export interface XanaduPassageLink {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// HARVEST CURATION RESULT TYPES
+// ═══════════════════════════════════════════════════════════════════
+
+export interface HarvestCurationResult {
+  success: boolean;
+  error?: string;
+  fromArray?: string;
+}
+
+export interface HarvestStageResult {
+  success: boolean;
+  error?: string;
+  approvedCount?: number;
+  gemCount?: number;
+}
+
+export interface HarvestCommitResult {
+  success: boolean;
+  error?: string;
+  passageCount?: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // XANADU API
 // ═══════════════════════════════════════════════════════════════════
 
 export interface XanaduAPI {
+  // Harvest curation operations (atomic passage moves + lifecycle)
+  harvest: {
+    approvePassage: (bucketId: string, passageId: string) => Promise<HarvestCurationResult>;
+    rejectPassage: (bucketId: string, passageId: string, reason?: string) => Promise<HarvestCurationResult>;
+    gemPassage: (bucketId: string, passageId: string) => Promise<HarvestCurationResult>;
+    undoPassage: (bucketId: string, passageId: string) => Promise<HarvestCurationResult>;
+    finishCollecting: (bucketId: string) => Promise<{ success: boolean; error?: string }>;
+    stageBucket: (bucketId: string) => Promise<HarvestStageResult>;
+    commitBucket: (bucketId: string) => Promise<HarvestCommitResult>;
+    discardBucket: (bucketId: string) => Promise<{ success: boolean; error?: string }>;
+  };
+
   books: {
     list: (includeLibrary?: boolean) => Promise<XanaduBook[]>;
     get: (idOrUri: string) => Promise<XanaduBook | null>;

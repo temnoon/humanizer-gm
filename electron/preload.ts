@@ -612,7 +612,39 @@ export interface XanaduPassageLink {
   createdAt: number;
 }
 
+// Harvest curation result types
+export interface HarvestCurationResult {
+  success: boolean;
+  error?: string;
+  fromArray?: string;
+}
+
+export interface HarvestStageResult {
+  success: boolean;
+  error?: string;
+  approvedCount?: number;
+  gemCount?: number;
+}
+
+export interface HarvestCommitResult {
+  success: boolean;
+  error?: string;
+  passageCount?: number;
+}
+
 export interface XanaduAPI {
+  // Harvest curation operations (atomic passage moves + lifecycle)
+  harvest: {
+    approvePassage: (bucketId: string, passageId: string) => Promise<HarvestCurationResult>;
+    rejectPassage: (bucketId: string, passageId: string, reason?: string) => Promise<HarvestCurationResult>;
+    gemPassage: (bucketId: string, passageId: string) => Promise<HarvestCurationResult>;
+    undoPassage: (bucketId: string, passageId: string) => Promise<HarvestCurationResult>;
+    finishCollecting: (bucketId: string) => Promise<{ success: boolean; error?: string }>;
+    stageBucket: (bucketId: string) => Promise<HarvestStageResult>;
+    commitBucket: (bucketId: string) => Promise<HarvestCommitResult>;
+    discardBucket: (bucketId: string) => Promise<{ success: boolean; error?: string }>;
+  };
+
   // Book operations
   books: {
     list: (includeLibrary?: boolean) => Promise<XanaduBook[]>;
@@ -914,6 +946,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Xanadu Unified Storage
   xanadu: {
+    // Harvest curation operations (atomic passage moves + lifecycle)
+    harvest: {
+      approvePassage: (bucketId: string, passageId: string) =>
+        ipcRenderer.invoke('xanadu:harvest:approve-passage', bucketId, passageId),
+      rejectPassage: (bucketId: string, passageId: string, reason?: string) =>
+        ipcRenderer.invoke('xanadu:harvest:reject-passage', bucketId, passageId, reason),
+      gemPassage: (bucketId: string, passageId: string) =>
+        ipcRenderer.invoke('xanadu:harvest:gem-passage', bucketId, passageId),
+      undoPassage: (bucketId: string, passageId: string) =>
+        ipcRenderer.invoke('xanadu:harvest:undo-passage', bucketId, passageId),
+      finishCollecting: (bucketId: string) =>
+        ipcRenderer.invoke('xanadu:harvest:finish-collecting', bucketId),
+      stageBucket: (bucketId: string) =>
+        ipcRenderer.invoke('xanadu:harvest:stage-bucket', bucketId),
+      commitBucket: (bucketId: string) =>
+        ipcRenderer.invoke('xanadu:harvest:commit-bucket', bucketId),
+      discardBucket: (bucketId: string) =>
+        ipcRenderer.invoke('xanadu:harvest:discard-bucket', bucketId),
+    },
     books: {
       list: (includeLibrary?: boolean) => ipcRenderer.invoke('xanadu:book:list', includeLibrary),
       get: (idOrUri: string) => ipcRenderer.invoke('xanadu:book:get', idOrUri),

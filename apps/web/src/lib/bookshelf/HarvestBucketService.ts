@@ -78,8 +78,9 @@ class HarvestBucketService {
     if (this.loaded) return;
 
     if (isXanaduHarvestAvailable()) {
-      // Xanadu is primary storage - data loads on-demand via async methods
+      // Xanadu is primary storage - trigger async load
       console.log('[HarvestBucketService] Using Xanadu storage');
+      this.loadFromXanadu(); // Fire async load
       this.loaded = true;
     } else if (import.meta.env.DEV) {
       // DEV fallback to localStorage
@@ -92,6 +93,63 @@ class HarvestBucketService {
       // HarvestBucketService is optional, book-making can work without it
       console.warn('[HarvestBucketService] Xanadu not available. Harvest bucket features disabled.');
       this.loaded = true;
+    }
+  }
+
+  /**
+   * Load all buckets from Xanadu database
+   */
+  private async loadFromXanadu(): Promise<void> {
+    if (!isXanaduHarvestAvailable()) return;
+
+    try {
+      const rawBuckets = await window.electronAPI!.xanadu.harvestBuckets.list();
+      console.log(`[HarvestBucketService] Loading ${rawBuckets.length} buckets from Xanadu`);
+
+      for (const rawBucket of rawBuckets) {
+        const candidates = (rawBucket.candidates as SourcePassage[]) || [];
+        const approved = (rawBucket.approved as SourcePassage[]) || [];
+        const gems = (rawBucket.gems as SourcePassage[]) || [];
+        const rejected = (rawBucket.rejected as SourcePassage[]) || [];
+
+        const bucket: HarvestBucket = {
+          id: rawBucket.id,
+          uri: `harvest://${rawBucket.id}` as EntityURI,
+          type: 'harvest-bucket',
+          name: `Harvest ${rawBucket.id.slice(-8)}`,
+          bookUri: rawBucket.bookUri as EntityURI,
+          threadUri: rawBucket.threadUri as EntityURI | undefined,
+          status: rawBucket.status as HarvestBucket['status'],
+          queries: (rawBucket.queries as string[]) || [],
+          candidates,
+          approved,
+          gems,
+          rejected,
+          duplicateIds: (rawBucket.duplicateIds as string[]) || [],
+          config: (rawBucket.config as HarvestConfig) || {
+            queriesPerThread: 10,
+            minWordCount: 50,
+            maxWordCount: 500,
+            minSimilarity: 0.65,
+            dedupeByContent: true,
+            dedupeThreshold: 0.9,
+          },
+          stats: this.computeStats(candidates, approved, gems, rejected, rawBucket.duplicateIds as string[] || []),
+          createdAt: rawBucket.createdAt as number,
+          updatedAt: rawBucket.updatedAt as number || Date.now(),
+          startedAt: rawBucket.createdAt as number,
+          completedAt: rawBucket.completedAt as number | undefined,
+          finalizedAt: rawBucket.finalizedAt as number | undefined,
+          initiatedBy: (rawBucket.initiatedBy as 'user' | 'aui') || 'user',
+          tags: [],
+        };
+
+        this.buckets.set(bucket.id, bucket);
+      }
+
+      console.log(`[HarvestBucketService] Loaded ${this.buckets.size} buckets from Xanadu`);
+    } catch (err) {
+      console.error('[HarvestBucketService] Failed to load from Xanadu:', err);
     }
   }
 
@@ -275,6 +333,101 @@ class HarvestBucketService {
    */
   getBucket(bucketId: string): HarvestBucket | undefined {
     return this.buckets.get(bucketId);
+  }
+
+  /**
+   * Refresh a bucket from Xanadu database.
+   * Use this after IPC calls that modify the bucket to sync in-memory state.
+   */
+  async refreshBucketFromXanadu(bucketId: string): Promise<HarvestBucket | undefined> {
+    if (!isXanaduHarvestAvailable()) {
+      console.warn('[HarvestBucketService] Xanadu not available for refresh');
+      return undefined;
+    }
+
+    try {
+      const rawBucket = await window.electronAPI!.xanadu.harvestBuckets.get(bucketId);
+      if (!rawBucket) {
+        // Bucket was deleted - remove from cache
+        this.buckets.delete(bucketId);
+        return undefined;
+      }
+
+      const candidates = (rawBucket.candidates as SourcePassage[]) || [];
+      const approved = (rawBucket.approved as SourcePassage[]) || [];
+      const gems = (rawBucket.gems as SourcePassage[]) || [];
+      const rejected = (rawBucket.rejected as SourcePassage[]) || [];
+
+      // Convert from DB format to HarvestBucket with all required properties
+      const bucket: HarvestBucket = {
+        id: rawBucket.id,
+        uri: `harvest://${rawBucket.id}` as EntityURI,
+        type: 'harvest-bucket',
+        name: `Harvest ${rawBucket.id.slice(-8)}`,
+        bookUri: rawBucket.bookUri as EntityURI,
+        threadUri: rawBucket.threadUri as EntityURI | undefined,
+        status: rawBucket.status as HarvestBucket['status'],
+        queries: (rawBucket.queries as string[]) || [],
+        candidates,
+        approved,
+        gems,
+        rejected,
+        duplicateIds: (rawBucket.duplicateIds as string[]) || [],
+        config: (rawBucket.config as HarvestConfig) || {
+          queriesPerThread: 10,
+          minWordCount: 50,
+          maxWordCount: 500,
+          minSimilarity: 0.65,
+          dedupeByContent: true,
+          dedupeThreshold: 0.9,
+        },
+        stats: this.computeStats(candidates, approved, gems, rejected, rawBucket.duplicateIds as string[] || []),
+        createdAt: rawBucket.createdAt as number,
+        updatedAt: rawBucket.updatedAt as number || Date.now(),
+        startedAt: rawBucket.createdAt as number,
+        completedAt: rawBucket.completedAt as number | undefined,
+        finalizedAt: rawBucket.finalizedAt as number | undefined,
+        initiatedBy: (rawBucket.initiatedBy as 'user' | 'aui') || 'user',
+        tags: [],
+      };
+
+      // Update cache
+      this.buckets.set(bucketId, bucket);
+      return bucket;
+    } catch (err) {
+      console.error('[HarvestBucketService] refreshBucketFromXanadu failed:', err);
+      return undefined;
+    }
+  }
+
+  /**
+   * Compute stats from bucket arrays
+   */
+  private computeStats(
+    candidates: SourcePassage[],
+    approved: SourcePassage[],
+    gems: SourcePassage[],
+    rejected: SourcePassage[],
+    duplicateIds: string[]
+  ): HarvestStats {
+    // Calculate average similarity from all passages
+    const allPassages = [...candidates, ...approved, ...gems, ...rejected];
+    const totalSimilarity = allPassages.reduce((sum, p) => sum + (p.similarity || 0), 0);
+    const avgSimilarity = allPassages.length > 0 ? totalSimilarity / allPassages.length : 0;
+
+    // Calculate word count of approved passages
+    const approvedWordCount = [...approved, ...gems].reduce((sum, p) => sum + (p.wordCount || 0), 0);
+
+    return {
+      totalCandidates: candidates.length + approved.length + gems.length + rejected.length,
+      reviewed: approved.length + gems.length + rejected.length,
+      approved: approved.length,
+      gems: gems.length,
+      rejected: rejected.length,
+      duplicates: duplicateIds.length,
+      avgSimilarity,
+      approvedWordCount,
+    };
   }
 
   /**

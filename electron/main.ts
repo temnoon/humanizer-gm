@@ -970,6 +970,256 @@ function registerXanaduHandlers() {
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // HARVEST CURATION OPERATIONS (atomic passage moves + lifecycle)
+  // ─────────────────────────────────────────────────────────────────
+
+  // Helper: Find and remove a passage from any array, return it
+  function findAndRemovePassage(
+    bucket: Record<string, unknown>,
+    passageId: string
+  ): { passage: Record<string, unknown> | null; fromArray: string | null } {
+    const arrays = ['candidates', 'approved', 'gems', 'rejected'] as const;
+    for (const arrayName of arrays) {
+      const arr = bucket[arrayName] as Record<string, unknown>[];
+      if (!arr) continue;
+      const index = arr.findIndex((p) => p.id === passageId);
+      if (index !== -1) {
+        const [passage] = arr.splice(index, 1);
+        return { passage, fromArray: arrayName };
+      }
+    }
+    return { passage: null, fromArray: null };
+  }
+
+  ipcMain.handle('xanadu:harvest:approve-passage', (_e, bucketId: string, passageId: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      const { passage, fromArray } = findAndRemovePassage(bucket, passageId);
+      if (!passage) {
+        return { success: false, error: `Passage not found in bucket: ${passageId}` };
+      }
+
+      // Add to approved array
+      const approved = (bucket.approved as Record<string, unknown>[]) || [];
+      passage.curation = { status: 'approved', timestamp: Date.now() };
+      approved.push(passage);
+      bucket.approved = approved;
+
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      return { success: true, fromArray };
+    } catch (err) {
+      console.error('[Harvest] approve-passage error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:harvest:reject-passage', (_e, bucketId: string, passageId: string, reason?: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      const { passage, fromArray } = findAndRemovePassage(bucket, passageId);
+      if (!passage) {
+        return { success: false, error: `Passage not found in bucket: ${passageId}` };
+      }
+
+      // Add to rejected array
+      const rejected = (bucket.rejected as Record<string, unknown>[]) || [];
+      passage.curation = { status: 'rejected', reason, timestamp: Date.now() };
+      rejected.push(passage);
+      bucket.rejected = rejected;
+
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      return { success: true, fromArray };
+    } catch (err) {
+      console.error('[Harvest] reject-passage error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:harvest:gem-passage', (_e, bucketId: string, passageId: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      const { passage, fromArray } = findAndRemovePassage(bucket, passageId);
+      if (!passage) {
+        return { success: false, error: `Passage not found in bucket: ${passageId}` };
+      }
+
+      // Add to gems array
+      const gems = (bucket.gems as Record<string, unknown>[]) || [];
+      passage.curation = { status: 'gem', timestamp: Date.now() };
+      gems.push(passage);
+      bucket.gems = gems;
+
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      return { success: true, fromArray };
+    } catch (err) {
+      console.error('[Harvest] gem-passage error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:harvest:undo-passage', (_e, bucketId: string, passageId: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      const { passage, fromArray } = findAndRemovePassage(bucket, passageId);
+      if (!passage) {
+        return { success: false, error: `Passage not found in bucket: ${passageId}` };
+      }
+
+      // Move back to candidates
+      const candidates = (bucket.candidates as Record<string, unknown>[]) || [];
+      passage.curation = { status: 'candidate', timestamp: Date.now() };
+      candidates.push(passage);
+      bucket.candidates = candidates;
+
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      return { success: true, fromArray };
+    } catch (err) {
+      console.error('[Harvest] undo-passage error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:harvest:finish-collecting', (_e, bucketId: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      if (bucket.status !== 'collecting') {
+        return { success: false, error: `Bucket status is ${bucket.status}, expected 'collecting'` };
+      }
+
+      bucket.status = 'reviewing';
+      bucket.completedAt = Date.now();
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      return { success: true };
+    } catch (err) {
+      console.error('[Harvest] finish-collecting error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:harvest:stage-bucket', (_e, bucketId: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      if (bucket.status !== 'reviewing') {
+        return { success: false, error: `Bucket status is ${bucket.status}, expected 'reviewing'` };
+      }
+
+      const approved = (bucket.approved as unknown[]) || [];
+      const gems = (bucket.gems as unknown[]) || [];
+      if (approved.length === 0 && gems.length === 0) {
+        return { success: false, error: 'No approved or gem passages to stage' };
+      }
+
+      bucket.status = 'staged';
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      return { success: true, approvedCount: approved.length, gemCount: gems.length };
+    } catch (err) {
+      console.error('[Harvest] stage-bucket error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:harvest:commit-bucket', (_e, bucketId: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      if (bucket.status !== 'staged') {
+        return { success: false, error: `Bucket status is ${bucket.status}, expected 'staged'` };
+      }
+
+      // Get the book to find the bookId
+      const book = db.getBook(bucket.bookUri as string) || db.getBook(bucket.bookId as string);
+      if (!book) {
+        return { success: false, error: `Book not found: ${bucket.bookUri}` };
+      }
+
+      const approved = (bucket.approved as Record<string, unknown>[]) || [];
+      const gems = (bucket.gems as Record<string, unknown>[]) || [];
+      const allPassages = [...approved, ...gems];
+
+      let passageCount = 0;
+      for (const passage of allPassages) {
+        const curationStatus = (gems.some(g => g.id === passage.id)) ? 'gem' : 'approved';
+        db.upsertBookPassage({
+          id: passage.id as string,
+          bookId: book.id as string,
+          sourceRef: passage.sourceRef,
+          text: (passage.text || passage.content || '') as string,
+          wordCount: passage.wordCount as number | undefined,
+          role: passage.role as string | undefined,
+          harvestedBy: passage.harvestedBy as string | undefined,
+          threadId: passage.threadId as string | undefined,
+          curationStatus,
+          curationNote: (passage.curation as Record<string, unknown>)?.notes as string | undefined,
+          tags: passage.tags as string[] | undefined,
+        });
+        passageCount++;
+      }
+
+      bucket.status = 'committed';
+      bucket.finalizedAt = Date.now();
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+
+      console.log(`[Harvest] Committed ${passageCount} passages from bucket ${bucketId} to book ${book.id}`);
+      return { success: true, passageCount };
+    } catch (err) {
+      console.error('[Harvest] commit-bucket error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:harvest:discard-bucket', (_e, bucketId: string) => {
+    try {
+      const db = ensureDb();
+      const bucket = db.getHarvestBucket(bucketId);
+      if (!bucket) {
+        return { success: false, error: `Bucket not found: ${bucketId}` };
+      }
+
+      bucket.status = 'discarded';
+      bucket.finalizedAt = Date.now();
+      db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      return { success: true };
+    } catch (err) {
+      console.error('[Harvest] discard-bucket error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // NARRATIVE ARC OPERATIONS
   // ─────────────────────────────────────────────────────────────────
 

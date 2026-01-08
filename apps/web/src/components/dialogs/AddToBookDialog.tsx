@@ -58,7 +58,7 @@ export function AddToBookDialog({
 
   // Get selected book
   const selectedBook = books.find((b) => b.uri === selectedBookUri);
-  const chapters = selectedBook?.chapters || [];
+  const chapters = selectedBook?.chapters ?? [];
 
   // Handle book selection
   const handleBookSelect = useCallback((value: string) => {
@@ -212,7 +212,7 @@ export function AddToBookDialog({
                   <optgroup label="Existing Books">
                     {books.map((book) => (
                       <option key={book.uri} value={book.uri}>
-                        {book.name} ({book.chapters.length} chapters)
+                        {book.name} ({book.chapters?.length ?? 0} chapters)
                       </option>
                     ))}
                   </optgroup>

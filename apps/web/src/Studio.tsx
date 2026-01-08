@@ -2719,7 +2719,7 @@ function Workspace({ selectedMedia, selectedContent, onClearMedia, onClearConten
       // Create new chapter
       const newChapter: DraftChapter = {
         id: `chapter-${Date.now()}`,
-        number: (bookshelf.getBook(targetBookUri)?.chapters.length ?? 0) + 1,
+        number: (bookshelf.getBook(targetBookUri)?.chapters?.length ?? 0) + 1,
         title: chapterTitle,
         content,
         wordCount: content.trim().split(/\s+/).filter(Boolean).length,
