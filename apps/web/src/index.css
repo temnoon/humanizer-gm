@@ -10351,6 +10351,29 @@ button.media-viewer__related-thumb {
 .book-nav__chapter-status--revising { color: #6366f1; }
 .book-nav__chapter-status--complete { color: #22c55e; }
 
+/* Fill chapter button */
+.book-nav__chapter-fill {
+  padding: 4px 10px;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--studio-accent, #8B4513);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.book-nav__chapter:hover .book-nav__chapter-fill {
+  opacity: 1;
+}
+
+.book-nav__chapter-fill:hover {
+  background: var(--studio-accent-hover, #704010);
+}
+
 .book-nav__empty {
   text-align: center;
   padding: 2rem 1rem;

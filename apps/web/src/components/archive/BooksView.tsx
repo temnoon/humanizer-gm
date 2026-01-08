@@ -14,6 +14,7 @@ import { useAuthenticatedFetch } from '../../lib/auth';
 // useBook removed - consolidated into useBookshelf (Phase 4.2)
 import { useBookshelf, type BookProject as BookshelfBookProject } from '../../lib/bookshelf';
 import { usePromptDialog, PromptDialog } from '../dialogs/PromptDialog';
+import { FillChapterDialog, type FillChapterOptions } from '../dialogs/FillChapterDialog';
 import {
   type BookProject,
   type SourcePassage,
@@ -101,6 +102,7 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [renamingBookId, setRenamingBookId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [fillDialogChapter, setFillDialogChapter] = useState<DraftChapter | null>(null);
 
   // Buffer system - for loading content to workspace
   const { importText } = useBuffers();
@@ -457,6 +459,50 @@ Start writing here...
       }
     }
   }, [bookshelf, bookProjects, selectedProjectId, onSelectBookContent, prompt]);
+
+  // Fill a chapter with generated content
+  const handleFillChapter = useCallback(async (options: FillChapterOptions) => {
+    if (!fillDialogChapter || !selectedProjectId) return;
+
+    const project = bookProjects.find(p => p.id === selectedProjectId);
+    if (!project) {
+      throw new Error('Project not found');
+    }
+
+    // Check if fill API is available
+    if (!window.electronAPI?.xanadu?.chapters?.fill) {
+      throw new Error('Fill chapter not available - requires Electron');
+    }
+
+    const result = await window.electronAPI.xanadu.chapters.fill(
+      fillDialogChapter.id,
+      project.id,
+      options
+    );
+
+    if (!result.success) {
+      throw new Error(result.error || 'Generation failed');
+    }
+
+    // Refresh book data to get updated chapter
+    bookshelf.refreshBooks();
+
+    // Open the filled chapter in workspace
+    if (result.chapter && onSelectBookContent) {
+      onSelectBookContent({
+        type: 'chapter',
+        title: `Chapter ${fillDialogChapter.number ?? 1}: ${result.chapter.title}`,
+        content: result.chapter.content,
+        marginalia: fillDialogChapter.marginalia,
+        source: {
+          bookProjectId: project.id,
+          projectName: project.name,
+          itemId: result.chapter.id,
+        },
+        chapter: { ...fillDialogChapter, content: result.chapter.content, wordCount: result.chapter.wordCount },
+      }, project);
+    }
+  }, [fillDialogChapter, selectedProjectId, bookProjects, bookshelf, onSelectBookContent]);
 
   // Start a harvest for the current project - runs semantic search immediately
   const handleStartHarvest = useCallback(async () => {
@@ -899,6 +945,19 @@ Start writing here...
                               )}
                             </span>
                           </div>
+                          {/* Fill button for empty/outline chapters */}
+                          {(status === 'outline' || wordCount < 50) && (
+                            <button
+                              className="book-nav__chapter-fill"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFillDialogChapter(chapter);
+                              }}
+                              title="Generate content for this chapter"
+                            >
+                              Fill
+                            </button>
+                          )}
                           <span className={`book-nav__chapter-status book-nav__chapter-status--${status}`}>
                             {status === 'complete' ? '✓' : '○'}
                           </span>
@@ -930,6 +989,18 @@ Start writing here...
 
       {/* Prompt dialog (window.prompt() not supported in Electron) */}
       <PromptDialog {...dialogProps} />
+
+      {/* Fill chapter dialog */}
+      <FillChapterDialog
+        isOpen={!!fillDialogChapter}
+        chapter={fillDialogChapter ? {
+          id: fillDialogChapter.id,
+          title: fillDialogChapter.title,
+          bookId: selectedProjectId!,
+        } : null}
+        onClose={() => setFillDialogChapter(null)}
+        onFill={handleFillChapter}
+      />
     </>
     );
   }

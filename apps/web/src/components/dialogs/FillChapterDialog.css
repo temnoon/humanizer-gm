@@ -1,0 +1,199 @@
+/* FillChapterDialog - Options for filling a chapter */
+
+.fill-dialog__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.fill-dialog {
+  background: var(--color-bg-primary, #fff);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  min-width: 400px;
+  max-width: 520px;
+  width: 90%;
+}
+
+.fill-dialog__header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+}
+
+.fill-dialog__header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1a1a1a);
+}
+
+.fill-dialog__chapter-title {
+  font-size: 13px;
+  color: var(--color-text-secondary, #666);
+  font-style: italic;
+}
+
+.fill-dialog__content {
+  padding: 16px 20px;
+}
+
+.fill-dialog__error {
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.fill-dialog__field {
+  margin-bottom: 16px;
+}
+
+.fill-dialog__field:last-child {
+  margin-bottom: 0;
+}
+
+.fill-dialog__field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1a1a1a);
+}
+
+.fill-dialog__optional {
+  font-weight: 400;
+  color: var(--color-text-secondary, #666);
+}
+
+.fill-dialog__field select,
+.fill-dialog__field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: 6px;
+  background: var(--color-bg-secondary, #f8f8f8);
+  color: var(--color-text-primary, #1a1a1a);
+  box-sizing: border-box;
+}
+
+.fill-dialog__field select:focus,
+.fill-dialog__field textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #8B4513);
+  box-shadow: 0 0 0 2px rgba(139, 69, 19, 0.2);
+}
+
+.fill-dialog__field select:disabled,
+.fill-dialog__field textarea:disabled,
+.fill-dialog__field input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.fill-dialog__field input[type="range"] {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.fill-dialog__range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-secondary, #999);
+  margin-top: 2px;
+}
+
+.fill-dialog__help {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+}
+
+.fill-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--color-border, #e0e0e0);
+}
+
+.fill-dialog__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: 6px;
+  background: var(--color-bg-secondary, #f0f0f0);
+  color: var(--color-text-primary, #333);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.fill-dialog__btn:hover:not(:disabled) {
+  background: var(--color-bg-tertiary, #e0e0e0);
+}
+
+.fill-dialog__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.fill-dialog__btn--primary {
+  background: var(--color-primary, #8B4513);
+  border-color: var(--color-primary, #8B4513);
+  color: white;
+}
+
+.fill-dialog__btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-dark, #704010);
+  border-color: var(--color-primary-dark, #704010);
+}
+
+.fill-dialog__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: fill-dialog-spin 0.8s linear infinite;
+}
+
+@keyframes fill-dialog-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Dark theme support */
+[data-theme='dark'] .fill-dialog {
+  background: var(--color-bg-primary, #1a1a1a);
+}
+
+[data-theme='dark'] .fill-dialog__header {
+  border-bottom-color: var(--color-border, #333);
+}
+
+[data-theme='dark'] .fill-dialog__footer {
+  border-top-color: var(--color-border, #333);
+}
+
+[data-theme='dark'] .fill-dialog__error {
+  background: #450a0a;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}

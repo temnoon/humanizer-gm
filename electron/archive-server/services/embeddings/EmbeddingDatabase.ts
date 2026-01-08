@@ -5231,6 +5231,8 @@ export class EmbeddingDatabase {
     // Include chapters and passages
     book.chapters = this.getBookChapters(book.id as string);
     book.passages = this.getBookPassages(book.id as string);
+    // Compute stats from actual data (override stored stats)
+    book.stats = this.computeBookStats(book);
     return book;
   }
 
@@ -5249,6 +5251,8 @@ export class EmbeddingDatabase {
       book.chapters = this.getBookChapters(book.id as string);
       // Include passages
       book.passages = this.getBookPassages(book.id as string);
+      // Compute stats from actual data (override stored stats)
+      book.stats = this.computeBookStats(book);
       return book;
     });
   }
@@ -5284,6 +5288,52 @@ export class EmbeddingDatabase {
       isLibrary: row.is_library === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    };
+  }
+
+  /**
+   * Compute stats from actual chapters/passages arrays
+   */
+  private computeBookStats(book: Record<string, unknown>): Record<string, unknown> {
+    const chapters = (book.chapters || []) as Array<{ wordCount?: number; content?: string }>;
+    const passages = (book.passages || []) as Array<{ curation?: { status?: string }; curationStatus?: string; text?: string; wordCount?: number }>;
+    const sourceRefs = (book.sourceRefs || []) as unknown[];
+
+    // Count passages by status
+    const approved = passages.filter(p => {
+      const status = p.curation?.status || p.curationStatus;
+      return status === 'approved' || status === 'gem';
+    });
+    const gems = passages.filter(p => {
+      const status = p.curation?.status || p.curationStatus;
+      return status === 'gem';
+    });
+
+    // Compute word count from chapters
+    const chapterWordCount = chapters.reduce((sum, ch) => {
+      if (ch.wordCount) return sum + ch.wordCount;
+      if (ch.content && typeof ch.content === 'string') {
+        return sum + ch.content.trim().split(/\s+/).filter(Boolean).length;
+      }
+      return sum;
+    }, 0);
+
+    // Fallback: count from passages if no chapters
+    const passageWordCount = passages.reduce((sum, p) => {
+      if (p.wordCount) return sum + p.wordCount;
+      if (p.text && typeof p.text === 'string') {
+        return sum + p.text.trim().split(/\s+/).filter(Boolean).length;
+      }
+      return sum;
+    }, 0);
+
+    return {
+      totalSources: sourceRefs.length,
+      totalPassages: passages.length,
+      approvedPassages: approved.length,
+      gems: gems.length,
+      chapters: chapters.length,
+      wordCount: chapterWordCount > 0 ? chapterWordCount : passageWordCount,
     };
   }
 

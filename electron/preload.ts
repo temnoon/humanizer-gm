@@ -683,6 +683,12 @@ export interface XanaduAPI {
     get: (id: string) => Promise<XanaduChapter | null>;
     upsert: (chapter: Partial<XanaduChapter> & { id: string; bookId: string; number: number; title: string }) => Promise<{ success: boolean; id: string }>;
     delete: (id: string) => Promise<{ success: boolean }>;
+    fill: (chapterId: string, bookId: string, options?: { style?: string; targetWords?: number; additionalQueries?: string[] }) => Promise<{
+      success: boolean;
+      chapter?: { id: string; title: string; content: string; wordCount: number };
+      stats?: { passagesFound: number; passagesUsed: number; generationTimeMs: number; queriesUsed: string[] };
+      error?: string;
+    }>;
   };
 
   // Version operations
@@ -1047,6 +1053,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       get: (id: string) => ipcRenderer.invoke('xanadu:chapter:get', id),
       upsert: (chapter) => ipcRenderer.invoke('xanadu:chapter:upsert', chapter),
       delete: (id: string) => ipcRenderer.invoke('xanadu:chapter:delete', id),
+      fill: (chapterId: string, bookId: string, options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('xanadu:chapter:fill', chapterId, bookId, options),
     },
     versions: {
       list: (chapterId: string) => ipcRenderer.invoke('xanadu:version:list', chapterId),

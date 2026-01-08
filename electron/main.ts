@@ -940,6 +940,16 @@ function registerXanaduHandlers() {
     return { success: true };
   });
 
+  // Fill chapter with generated content
+  ipcMain.handle(
+    'xanadu:chapter:fill',
+    async (_e, chapterId: string, bookId: string, options?: Record<string, unknown>) => {
+      const { fillChapter } = await import('./services/chapter-filler.js');
+      const archivePath = getArchiveRoot();
+      return fillChapter(chapterId, bookId, archivePath, options);
+    }
+  );
+
   // ─────────────────────────────────────────────────────────────────
   // HARVEST BUCKET OPERATIONS
   // ─────────────────────────────────────────────────────────────────
