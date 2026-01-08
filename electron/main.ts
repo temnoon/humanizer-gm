@@ -944,8 +944,11 @@ function registerXanaduHandlers() {
   ipcMain.handle(
     'xanadu:chapter:fill',
     async (_e, chapterId: string, bookId: string, options?: Record<string, unknown>) => {
+      const archivePath = store.get('archivePath') as string | null;
+      if (!archivePath) {
+        return { success: false, error: 'Archive path not configured' };
+      }
       const { fillChapter } = await import('./services/chapter-filler.js');
-      const archivePath = getArchiveRoot();
       return fillChapter(chapterId, bookId, archivePath, options);
     }
   );

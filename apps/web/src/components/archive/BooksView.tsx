@@ -485,7 +485,7 @@ Start writing here...
     }
 
     // Refresh book data to get updated chapter
-    bookshelf.refreshBooks();
+    await bookshelf.refresh();
 
     // Open the filled chapter in workspace
     if (result.chapter && onSelectBookContent) {

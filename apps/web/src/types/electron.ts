@@ -253,6 +253,18 @@ export interface XanaduAPI {
     get: (id: string) => Promise<XanaduChapter | null>;
     upsert: (chapter: Partial<XanaduChapter> & { id: string; bookId: string; number: number; title: string }) => Promise<{ success: boolean; id: string }>;
     delete: (id: string) => Promise<{ success: boolean }>;
+    fill: (chapterId: string, bookId: string, options?: {
+      style?: 'academic' | 'narrative' | 'conversational';
+      targetWords?: number;
+      additionalQueries?: string[];
+      maxPassages?: number;
+      minSimilarity?: number;
+    }) => Promise<{
+      success: boolean;
+      chapter?: { id: string; title: string; content: string; wordCount: number };
+      stats?: { passagesFound: number; passagesUsed: number; generationTimeMs: number; queriesUsed: string[] };
+      error?: string;
+    }>;
   };
 
   versions: {

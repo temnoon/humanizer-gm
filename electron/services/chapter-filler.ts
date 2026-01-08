@@ -10,6 +10,7 @@
  */
 
 import { EmbeddingDatabase } from '../archive-server/services/embeddings/EmbeddingDatabase.js';
+import { embed } from '../archive-server/services/embeddings/EmbeddingGenerator.js';
 import { getModelRouter } from './model-router.js';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -115,7 +116,7 @@ async function searchPassages(
     try {
       // Search with role='assistant' to get substantive content
       const results = db.searchMessages(
-        await db.generateEmbedding(query),
+        await embed(query),
         resultsPerQuery,
         'assistant'
       );
