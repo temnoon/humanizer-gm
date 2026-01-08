@@ -34,6 +34,7 @@ import {
   getEmbeddingDatabase,
   areServicesInitialized,
   waitForServices,
+  getArchiveRoot,
 } from './archive-server';
 
 // Embedded NPE-Local Server (AI Detection, Transformations)
@@ -944,10 +945,10 @@ function registerXanaduHandlers() {
   ipcMain.handle(
     'xanadu:chapter:fill',
     async (_e, chapterId: string, bookId: string, options?: Record<string, unknown>) => {
-      const archivePath = store.get('archivePath') as string | null;
-      if (!archivePath) {
-        return { success: false, error: 'Archive path not configured' };
+      if (!areServicesInitialized()) {
+        return { success: false, error: 'Archive services not initialized. Start archive server first.' };
       }
+      const archivePath = getArchiveRoot();
       const { fillChapter } = await import('./services/chapter-filler.js');
       return fillChapter(chapterId, bookId, archivePath, options);
     }

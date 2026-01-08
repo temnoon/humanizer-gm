@@ -930,10 +930,18 @@ Start writing here...
                       const status = chapter.status ?? 'draft';
                       const number = chapter.number ?? index + 1;
                       return (
-                        <button
+                        <div
                           key={chapter.id}
                           className="book-nav__chapter"
                           onClick={() => handleChapterClick(chapter)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleChapterClick(chapter);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
                         >
                           <span className="book-nav__chapter-number">Ch {number}</span>
                           <div className="book-nav__chapter-info">
@@ -961,7 +969,7 @@ Start writing here...
                           <span className={`book-nav__chapter-status book-nav__chapter-status--${status}`}>
                             {status === 'complete' ? '✓' : '○'}
                           </span>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
