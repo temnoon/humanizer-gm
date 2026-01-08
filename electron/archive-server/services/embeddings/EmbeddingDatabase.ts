@@ -5220,25 +5220,37 @@ export class EmbeddingDatabase {
   }
 
   /**
-   * Get a book by ID or URI
+   * Get a book by ID or URI (includes chapters and passages)
    */
   getBook(idOrUri: string): Record<string, unknown> | null {
     const row = this.db.prepare(`
       SELECT * FROM books WHERE id = ? OR uri = ?
     `).get(idOrUri, idOrUri) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return this.parseBookRow(row);
+    const book = this.parseBookRow(row);
+    // Include chapters and passages
+    book.chapters = this.getBookChapters(book.id as string);
+    book.passages = this.getBookPassages(book.id as string);
+    return book;
   }
 
   /**
-   * Get all books
+   * Get all books with their chapters and passages included
    */
   getAllBooks(includeLibrary = true): Record<string, unknown>[] {
     const query = includeLibrary
       ? 'SELECT * FROM books ORDER BY updated_at DESC'
       : 'SELECT * FROM books WHERE is_library = 0 ORDER BY updated_at DESC';
     const rows = this.db.prepare(query).all() as Record<string, unknown>[];
-    return rows.map(row => this.parseBookRow(row));
+
+    return rows.map(row => {
+      const book = this.parseBookRow(row);
+      // Include chapters
+      book.chapters = this.getBookChapters(book.id as string);
+      // Include passages
+      book.passages = this.getBookPassages(book.id as string);
+      return book;
+    });
   }
 
   /**

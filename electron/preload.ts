@@ -715,8 +715,61 @@ export interface XanaduAPI {
     delete: (id: string) => Promise<{ success: boolean }>;
   };
 
+  // Passage analysis operations
+  analyze: {
+    passage: (passageId: string, text: string, config?: AnalysisConfig) => Promise<AnalysisResult>;
+    passages: (passages: Array<{ id: string; text: string }>, config?: AnalysisConfig) => Promise<AnalysisResultBatch>;
+  };
+
   // Library seeding
   seedLibrary: () => Promise<{ success: boolean; alreadySeeded?: boolean; error?: string }>;
+}
+
+// Analysis types
+export interface AnalysisConfig {
+  bookId?: string;
+  bookTheme?: string;
+  enableQuantum?: boolean;
+  enableAiDetection?: boolean;
+  enableResonance?: boolean;
+  model?: 'local' | 'cloud';
+}
+
+export interface PassageAnalysis {
+  passageId: string;
+  text: string;
+  quantum: {
+    stance: 'literal' | 'metaphorical' | 'both' | 'neither';
+    probabilities: { literal: number; metaphorical: number; both: number; neither: number };
+    entropy: number;
+  };
+  aiDetection: {
+    score: number;
+    confidence: number;
+    features: { burstiness: number; vocabularyDiversity: number; avgSentenceLength: number; tellPhraseCount: number };
+  };
+  resonance: {
+    score: number;
+    matchedThemes: string[];
+  };
+  recommendation: {
+    action: 'approve' | 'gem' | 'reject' | 'review';
+    confidence: number;
+    reasons: string[];
+  };
+  analyzedAt: number;
+}
+
+export interface AnalysisResult {
+  success: boolean;
+  error?: string;
+  analysis?: PassageAnalysis;
+}
+
+export interface AnalysisResultBatch {
+  success: boolean;
+  error?: string;
+  analyses?: PassageAnalysis[];
 }
 
 // ============================================================
@@ -1017,6 +1070,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       listByPassage: (passageId: string) => ipcRenderer.invoke('xanadu:passage-link:list-by-passage', passageId),
       upsert: (link) => ipcRenderer.invoke('xanadu:passage-link:upsert', link),
       delete: (id: string) => ipcRenderer.invoke('xanadu:passage-link:delete', id),
+    },
+    analyze: {
+      passage: (passageId: string, text: string, config?: AnalysisConfig) =>
+        ipcRenderer.invoke('xanadu:analyze:passage', passageId, text, config),
+      passages: (passages: Array<{ id: string; text: string }>, config?: AnalysisConfig) =>
+        ipcRenderer.invoke('xanadu:analyze:passages', passages, config),
     },
     seedLibrary: () => ipcRenderer.invoke('xanadu:seed-library'),
   },

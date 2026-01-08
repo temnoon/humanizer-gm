@@ -1129,6 +1129,14 @@ function registerXanaduHandlers() {
         return { success: false, error: `Bucket not found: ${bucketId}` };
       }
 
+      console.log(`[Harvest] Stage attempt for bucket ${bucketId}:`, {
+        status: bucket.status,
+        bookUri: bucket.bookUri,
+        bookId: bucket.bookId,
+        approvedCount: (bucket.approved as unknown[])?.length ?? 0,
+        gemsCount: (bucket.gems as unknown[])?.length ?? 0,
+      });
+
       if (bucket.status !== 'reviewing') {
         return { success: false, error: `Bucket status is ${bucket.status}, expected 'reviewing'` };
       }
@@ -1141,6 +1149,7 @@ function registerXanaduHandlers() {
 
       bucket.status = 'staged';
       db.upsertHarvestBucket(bucket as Parameters<typeof db.upsertHarvestBucket>[0]);
+      console.log(`[Harvest] Staged bucket ${bucketId} with ${approved.length} approved, ${gems.length} gems`);
       return { success: true, approvedCount: approved.length, gemCount: gems.length };
     } catch (err) {
       console.error('[Harvest] stage-bucket error:', err);
@@ -1156,15 +1165,30 @@ function registerXanaduHandlers() {
         return { success: false, error: `Bucket not found: ${bucketId}` };
       }
 
+      console.log(`[Harvest] Commit attempt for bucket ${bucketId}:`, {
+        status: bucket.status,
+        bookUri: bucket.bookUri,
+        bookId: bucket.bookId,
+        approvedCount: (bucket.approved as unknown[])?.length ?? 0,
+        gemsCount: (bucket.gems as unknown[])?.length ?? 0,
+      });
+
       if (bucket.status !== 'staged') {
         return { success: false, error: `Bucket status is ${bucket.status}, expected 'staged'` };
       }
 
-      // Get the book to find the bookId
-      const book = db.getBook(bucket.bookUri as string) || db.getBook(bucket.bookId as string);
-      if (!book) {
-        return { success: false, error: `Book not found: ${bucket.bookUri}` };
+      // Get the book to find the bookId - try both bookUri and bookId
+      console.log(`[Harvest] Looking up book by URI: ${bucket.bookUri}`);
+      let book = db.getBook(bucket.bookUri as string);
+      if (!book && bucket.bookId) {
+        console.log(`[Harvest] URI lookup failed, trying ID: ${bucket.bookId}`);
+        book = db.getBook(bucket.bookId as string);
       }
+      if (!book) {
+        console.error(`[Harvest] Book not found. Tried URI=${bucket.bookUri}, ID=${bucket.bookId}`);
+        return { success: false, error: `Book not found: ${bucket.bookUri} (also tried ID: ${bucket.bookId})` };
+      }
+      console.log(`[Harvest] Found book: ${book.id} (${book.name})`)
 
       const approved = (bucket.approved as Record<string, unknown>[]) || [];
       const gems = (bucket.gems as Record<string, unknown>[]) || [];
@@ -1269,6 +1293,226 @@ function registerXanaduHandlers() {
     const db = ensureDb();
     db.deletePassageLink(id);
     return { success: true };
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // PASSAGE ANALYSIS (Composite analysis for curation)
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:analyze:passage', async (
+    _e,
+    passageId: string,
+    text: string,
+    config?: {
+      bookId?: string;
+      bookTheme?: string;
+      enableQuantum?: boolean;
+      enableAiDetection?: boolean;
+      enableResonance?: boolean;
+      model?: 'local' | 'cloud';
+    }
+  ) => {
+    try {
+      // Dynamic import to avoid circular dependencies
+      const { analyzePassage } = await import('./services/passage-analyzer');
+      const db = ensureDb();
+
+      // Get book theme if bookId provided
+      let bookTheme = config?.bookTheme;
+      if (!bookTheme && config?.bookId) {
+        const book = db.getBook(config.bookId);
+        if (book) {
+          bookTheme = `${book.name} ${book.description || ''}`;
+        }
+      }
+
+      const result = await analyzePassage(passageId, text, { ...config, bookTheme }, db);
+      return { success: true, analysis: result };
+    } catch (err) {
+      console.error('[Analysis] passage error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:analyze:passages', async (
+    _e,
+    passages: Array<{ id: string; text: string }>,
+    config?: {
+      bookId?: string;
+      bookTheme?: string;
+      enableQuantum?: boolean;
+      enableAiDetection?: boolean;
+      enableResonance?: boolean;
+      model?: 'local' | 'cloud';
+    }
+  ) => {
+    try {
+      const { analyzePassages } = await import('./services/passage-analyzer');
+      const db = ensureDb();
+
+      // Get book theme if bookId provided
+      let bookTheme = config?.bookTheme;
+      if (!bookTheme && config?.bookId) {
+        const book = db.getBook(config.bookId);
+        if (book) {
+          bookTheme = `${book.name} ${book.description || ''}`;
+        }
+      }
+
+      const results = await analyzePassages(passages, { ...config, bookTheme }, db);
+      return { success: true, analyses: results };
+    } catch (err) {
+      console.error('[Analysis] passages error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // CHEKHOV ANALYSIS (Narrative necessity)
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:chekhov:analyze-document', async (_e, documentId: string, text: string) => {
+    try {
+      const { analyzeDocument } = await import('./services/chekhov-analyzer');
+      const result = analyzeDocument(documentId, text);
+      return { success: true, analysis: result };
+    } catch (err) {
+      console.error('[Chekhov] analyze-document error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:chekhov:analyze-sentence', async (_e, sentenceId: string, sentence: string, context?: string[]) => {
+    try {
+      const { analyzeSentence } = await import('./services/chekhov-analyzer');
+      const result = analyzeSentence(sentenceId, sentence, context);
+      return { success: true, analysis: result };
+    } catch (err) {
+      console.error('[Chekhov] analyze-sentence error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // SENTIMENT TRACKING (Emotional trajectory)
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:sentiment:analyze-trajectory', async (_e, documentId: string, text: string) => {
+    try {
+      const { analyzeTrajectory } = await import('./services/sentiment-tracker');
+      const result = analyzeTrajectory(documentId, text);
+      return { success: true, trajectory: result };
+    } catch (err) {
+      console.error('[Sentiment] analyze-trajectory error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:sentiment:analyze-sentence', async (_e, sentenceId: string, sentence: string) => {
+    try {
+      const { analyzeSentence } = await import('./services/sentiment-tracker');
+      const result = analyzeSentence(sentenceId, sentence);
+      return { success: true, analysis: result };
+    } catch (err) {
+      console.error('[Sentiment] analyze-sentence error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // MODEL ROUTER (Local/Cloud model selection)
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:model:list-available', async () => {
+    try {
+      const { getModelRouter } = await import('./services/model-router');
+      const router = getModelRouter();
+      const models = await router.listAvailableModels();
+      return { success: true, models };
+    } catch (err) {
+      console.error('[Model] list-available error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:model:generate', async (
+    _e,
+    request: {
+      prompt: string;
+      maxTokens?: number;
+      temperature?: number;
+      taskType?: 'quick-analysis' | 'deep-analysis' | 'draft' | 'final';
+      systemPrompt?: string;
+    }
+  ) => {
+    try {
+      const { getModelRouter } = await import('./services/model-router');
+      const router = getModelRouter();
+      const result = await router.generate(request);
+      return result;
+    } catch (err) {
+      console.error('[Model] generate error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error', latencyMs: 0 };
+    }
+  });
+
+  ipcMain.handle('xanadu:model:configure', async (
+    _e,
+    config: {
+      preference: 'local-only' | 'cloud-when-needed' | 'cloud-preferred';
+      anthropicApiKey?: string;
+      cloudflareAccountId?: string;
+      cloudflareApiToken?: string;
+    }
+  ) => {
+    try {
+      const { configureModelRouter } = await import('./services/model-router');
+      configureModelRouter(config);
+      return { success: true };
+    } catch (err) {
+      console.error('[Model] configure error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // BOOK PROPOSAL (Intelligent book assembly)
+  // ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('xanadu:book:generate-proposal', async (
+    _e,
+    sources: Array<{ id: string; text: string; metadata?: { sourceRef?: string; timestamp?: number; author?: string } }>,
+    bookTheme?: string
+  ) => {
+    try {
+      const { generateProposal } = await import('./services/book-proposal');
+      const proposal = await generateProposal(sources, bookTheme);
+      return { success: true, proposal };
+    } catch (err) {
+      console.error('[BookProposal] generate-proposal error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('xanadu:book:generate-draft', async (
+    _e,
+    proposal: Record<string, unknown>,
+    sources: Array<{ id: string; text: string; metadata?: Record<string, unknown> }>,
+    config: {
+      selectedArcIndex: number;
+      selectedStyleIndex: number;
+      additionalGuidance?: string;
+      modelTier?: 'local' | 'balanced' | 'quality';
+    }
+  ) => {
+    try {
+      const { generateDraft } = await import('./services/book-proposal');
+      const result = await generateDraft(proposal as unknown as Parameters<typeof generateDraft>[0], sources, config);
+      return result;
+    } catch (err) {
+      console.error('[BookProposal] generate-draft error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
   });
 
   // ─────────────────────────────────────────────────────────────────
