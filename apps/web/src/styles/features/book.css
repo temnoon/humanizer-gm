@@ -1,0 +1,289 @@
+/* ═══════════════════════════════════════════════════════════════════
+   BOOK READER STYLES
+   Beautiful, readable book typography inspired by print design
+   Themes: Sepia, Light, Dark | Controls, Typography, Print styles
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.book-reader {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Theme: Sepia (default) */
+.book-reader--sepia {
+  --book-bg: #f8f4e9;
+  --book-text: #433422;
+  --book-text-secondary: #6b5c4a;
+  --book-accent: #8b6914;
+  --book-quote-bg: #f0e8d6;
+  --book-quote-border: #c9a227;
+  --book-hr: #d4c4a8;
+  --book-control-bg: rgba(248, 244, 233, 0.95);
+}
+
+/* Theme: Light */
+.book-reader--light {
+  --book-bg: #ffffff;
+  --book-text: #1a1a1a;
+  --book-text-secondary: #555555;
+  --book-accent: #0066cc;
+  --book-quote-bg: #f5f5f5;
+  --book-quote-border: #cccccc;
+  --book-hr: #e0e0e0;
+  --book-control-bg: rgba(255, 255, 255, 0.95);
+}
+
+/* Theme: Dark */
+.book-reader--dark {
+  --book-bg: #1a1a1a;
+  --book-text: #e0e0e0;
+  --book-text-secondary: #a0a0a0;
+  --book-accent: #7db8ff;
+  --book-quote-bg: #252525;
+  --book-quote-border: #404040;
+  --book-hr: #333333;
+  --book-control-bg: rgba(26, 26, 26, 0.95);
+}
+
+.book-reader {
+  background-color: var(--book-bg);
+  color: var(--book-text);
+}
+
+/* Controls bar */
+.book-reader__controls {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: var(--book-control-bg);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--book-hr);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.book-reader__controls--hidden {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+
+.book-reader__controls-left,
+.book-reader__controls-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.book-reader__controls-center {
+  flex: 1;
+  text-align: center;
+}
+
+.book-reader__title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: var(--book-text-secondary);
+}
+
+.book-reader__btn {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--book-text);
+  background: transparent;
+  border: 1px solid var(--book-hr);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.book-reader__btn:hover {
+  background: var(--book-quote-bg);
+}
+
+.book-reader__select {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--book-text);
+  background: transparent;
+  border: 1px solid var(--book-hr);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Book content area */
+.book-reader__content {
+  flex: 1;
+  padding: 6rem 1.5rem 4rem;
+  overflow-y: auto;
+}
+
+.book-reader__article {
+  max-width: 38rem;
+  margin: 0 auto;
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1.7;
+}
+
+/* Typography */
+.book-reader__article h1 {
+  font-size: 2.25em;
+  font-weight: normal;
+  text-align: center;
+  margin: 0 0 0.5em;
+  letter-spacing: -0.02em;
+}
+
+.book-reader__article h2 {
+  font-size: 1.5em;
+  font-weight: normal;
+  margin: 2.5em 0 1em;
+  padding-top: 1em;
+  border-top: 1px solid var(--book-hr);
+}
+
+.book-reader__article h3 {
+  font-size: 1.25em;
+  font-weight: normal;
+  font-style: italic;
+  margin: 2em 0 0.75em;
+}
+
+.book-reader__article p {
+  margin: 0 0 1.2em;
+  text-align: justify;
+  hyphens: auto;
+}
+
+/* First paragraph of chapter - drop cap */
+.book-reader__article > p:first-of-type::first-letter,
+.book-reader__article h2 + p::first-letter,
+.book-reader__article h3 + p::first-letter {
+  float: left;
+  font-size: 3.5em;
+  line-height: 0.8;
+  padding-right: 0.1em;
+  margin-top: 0.05em;
+  color: var(--book-accent);
+}
+
+/* Emphasis */
+.book-reader__article em {
+  font-style: italic;
+}
+
+.book-reader__article strong {
+  font-weight: 600;
+  color: var(--book-text);
+}
+
+/* Blockquotes - notebook fragments */
+.book-reader__article blockquote {
+  margin: 1.5em 0;
+  padding: 1.25em 1.5em;
+  background: var(--book-quote-bg);
+  border-left: 3px solid var(--book-quote-border);
+  font-style: italic;
+  color: var(--book-text-secondary);
+}
+
+.book-reader__article blockquote p {
+  text-align: left;
+  margin-bottom: 0.75em;
+}
+
+.book-reader__article blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Horizontal rules - section breaks */
+.book-reader__article hr {
+  border: none;
+  text-align: center;
+  margin: 2.5em 0;
+}
+
+.book-reader__article hr::before {
+  content: '* * *';
+  color: var(--book-text-secondary);
+  letter-spacing: 1em;
+}
+
+/* Lists */
+.book-reader__article ul,
+.book-reader__article ol {
+  margin: 1em 0;
+  padding-left: 1.5em;
+}
+
+.book-reader__article li {
+  margin-bottom: 0.5em;
+}
+
+/* Code blocks (for appendix) */
+.book-reader__article code {
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 0.85em;
+  background: var(--book-quote-bg);
+  padding: 0.15em 0.3em;
+  border-radius: 3px;
+}
+
+/* Opening poem - centered */
+.book-reader__article h1 + p > em:only-child {
+  display: block;
+  text-align: center;
+  font-size: 1.1em;
+  margin-bottom: 2em;
+}
+
+/* Responsive */
+@media (max-width: 767px) {
+  .book-reader__content {
+    padding: 5rem 1rem 3rem;
+  }
+
+  .book-reader__article {
+    line-height: 1.6;
+  }
+
+  .book-reader__article h1 {
+    font-size: 1.75em;
+  }
+
+  .book-reader__article h2 {
+    font-size: 1.25em;
+  }
+
+  .book-reader__article h2 + p::first-letter,
+  .book-reader__article h3 + p::first-letter {
+    font-size: 2.5em;
+  }
+}
+
+/* Print styles */
+@media print {
+  .book-reader__controls {
+    display: none;
+  }
+
+  .book-reader__content {
+    padding: 0;
+  }
+
+  .book-reader__article {
+    max-width: none;
+  }
+}
+
