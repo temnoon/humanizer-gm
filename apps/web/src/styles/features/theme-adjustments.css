@@ -1,0 +1,215 @@
+/* ═══════════════════════════════════════════════════════════════════
+   THEME ADJUSTMENTS
+   Dark mode adjustments, sepia theme specifics, scrollbar styling,
+   and dark mode fixes - consolidated from multiple sections
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE ADJUSTMENTS
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+  /* Enhanced contrast for dark mode */
+  .image-card__figure {
+    border-color: var(--color-border-default);
+  }
+
+  .image-card__metadata {
+    border-left-color: var(--color-border-default);
+  }
+
+  .image-card__context-section {
+    border-left-color: var(--color-accent);
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SEPIA THEME SPECIFIC
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="sepia"] .image-card__context-section {
+  background: var(--color-surface-secondary);
+  border-left-color: var(--color-accent-warm, var(--color-primary, hsl(35, 80%, 50%)));
+}
+
+[data-theme="sepia"] .image-card__quote {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SCROLLBAR STYLING (metadata panel overflow)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.image-card__metadata::-webkit-scrollbar {
+  width: 4px;
+}
+
+.image-card__metadata::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.image-card__metadata::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: var(--radius-full);
+}
+
+.image-card__metadata::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+.image-card__associated-text::-webkit-scrollbar {
+  width: 3px;
+}
+
+.image-card__associated-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.image-card__associated-text::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+  border-radius: var(--radius-full);
+}
+
+.image-card__associated-text::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-default);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE FIXES - Book Workflow Buttons
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme='dark'] .harvest-btn {
+  background: var(--studio-panel-bg, var(--color-surface-secondary));
+  color: var(--studio-text, var(--color-text-primary));
+  border-color: var(--studio-border, var(--color-border-default));
+}
+
+[data-theme='dark'] .harvest-btn:hover {
+  background: var(--studio-hover, var(--color-surface-tertiary));
+}
+
+[data-theme='dark'] .harvest-btn--gem:hover {
+  border-color: #ce93d8;
+  background: rgba(206, 147, 216, 0.15);
+}
+
+[data-theme='dark'] .harvest-btn--approve:hover {
+  border-color: #81c784;
+  background: rgba(129, 199, 132, 0.15);
+}
+
+[data-theme='dark'] .harvest-btn--reject:hover {
+  border-color: #ef5350;
+  background: rgba(239, 83, 80, 0.15);
+}
+
+[data-theme='dark'] .harvest-btn--undo:hover {
+  border-color: var(--studio-accent);
+  background: rgba(74, 144, 217, 0.15);
+}
+
+[data-theme='dark'] .book-card__edit-btn {
+  color: var(--color-text-secondary);
+}
+
+[data-theme='dark'] .book-card__edit-btn:hover {
+  background: var(--color-surface-tertiary);
+  color: var(--color-primary);
+}
+
+[data-theme='dark'] .book-card__rename-input {
+  background: var(--color-surface-primary);
+  color: var(--color-text-primary);
+  border-color: var(--color-primary);
+}
+
+[data-theme='dark'] .book-card__rename-btn {
+  background: var(--color-surface-secondary);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-default);
+}
+
+[data-theme='dark'] .book-card__rename-btn:hover {
+  background: var(--color-surface-tertiary);
+}
+
+[data-theme='dark'] .bucket-action {
+  background: var(--studio-panel-bg, var(--color-surface-secondary));
+  color: var(--studio-text, var(--color-text-primary));
+  border-color: var(--studio-border, var(--color-border-default));
+}
+
+[data-theme='dark'] .bucket-action:hover {
+  background: var(--studio-hover, var(--color-surface-tertiary));
+}
+
+[data-theme='dark'] .bucket-header__status {
+  background: var(--color-surface-tertiary);
+  color: var(--color-text-secondary);
+}
+
+[data-theme='dark'] .harvest-tab {
+  background: var(--color-surface-secondary);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-subtle);
+}
+
+[data-theme='dark'] .harvest-tab--active {
+  background: var(--color-surface-tertiary);
+  color: var(--color-text-primary);
+  border-color: var(--color-primary);
+}
+
+/* Focus states for keyboard navigation */
+.harvest-btn:focus-visible,
+.bucket-action:focus-visible,
+.book-nav__action:focus-visible,
+.book-card__edit-btn:focus-visible,
+.harvest-tab:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Start Harvest button in BooksView */
+.book-nav__harvest-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #f5e6d3 0%, #e8d5c4 100%);
+  border: 1px solid #d4c4b0;
+  border-radius: 6px;
+  color: #5d4e37;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 44px;
+}
+
+.book-nav__harvest-btn:hover {
+  background: linear-gradient(135deg, #efe0cf 0%, #e2cfbe 100%);
+  border-color: #c4b4a0;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.book-nav__harvest-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+[data-theme='dark'] .book-nav__harvest-btn {
+  background: linear-gradient(135deg, var(--color-surface-tertiary) 0%, var(--color-surface-secondary) 100%);
+  border-color: var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+[data-theme='dark'] .book-nav__harvest-btn:hover {
+  background: linear-gradient(135deg, var(--color-surface-secondary) 0%, var(--color-surface-tertiary) 100%);
+  border-color: var(--color-primary);
+}
+
