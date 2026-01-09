@@ -1,0 +1,160 @@
+/* ═══════════════════════════════════════════════════════════════════
+   ANALYSIS STYLES
+   Analyze section and result display styles
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.analyze-section {
+  width: 100%;
+  max-width: var(--width-content-medium);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-medium);
+}
+
+.analyze-input {
+  width: 100%;
+  min-height: 150px;
+  padding: var(--space-medium);
+  font-family: var(--font-family-body);
+  font-size: var(--text-size-body);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-primary);
+  background: var(--color-surface-secondary);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  resize: vertical;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.analyze-input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: var(--shadow-focus);
+}
+
+.analyze-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESULT SECTION
+   ═══════════════════════════════════════════════════════════════════ */
+
+.result-container {
+  max-width: var(--width-content-medium);
+  margin: 0 auto;
+  padding: var(--space-xlarge);
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xlarge);
+}
+
+.result-header h2 {
+  font-size: var(--text-size-heading-2);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.result-score {
+  display: flex;
+  align-items: center;
+  gap: var(--space-large);
+  padding: var(--space-large);
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-large);
+  margin-bottom: var(--space-large);
+}
+
+.score-display {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-small);
+}
+
+.score-value {
+  font-size: var(--text-size-display);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.score-label {
+  font-size: var(--text-size-body);
+  color: var(--color-text-secondary);
+}
+
+.result-interpretation {
+  padding: var(--space-large);
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-large);
+  margin-bottom: var(--space-large);
+}
+
+.result-interpretation h3 {
+  font-size: var(--text-size-large);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-small);
+}
+
+.result-interpretation p {
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+}
+
+.result-signals h3 {
+  font-size: var(--text-size-large);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-medium);
+}
+
+.signals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-medium);
+}
+
+.signal-group {
+  padding: var(--space-medium);
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-large);
+}
+
+.signal-group h4 {
+  font-size: var(--text-size-body);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-small);
+}
+
+.signal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tiny);
+}
+
+.signal-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  font-size: var(--text-size-small);
+}
+
+.signal-name {
+  flex: 1;
+  color: var(--color-text-secondary);
+}
+
+.signal-score {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.signal-count {
+  color: var(--color-text-tertiary);
+}
+

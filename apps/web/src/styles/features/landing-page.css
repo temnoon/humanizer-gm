@@ -1,0 +1,44 @@
+/* ═══════════════════════════════════════════════════════════════════
+   LANDING PAGE
+   Main landing page styles
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.landing {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xlarge);
+  text-align: center;
+}
+
+.landing__title {
+  font-size: var(--text-size-display);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-medium);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.landing__subtitle {
+  font-size: var(--text-size-large);
+  color: var(--color-text-secondary);
+  max-width: var(--width-content-narrow);
+  line-height: var(--line-height-relaxed);
+  margin-bottom: var(--space-xlarge);
+}
+
+.landing__quote {
+  font-family: var(--font-family-reading);
+  font-size: var(--text-size-body);
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  max-width: var(--width-content-medium);
+  line-height: var(--line-height-reading);
+  margin-top: var(--space-huge);
+  padding: var(--space-large);
+  border-left: var(--border-width-thick) solid var(--color-primary);
+  text-align: left;
+}

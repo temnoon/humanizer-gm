@@ -1,0 +1,26 @@
+/* ═══════════════════════════════════════════════════════════════════
+   CARDS
+   Generic card component styles
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.card {
+  background: var(--color-surface-secondary);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-large);
+  padding: var(--space-medium);
+  box-shadow: var(--shadow-small);
+}
+
+.card__title {
+  font-size: var(--text-size-large);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-small);
+}
+
+.card__content {
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+}
+

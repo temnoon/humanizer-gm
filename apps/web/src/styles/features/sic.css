@@ -1,0 +1,30 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SIC COMPONENTS
+   Subjective-Intentional-Constraint component styles
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.sic-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-tiny) var(--space-small);
+  border-radius: var(--radius-full);
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sic-badge--high {
+  background: var(--color-sic-high-subtle);
+  color: var(--color-sic-high);
+}
+
+.sic-badge--medium {
+  background: var(--color-sic-medium-subtle);
+  color: var(--color-sic-medium);
+}
+
+.sic-badge--low {
+  background: var(--color-sic-low-subtle);
+  color: var(--color-sic-low);
+}
+
