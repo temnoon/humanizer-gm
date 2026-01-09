@@ -1530,6 +1530,93 @@ function registerXanaduHandlers() {
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // DRAFT GENERATION (Iterative chapter generation)
+  // ─────────────────────────────────────────────────────────────────
+
+  // Initialize draft generator service
+  let draftGeneratorService: Awaited<ReturnType<typeof import('./services/draft-generator')['getDraftGenerator']>> | null = null;
+
+  const ensureDraftGenerator = async () => {
+    if (!draftGeneratorService) {
+      if (!areServicesInitialized()) {
+        throw new Error('Archive services not initialized. Start archive server first.');
+      }
+      const archivePath = getArchiveRoot();
+      const { getDraftGenerator } = await import('./services/draft-generator.js');
+      draftGeneratorService = getDraftGenerator(archivePath);
+
+      // Forward progress events to renderer
+      draftGeneratorService.on('progress', (progress) => {
+        mainWindow?.webContents.send('draft:progress', progress);
+      });
+
+      draftGeneratorService.on('event', (event) => {
+        mainWindow?.webContents.send('draft:event', event);
+      });
+    }
+    return draftGeneratorService;
+  };
+
+  ipcMain.handle('draft:start', async (
+    _e,
+    params: {
+      bookUri: string;
+      chapterId: string;
+      arcId?: string;
+      style?: 'academic' | 'narrative' | 'conversational';
+      wordsPerSection?: number;
+    }
+  ) => {
+    try {
+      const service = await ensureDraftGenerator();
+      return service.startGeneration(params);
+    } catch (err) {
+      console.error('[Draft] start error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('draft:pause', async (_e, jobId: string) => {
+    try {
+      const service = await ensureDraftGenerator();
+      return service.pause(jobId);
+    } catch (err) {
+      console.error('[Draft] pause error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('draft:resume', async (_e, jobId: string) => {
+    try {
+      const service = await ensureDraftGenerator();
+      return service.resume(jobId);
+    } catch (err) {
+      console.error('[Draft] resume error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('draft:status', async (_e, jobId: string) => {
+    try {
+      const service = await ensureDraftGenerator();
+      return service.getStatus(jobId);
+    } catch (err) {
+      console.error('[Draft] status error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  ipcMain.handle('draft:list', async () => {
+    try {
+      const service = await ensureDraftGenerator();
+      return { success: true, jobs: service.listJobs() };
+    } catch (err) {
+      console.error('[Draft] list error:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // SEED LIBRARY DATA (First Run)
   // ─────────────────────────────────────────────────────────────────
 

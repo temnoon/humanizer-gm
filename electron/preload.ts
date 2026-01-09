@@ -729,6 +729,23 @@ export interface XanaduAPI {
 
   // Library seeding
   seedLibrary: () => Promise<{ success: boolean; alreadySeeded?: boolean; error?: string }>;
+
+  // Draft generation
+  draft: {
+    start: (params: {
+      bookUri: string;
+      chapterId: string;
+      arcId?: string;
+      style?: DraftStyle;
+      wordsPerSection?: number;
+    }) => Promise<{ success: boolean; job?: { id: string; sections: number; totalWords: number; estimatedTimeSeconds: number }; error?: string }>;
+    pause: (jobId: string) => Promise<{ success: boolean; error?: string }>;
+    resume: (jobId: string) => Promise<{ success: boolean; error?: string }>;
+    status: (jobId: string) => Promise<{ success: boolean; job?: unknown; progress?: DraftProgress; error?: string }>;
+    list: () => Promise<{ success: boolean; jobs?: unknown[]; error?: string }>;
+    onProgress: (callback: (progress: DraftProgress) => void) => () => void;
+    onEvent: (callback: (event: DraftEvent) => void) => () => void;
+  };
 }
 
 // Analysis types
@@ -776,6 +793,42 @@ export interface AnalysisResultBatch {
   success: boolean;
   error?: string;
   analyses?: PassageAnalysis[];
+}
+
+// Draft generation types
+export type DraftJobStatus = 'pending' | 'generating' | 'paused' | 'complete' | 'failed';
+export type DraftStyle = 'academic' | 'narrative' | 'conversational';
+
+export interface DraftProgress {
+  jobId: string;
+  chapterTitle: string;
+  currentSection: number;
+  totalSections: number;
+  wordsGenerated: number;
+  targetWords: number;
+  percentComplete: number;
+  status: DraftJobStatus;
+  sectionComplete?: boolean;
+  elapsedMs: number;
+  estimatedRemainingMs?: number;
+}
+
+export interface DraftEvent {
+  type: 'job:started' | 'job:progress' | 'section:started' | 'section:complete' | 'job:complete' | 'job:paused' | 'job:resumed' | 'job:failed';
+  jobId: string;
+  timestamp: number;
+  progress?: DraftProgress;
+  section?: {
+    index: number;
+    title?: string;
+    passageIds: string[];
+    targetWords: number;
+    status: 'pending' | 'generating' | 'complete' | 'failed';
+    content?: string;
+    wordCount?: number;
+    error?: string;
+  };
+  error?: string;
 }
 
 // ============================================================
@@ -1086,6 +1139,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('xanadu:analyze:passages', passages, config),
     },
     seedLibrary: () => ipcRenderer.invoke('xanadu:seed-library'),
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // DRAFT GENERATION
+  // Iterative chapter generation with pause/resume support
+  // ─────────────────────────────────────────────────────────────────
+  draft: {
+    start: (params: {
+      bookUri: string;
+      chapterId: string;
+      arcId?: string;
+      style?: 'academic' | 'narrative' | 'conversational';
+      wordsPerSection?: number;
+    }) => ipcRenderer.invoke('draft:start', params),
+
+    pause: (jobId: string) => ipcRenderer.invoke('draft:pause', jobId),
+
+    resume: (jobId: string) => ipcRenderer.invoke('draft:resume', jobId),
+
+    status: (jobId: string) => ipcRenderer.invoke('draft:status', jobId),
+
+    list: () => ipcRenderer.invoke('draft:list'),
+
+    // Subscribe to progress events
+    onProgress: (callback: (progress: DraftProgress) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: DraftProgress) => callback(progress);
+      ipcRenderer.on('draft:progress', handler);
+      return () => ipcRenderer.removeListener('draft:progress', handler);
+    },
+
+    // Subscribe to all draft events
+    onEvent: (callback: (event: DraftEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, draftEvent: DraftEvent) => callback(draftEvent);
+      ipcRenderer.on('draft:event', handler);
+      return () => ipcRenderer.removeListener('draft:event', handler);
+    },
   },
 } as ElectronAPI);
 

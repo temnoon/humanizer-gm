@@ -44,6 +44,9 @@ export * from './harvest.js';
 // Container types (unified archive container)
 export * from './container.js';
 
+// Draft generation types (iterative chapter generation)
+export * from './draft.js';
+
 // ═══════════════════════════════════════════════════════════════════
 // CORE ANALYSIS TYPES (Original)
 // ═══════════════════════════════════════════════════════════════════
