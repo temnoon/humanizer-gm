@@ -5,3 +5,4 @@
  */
 
 export { AUIChatTab } from './AUIChatTab';
+export { AUIFloatingChat, type AUIFloatingChatProps } from './AUIFloatingChat';
