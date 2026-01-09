@@ -45,3 +45,5 @@ export { SplitDivider } from './SplitDivider';
 export { SplitModeToolbar } from './SplitModeToolbar';
 
 export { HoverPanel, type HoverPanelProps } from './HoverPanel';
+
+export { UserDropdown, type UserDropdownProps } from './UserDropdown';
