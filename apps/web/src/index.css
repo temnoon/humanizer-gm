@@ -38,6 +38,7 @@
 @import './styles/components/profile-cards.css';
 /* Modularized utility styles */
 @import './styles/utilities/electron.css';
+@import './styles/utilities/responsive.css';
 /* Modularized layout styles */
 @import './styles/layout/split-view.css';
 
@@ -171,10 +172,6 @@
   color: var(--color-text-secondary);
   line-height: var(--line-height-relaxed);
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   RESPONSIVE
-   ═══════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════════════════════
    ANALYZE SECTION
@@ -332,24 +329,6 @@
 
 .signal-count {
   color: var(--color-text-tertiary);
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   RESPONSIVE
-   ═══════════════════════════════════════════════════════════════════ */
-
-@media (max-width: 767px) {
-  .landing {
-    padding: var(--space-large);
-  }
-
-  .landing__title {
-    font-size: var(--text-size-heading-1);
-  }
-
-  .landing__subtitle {
-    font-size: var(--text-size-body);
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -887,56 +866,6 @@
   overflow-x: auto;
   white-space: pre-wrap;
   margin: 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   MOBILE RESPONSIVE
-   ═══════════════════════════════════════════════════════════════════ */
-
-@media (max-width: 767px) {
-  .studio-topbar__btn {
-    padding: 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .studio-panel {
-    width: 100%;
-    max-width: 100%;
-    top: auto;
-    bottom: 0;
-    height: 70vh;
-    transform: translateY(100%);
-    border-radius: 16px 16px 0 0;
-    border-bottom: none;
-  }
-
-  .studio-panel--left,
-  .studio-panel--right {
-    left: 0;
-    right: 0;
-    border-left: none;
-    border-right: none;
-  }
-
-  .studio-panel--open {
-    transform: translateY(0);
-  }
-
-  .studio__main {
-    padding: 4.5rem 1rem 2rem;
-  }
-
-  .workspace__placeholder h1 {
-    font-size: 1.75rem;
-  }
-
-  .workspace__article h1 {
-    font-size: 1.5em;
-  }
-
-  .workspace__article > p:first-of-type::first-letter {
-    font-size: 2.5em;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
