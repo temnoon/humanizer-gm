@@ -1,0 +1,218 @@
+/* ═══════════════════════════════════════════════════════════════════
+   THEME SYSTEM - Light, Dark, Sepia (default)
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Root-level theme variables for portaled elements (modals, tooltips) */
+:root,
+[data-theme="sepia"] {
+  --studio-bg: #f8f4e9;
+  --studio-bg-rgb: 248, 244, 233;
+  --studio-text: #433422;
+  --studio-text-secondary: #6b5c4a;
+  --studio-text-tertiary: #8a7a66;
+  --studio-accent: #8b6914;
+  --studio-accent-hover: #7a5c12;
+  --studio-quote-bg: #f0e8d6;
+  --studio-border: #d4c4a8;
+  --studio-panel-bg: #fffdf8;
+  --studio-panel-bg-rgb: 255, 253, 248;
+  --studio-hover: rgba(139, 105, 20, 0.1);
+  --studio-surface: #fdfbf7;
+}
+
+[data-theme="light"] {
+  --studio-bg: #ffffff;
+  --studio-bg-rgb: 255, 255, 255;
+  --studio-text: #1a1a2e;
+  --studio-text-secondary: #4a4a5c;
+  --studio-text-tertiary: #7a7a8c;
+  --studio-accent: #2563eb;
+  --studio-accent-hover: #1d4ed8;
+  --studio-quote-bg: #f5f5f7;
+  --studio-border: #e0e0e5;
+  --studio-panel-bg: #ffffff;
+  --studio-panel-bg-rgb: 255, 255, 255;
+  --studio-hover: rgba(37, 99, 235, 0.08);
+  --studio-surface: #fafafa;
+}
+
+[data-theme="dark"] {
+  --studio-bg: #0f0f14;
+  --studio-bg-rgb: 15, 15, 20;
+  --studio-text: #e8e8ed;
+  --studio-text-secondary: #a0a0b0;
+  --studio-text-tertiary: #6b6b7a;
+  --studio-accent: #60a5fa;
+  --studio-accent-hover: #93c5fd;
+  --studio-quote-bg: #1a1a24;
+  --studio-border: #2a2a38;
+  --studio-panel-bg: #16161d;
+  --studio-panel-bg-rgb: 22, 22, 29;
+  --studio-hover: rgba(96, 165, 250, 0.12);
+  --studio-surface: #1a1a24;
+}
+
+/* Base theme variables (Sepia - default) - for .studio scope */
+.studio,
+[data-theme="sepia"] .studio {
+  --studio-bg: #f8f4e9;
+  --studio-bg-rgb: 248, 244, 233;
+  --studio-text: #433422;
+  --studio-text-secondary: #6b5c4a;
+  --studio-text-tertiary: #8a7a66;
+  --studio-accent: #8b6914;
+  --studio-accent-hover: #7a5c12;
+  --studio-quote-bg: #f0e8d6;
+  --studio-border: #d4c4a8;
+  --studio-panel-bg: #fffdf8;
+  --studio-panel-bg-rgb: 255, 253, 248;
+  --studio-hover: rgba(139, 105, 20, 0.1);
+  --studio-surface: #fdfbf7;
+}
+
+/* Light theme */
+[data-theme="light"] .studio {
+  --studio-bg: #ffffff;
+  --studio-bg-rgb: 255, 255, 255;
+  --studio-text: #1a1a2e;
+  --studio-text-secondary: #4a4a5c;
+  --studio-text-tertiary: #7a7a8c;
+  --studio-accent: #2563eb;
+  --studio-accent-hover: #1d4ed8;
+  --studio-quote-bg: #f5f5f7;
+  --studio-border: #e0e0e5;
+  --studio-panel-bg: #ffffff;
+  --studio-panel-bg-rgb: 255, 255, 255;
+  --studio-hover: rgba(37, 99, 235, 0.08);
+  --studio-surface: #fafafa;
+}
+
+/* Dark theme */
+[data-theme="dark"] .studio {
+  --studio-bg: #0f0f14;
+  --studio-bg-rgb: 15, 15, 20;
+  --studio-text: #e8e8ed;
+  --studio-text-secondary: #a0a0b0;
+  --studio-text-tertiary: #6b6b7a;
+  --studio-accent: #60a5fa;
+  --studio-accent-hover: #93c5fd;
+  --studio-quote-bg: #1a1a24;
+  --studio-border: #2a2a38;
+  --studio-panel-bg: #16161d;
+  --studio-panel-bg-rgb: 22, 22, 29;
+  --studio-hover: rgba(96, 165, 250, 0.12);
+  --studio-surface: #1a1a24;
+}
+
+/* Theme transition */
+.studio {
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+/* Font family variations */
+[data-font="sans-serif"] .studio {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+[data-font="serif"] .studio {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+[data-font="mono"] .studio {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+}
+
+/* Font size variations */
+[data-size="small"] .studio {
+  font-size: 14px;
+}
+
+[data-size="medium"] .studio {
+  font-size: 16px;
+}
+
+[data-size="large"] .studio {
+  font-size: 18px;
+}
+
+/* Line height variations */
+[data-spacing="tight"] .studio {
+  --studio-line-height: 1.4;
+}
+
+[data-spacing="normal"] .studio {
+  --studio-line-height: 1.6;
+}
+
+[data-spacing="relaxed"] .studio {
+  --studio-line-height: 1.8;
+}
+
+.workspace__article p {
+  line-height: var(--studio-line-height, 1.7);
+}
+
+/* Color accent variations */
+[data-accent="amber"] .studio {
+  --studio-accent: #8b6914;
+  --studio-accent-hover: #7a5c12;
+}
+
+[data-accent="blue"] .studio {
+  --studio-accent: #2563eb;
+  --studio-accent-hover: #1d4ed8;
+}
+
+[data-accent="green"] .studio {
+  --studio-accent: #16a34a;
+  --studio-accent-hover: #15803d;
+}
+
+[data-accent="purple"] .studio {
+  --studio-accent: #9333ea;
+  --studio-accent-hover: #7e22ce;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   THEME TOGGLE BUTTON
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--studio-quote-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+}
+
+.theme-toggle__btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  color: var(--studio-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.theme-toggle__btn:hover {
+  background: var(--studio-hover);
+  color: var(--studio-text);
+}
+
+.theme-toggle__btn--active {
+  background: var(--studio-panel-bg);
+  color: var(--studio-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
