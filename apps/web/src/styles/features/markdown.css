@@ -1,0 +1,361 @@
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN STYLES
+   Tables, Code Blocks, Lists, Blockquotes, Links, Headings, Images, HRs
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* MARKDOWN TABLES (GFM-rendered)
+   Book-like styling: subtle borders, warm tones, excellent readability */
+
+.markdown-preview table,
+.analyzable-markdown table,
+.workspace__markdown table,
+.workspace__preview-content table,
+.container-workspace__content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-large, 1.5rem) 0;
+  background: var(--color-surface-secondary, #faf8f5);
+  border: var(--border-width-thin, 1px) solid var(--color-border-default, #d4cfc5);
+  border-radius: var(--radius-medium, 8px);
+  overflow: hidden;
+  font-size: var(--text-size-body, 0.9375rem);
+  line-height: var(--line-height-normal, 1.6);
+}
+
+.markdown-preview thead,
+.analyzable-markdown thead,
+.workspace__markdown thead,
+.workspace__preview-content thead,
+.container-workspace__content thead {
+  background: var(--color-surface-tertiary, #f0ebe3);
+}
+
+.markdown-preview thead th,
+.analyzable-markdown thead th,
+.workspace__markdown thead th,
+.workspace__preview-content thead th,
+.container-workspace__content thead th {
+  padding: var(--space-medium, 12px) var(--space-medium, 16px);
+  text-align: left;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary, #2c2c2c);
+  font-size: var(--text-size-small, 0.875rem);
+  letter-spacing: var(--letter-spacing-wide, 0.02em);
+  border-bottom: var(--border-width-medium, 2px) solid var(--color-border-default, #d4cfc5);
+  vertical-align: middle;
+}
+
+.markdown-preview tbody tr,
+.analyzable-markdown tbody tr,
+.workspace__markdown tbody tr,
+.workspace__preview-content tbody tr,
+.container-workspace__content tbody tr {
+  border-bottom: var(--border-width-thin, 1px) solid var(--color-border-subtle, #e5e2dc);
+  transition: background var(--duration-fast, 0.15s) var(--ease-out, ease-out);
+}
+
+.markdown-preview tbody tr:last-child,
+.analyzable-markdown tbody tr:last-child,
+.workspace__markdown tbody tr:last-child,
+.workspace__preview-content tbody tr:last-child,
+.container-workspace__content tbody tr:last-child {
+  border-bottom: none;
+}
+
+.markdown-preview tbody tr:hover,
+.analyzable-markdown tbody tr:hover,
+.workspace__markdown tbody tr:hover,
+.workspace__preview-content tbody tr:hover,
+.container-workspace__content tbody tr:hover {
+  background: var(--color-surface-tertiary, rgba(0, 0, 0, 0.02));
+}
+
+.markdown-preview tbody td,
+.analyzable-markdown tbody td,
+.workspace__markdown tbody td,
+.workspace__preview-content tbody td,
+.container-workspace__content tbody td {
+  padding: var(--space-medium, 12px) var(--space-medium, 16px);
+  color: var(--color-text-secondary, #4a4a4a);
+  vertical-align: top;
+  line-height: var(--line-height-relaxed, 1.7);
+}
+
+/* Alternate row coloring for readability */
+.markdown-preview tbody tr:nth-child(even),
+.analyzable-markdown tbody tr:nth-child(even),
+.workspace__markdown tbody tr:nth-child(even),
+.workspace__preview-content tbody tr:nth-child(even),
+.container-workspace__content tbody tr:nth-child(even) {
+  background: var(--color-surface-primary, #fdfcfa);
+}
+
+/* Code inside tables */
+.markdown-preview td code,
+.markdown-preview th code,
+.analyzable-markdown td code,
+.analyzable-markdown th code,
+.workspace__markdown td code,
+.workspace__preview-content td code,
+.container-workspace__content td code {
+  padding: var(--space-tiny, 2px) var(--space-small, 6px);
+  background: var(--color-surface-sunken, #f0ebe3);
+  border-radius: var(--radius-small, 4px);
+  font-size: 0.875em;
+  color: var(--color-status-error, #b91c1c);
+  font-family: var(--font-family-mono, 'SF Mono', Consolas, monospace);
+}
+
+/* Responsive tables - horizontal scroll on mobile */
+@media (max-width: 767px) {
+  .markdown-preview table,
+  .analyzable-markdown table,
+  .workspace__markdown table,
+  .workspace__preview-content table,
+  .container-workspace__content table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: var(--text-size-small, 0.875rem);
+  }
+
+  .markdown-preview thead th,
+  .markdown-preview tbody td,
+  .analyzable-markdown thead th,
+  .analyzable-markdown tbody td,
+  .workspace__markdown thead th,
+  .workspace__markdown tbody td {
+    padding: var(--space-small, 8px) var(--space-medium, 12px);
+    white-space: nowrap;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN CODE BLOCKS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.markdown-preview code,
+.analyzable-markdown code,
+.workspace__markdown code,
+.workspace__preview-content code,
+.container-workspace__content code {
+  padding: var(--space-tiny, 2px) var(--space-small, 6px);
+  background: var(--color-surface-sunken, #f0ebe3);
+  border-radius: var(--radius-small, 4px);
+  font-family: var(--font-family-mono, 'SF Mono', Consolas, monospace);
+  font-size: 0.9em;
+  color: var(--color-status-error, #b91c1c);
+}
+
+.markdown-preview pre,
+.analyzable-markdown pre,
+.workspace__markdown pre,
+.workspace__preview-content pre,
+.container-workspace__content pre {
+  margin: var(--space-large, 1.5rem) 0;
+  padding: var(--space-medium, 16px);
+  background: var(--color-surface-sunken, #f5f2ed);
+  border: var(--border-width-thin, 1px) solid var(--color-border-subtle, #e5e2dc);
+  border-radius: var(--radius-medium, 8px);
+  overflow-x: auto;
+  font-size: var(--text-size-small, 0.875rem);
+  line-height: var(--line-height-relaxed, 1.6);
+}
+
+.markdown-preview pre code,
+.analyzable-markdown pre code,
+.workspace__markdown pre code,
+.workspace__preview-content pre code,
+.container-workspace__content pre code {
+  padding: 0;
+  background: none;
+  color: var(--color-text-primary, #2c2c2c);
+  font-size: inherit;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN LISTS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.markdown-preview ul,
+.markdown-preview ol,
+.analyzable-markdown ul,
+.analyzable-markdown ol,
+.workspace__markdown ul,
+.workspace__markdown ol,
+.workspace__preview-content ul,
+.workspace__preview-content ol,
+.container-workspace__content ul,
+.container-workspace__content ol {
+  margin: var(--space-medium, 1rem) 0;
+  padding-left: var(--space-xlarge, 2rem);
+}
+
+.markdown-preview li,
+.analyzable-markdown li,
+.workspace__markdown li,
+.workspace__preview-content li,
+.container-workspace__content li {
+  margin-bottom: var(--space-small, 0.5rem);
+  line-height: var(--line-height-relaxed, 1.7);
+  color: var(--color-text-secondary, #4a4a4a);
+}
+
+.markdown-preview li::marker,
+.analyzable-markdown li::marker,
+.workspace__markdown li::marker {
+  color: var(--color-text-tertiary, #888);
+}
+
+/* Nested lists */
+.markdown-preview ul ul,
+.markdown-preview ol ol,
+.markdown-preview ul ol,
+.markdown-preview ol ul,
+.analyzable-markdown ul ul,
+.analyzable-markdown ol ol {
+  margin-top: var(--space-small, 0.5rem);
+  margin-bottom: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN BLOCKQUOTES
+   ═══════════════════════════════════════════════════════════════════ */
+
+.markdown-preview blockquote,
+.analyzable-markdown blockquote,
+.workspace__markdown blockquote,
+.workspace__preview-content blockquote,
+.container-workspace__content blockquote {
+  margin: var(--space-large, 1.5rem) 0;
+  padding: var(--space-medium, 1rem) var(--space-large, 1.5rem);
+  background: var(--color-surface-secondary, #faf8f5);
+  border-left: var(--border-width-thick, 4px) solid var(--color-primary, #4a7c59);
+  border-radius: 0 var(--radius-small, 4px) var(--radius-small, 4px) 0;
+  font-style: italic;
+  color: var(--color-text-secondary, #555);
+}
+
+.markdown-preview blockquote p:last-child,
+.analyzable-markdown blockquote p:last-child,
+.workspace__markdown blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN LINKS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.markdown-preview a,
+.analyzable-markdown a,
+.workspace__markdown a,
+.workspace__preview-content a,
+.container-workspace__content a {
+  color: var(--color-text-link, #2563eb);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-subtle, #cbd5e1);
+  text-underline-offset: 2px;
+  transition: color var(--duration-fast, 0.15s) ease, text-decoration-color var(--duration-fast, 0.15s) ease;
+}
+
+.markdown-preview a:hover,
+.analyzable-markdown a:hover,
+.workspace__markdown a:hover,
+.workspace__preview-content a:hover,
+.container-workspace__content a:hover {
+  color: var(--color-text-link-hover, #1d4ed8);
+  text-decoration-color: currentColor;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN HEADINGS (BOOK-LIKE)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.markdown-preview h1,
+.analyzable-markdown h1,
+.workspace__markdown h1,
+.workspace__preview-content h1,
+.container-workspace__content h1 {
+  font-size: var(--text-size-heading-1, 1.75rem);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--color-text-primary, #2c2c2c);
+  margin: var(--space-xlarge, 2.5rem) 0 var(--space-large, 1.5rem);
+  line-height: var(--line-height-tight, 1.2);
+  letter-spacing: var(--letter-spacing-tight, -0.02em);
+}
+
+.markdown-preview h2,
+.analyzable-markdown h2,
+.workspace__markdown h2,
+.workspace__preview-content h2,
+.container-workspace__content h2 {
+  font-size: var(--text-size-heading-2, 1.375rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary, #2c2c2c);
+  margin: var(--space-xlarge, 2rem) 0 var(--space-medium, 1rem);
+  line-height: var(--line-height-tight, 1.25);
+}
+
+.markdown-preview h3,
+.analyzable-markdown h3,
+.workspace__markdown h3,
+.workspace__preview-content h3,
+.container-workspace__content h3 {
+  font-size: var(--text-size-heading-3, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary, #2c2c2c);
+  margin: var(--space-large, 1.5rem) 0 var(--space-small, 0.75rem);
+  line-height: var(--line-height-normal, 1.4);
+}
+
+.markdown-preview h4,
+.analyzable-markdown h4,
+.workspace__markdown h4,
+.workspace__preview-content h4,
+.container-workspace__content h4 {
+  font-size: var(--text-size-large, 1rem);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-secondary, #4a4a4a);
+  margin: var(--space-medium, 1.25rem) 0 var(--space-small, 0.5rem);
+}
+
+/* First heading shouldn't have top margin */
+.markdown-preview > h1:first-child,
+.markdown-preview > h2:first-child,
+.markdown-preview > h3:first-child,
+.analyzable-markdown > h1:first-child,
+.analyzable-markdown > h2:first-child,
+.analyzable-markdown > h3:first-child {
+  margin-top: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN IMAGES
+   ═══════════════════════════════════════════════════════════════════ */
+
+.markdown-preview img,
+.analyzable-markdown img,
+.workspace__markdown img,
+.workspace__preview-content img,
+.container-workspace__content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-medium, 8px);
+  margin: var(--space-medium, 1rem) 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MARKDOWN HORIZONTAL RULES
+   ═══════════════════════════════════════════════════════════════════ */
+
+.markdown-preview hr,
+.analyzable-markdown hr,
+.workspace__markdown hr,
+.workspace__preview-content hr,
+.container-workspace__content hr {
+  border: none;
+  border-top: var(--border-width-thin, 1px) solid var(--color-border-subtle, #e5e2dc);
+  margin: var(--space-xlarge, 2rem) 0;
+}
+
