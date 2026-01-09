@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -11,50 +11,21 @@ import {
   type ArchiveSourceType,
 } from './lib/buffer';
 import {
-  fetchConversations,
   fetchConversation,
   getMessages,
-  groupConversationsByMonth,
-  checkArchiveHealth,
-  getCurrentArchive,
-  type ArchiveConversation,
-  type FlatMessage,
-} from './lib/archive';
-import {
-  humanize,
-  transformPersona,
-  transformStyle,
-  analyzeSentences,
-  getPersonas,
-  getStyles,
-  type HumanizationIntensity,
-  type TransformResult,
-  type PersonaDefinition,
-  type StyleDefinition,
-  type SentenceAnalysisResult,
-} from './lib/transform';
-import { useAuth } from './lib/auth';
-import { LoginPage } from './components/auth/LoginPage';
-// BookProvider removed - consolidated into BookshelfProvider (Phase 4.2)
-import { BookshelfProvider, useBookshelf, type DraftChapter, type SourcePassage } from './lib/bookshelf';
-import { executeAllTools, executeTool, buildAUIContext, AUI_BOOK_SYSTEM_PROMPT, AUIProvider, useAUI, subscribeToGUIActions, type AUIContext, type WorkspaceState } from './lib/aui';
-import { ThemeProvider, useTheme } from './lib/theme/ThemeContext';
-import { ThemeSettingsModal } from './components/theme/ThemeSettingsModal';
-import { ArchiveTabs, ArchivePanel, type SelectedFacebookMedia, type SelectedFacebookContent, type ArchiveTabId, type SearchResult } from './components/archive';
-import { MainWorkspace, BookContentView, ContainerWorkspace, WelcomeScreen, StructureInspector, HarvestWorkspaceView, type BookContent, type HarvestConversation, type StagedMessage } from './components/workspace';
-import type { BookProject } from './components/archive/book-project/types';
-import { ToolsPanel, ProfileCardsContainer, HarvestQueuePanel } from './components/tools';
-import { SocialGraphView } from './components/graph';
-import { useLayout, CornerAssistant, PanelResizer, usePanelState, useLayoutMode, useSplitScreen, SplitScreenWorkspace, useHighlights, useSplitMode, HoverPanel, UserDropdown, TopBar, type SplitPaneContent } from './components/layout';
-import { AddToBookDialog, type AddAction } from './components/dialogs/AddToBookDialog';
-import type { SentenceAnalysis } from './lib/analysis';
-import type { ArchiveContainer } from '@humanizer/core';
-import {
   facebookMediaToContainer,
   facebookContentToContainer,
 } from './lib/archive';
-import { getArchiveServerUrlSync, initPlatformConfig, isElectron } from './lib/platform';
-import { TOOL_REGISTRY, loadToolVisibility, saveToolVisibility, type ToolDefinition } from './lib/tools';
+import { BookshelfProvider } from './lib/bookshelf';
+import { AUIProvider, useAUI, type WorkspaceState } from './lib/aui';
+import { ThemeProvider } from './lib/theme/ThemeContext';
+import { type SelectedFacebookMedia, type SelectedFacebookContent, type ArchiveTabId, type SearchResult } from './components/archive';
+import { MainWorkspace, ContainerWorkspace, StructureInspector, HarvestWorkspaceView, type BookContent, type HarvestConversation, type StagedMessage } from './components/workspace';
+import type { BookProject } from './components/archive/book-project/types';
+import { SocialGraphView } from './components/graph';
+import { CornerAssistant, useSplitScreen, SplitScreenWorkspace, useSplitMode, TopBar, type SplitPaneContent } from './components/layout';
+import type { ArchiveContainer } from '@humanizer/core';
+import { getArchiveServerUrlSync } from './lib/platform';
 
 
 // ═══════════════════════════════════════════════════════════════════
