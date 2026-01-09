@@ -1,0 +1,741 @@
+/* ═══════════════════════════════════════════════════════════════════
+   TOOLS PANEL STYLES
+   Tabbed Photoshop-style design with collapsible sections
+   Includes: Tabs, Panels, Headers, Actions, Cards, Grid layouts
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.tool-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  margin: -1rem; /* Counteract panel padding for edge-to-edge tabs */
+  width: calc(100% + 2rem);
+}
+
+/* Empty state */
+.tool-tabs__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+.tool-tabs__empty-icon {
+  font-size: 2.5rem;
+  color: var(--studio-border);
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.tool-tabs__empty p {
+  font-family: Georgia, serif;
+  font-size: 0.9375rem;
+  font-style: italic;
+  color: var(--studio-text-secondary);
+  margin: 0 0 0.25rem;
+}
+
+.tool-tabs__empty span {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  opacity: 0.6;
+}
+
+/* Tab navigation - horizontal scroll */
+.tool-tabs__nav {
+  display: flex;
+  border-bottom: 1px solid var(--studio-border);
+  background: var(--studio-quote-bg);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--studio-border) transparent;
+}
+
+.tool-tabs__nav::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tool-tabs__nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tool-tabs__nav::-webkit-scrollbar-thumb {
+  background: var(--studio-border);
+  border-radius: 2px;
+}
+
+.tool-tabs__tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.625rem 0.25rem 0.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: -1px;
+  min-width: 0;
+}
+
+.tool-tabs__tab:hover {
+  background: var(--studio-hover);
+}
+
+.tool-tabs__tab--active {
+  background: var(--studio-panel-bg);
+  border-bottom-color: var(--studio-accent);
+}
+
+.tool-tabs__tab-icon {
+  font-size: 1rem;
+  color: var(--studio-text-secondary);
+  transition: color 0.2s ease;
+}
+
+.tool-tabs__tab--active .tool-tabs__tab-icon {
+  color: var(--studio-accent);
+}
+
+.tool-tabs__tab-label {
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--studio-text-secondary);
+}
+
+.tool-tabs__tab--active .tool-tabs__tab-label {
+  color: var(--studio-text);
+}
+
+/* Tab content area */
+.tool-tabs__content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 1rem;
+}
+
+/* Individual tool panel */
+.tool-panel {
+  /* Content inside tabs - no extra padding needed, handled by parent */
+}
+
+.tool-panel__header {
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.tool-panel__header h3 {
+  font-family: Georgia, serif;
+  font-size: 1.125rem;
+  font-weight: normal;
+  color: var(--studio-text);
+  margin: 0 0 0.125rem;
+}
+
+.tool-panel__subtitle {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  font-style: italic;
+}
+
+.tool-panel__section {
+  margin-bottom: 1rem;
+}
+
+.tool-panel__label {
+  display: block;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.075em;
+  color: var(--studio-text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.tool-panel__divider {
+  height: 1px;
+  background: var(--studio-border);
+  margin: 1rem 0;
+}
+
+.tool-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* Tool panel form fields */
+.tool-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.tool-panel__input {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--studio-text);
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+}
+
+.tool-panel__input:focus {
+  outline: none;
+  border-color: var(--studio-accent);
+}
+
+.tool-panel__input-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tool-panel__input-group .tool-panel__input {
+  flex: 1;
+}
+
+/* Radio button group */
+.tool-panel__radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.tool-panel__radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tool-panel__radio:hover {
+  border-color: var(--studio-accent);
+}
+
+.tool-panel__radio input[type="radio"] {
+  margin-top: 0.125rem;
+}
+
+.tool-panel__radio-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--studio-text);
+}
+
+.tool-panel__radio-desc {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  margin-left: auto;
+}
+
+/* Tool panel buttons */
+.tool-panel__button {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--studio-text);
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tool-panel__button:hover:not(:disabled) {
+  background: var(--studio-hover);
+  border-color: var(--studio-accent);
+}
+
+.tool-panel__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tool-panel__button--primary {
+  color: var(--color-text-inverse, white);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.tool-panel__button--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.tool-panel__button--primary:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Success button variant (for Save actions) */
+.tool-panel__button--success {
+  color: var(--color-text-inverse, white);
+  background: var(--color-success, #10b981);
+  border-color: var(--color-success, #10b981);
+}
+
+.tool-panel__button--success:hover:not(:disabled) {
+  background: var(--color-success-hover, #059669);
+  border-color: var(--color-success-hover, #059669);
+}
+
+.tool-panel__button--secondary {
+  font-size: 0.75rem;
+  padding: 0.375rem 0.75rem;
+}
+
+/* Result display */
+.tool-panel__result {
+  padding: 0.75rem;
+  background: var(--studio-quote-bg);
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+
+.tool-panel__result p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--studio-text);
+}
+
+.tool-panel__phases {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.tool-panel__phase {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0.5rem;
+  background: var(--studio-panel-bg);
+  border-radius: 3px;
+  font-size: 0.75rem;
+}
+
+.tool-panel__phase-name {
+  color: var(--studio-text);
+}
+
+.tool-panel__phase-count {
+  color: var(--studio-text-secondary);
+}
+
+.tool-panel__phase-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tool-panel__phase-samples {
+  margin-top: 0.375rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--studio-border);
+}
+
+.tool-panel__phase-sample {
+  padding: 0.25rem 0;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.tool-panel__sample-preview {
+  color: var(--studio-text-secondary);
+  font-style: italic;
+}
+
+.tool-panel__sample-source {
+  color: var(--studio-text-tertiary);
+  font-size: 0.625rem;
+}
+
+.tool-panel__teaching {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.08));
+  border-left: 3px solid var(--color-primary, #4a7c59);
+  border-radius: 4px;
+}
+
+.tool-panel__teaching-what {
+  font-size: 0.75rem;
+  color: var(--studio-text);
+  margin: 0 0 0.25rem 0;
+}
+
+.tool-panel__teaching-why {
+  font-size: 0.6875rem;
+  color: var(--studio-text-secondary);
+  margin: 0;
+  font-style: italic;
+}
+
+.tool-panel__result-message {
+  font-weight: 500;
+  margin: 0 0 0.5rem 0;
+}
+
+.tool-panel__field--inline {
+  display: flex;
+  align-items: center;
+}
+
+.tool-panel__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.tool-panel__checkbox input {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.tool-panel__section {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--studio-border);
+}
+
+.tool-panel__section-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+  color: var(--studio-text);
+}
+
+.tool-panel__hint-text {
+  font-size: 0.6875rem;
+  color: var(--studio-text-tertiary);
+  margin: 0.25rem 0 0 0;
+  font-style: italic;
+}
+
+.tool-panel__result--error {
+  background: var(--color-error-subtle, rgba(239, 68, 68, 0.1));
+  border-left-color: var(--color-error, #ef4444);
+}
+
+.tool-panel__textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  background: var(--studio-input-bg, var(--studio-panel-bg));
+  color: var(--studio-text);
+  font-size: 0.8125rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.tool-panel__textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #4a7c59);
+}
+
+.tool-panel__persona-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.tool-panel__persona-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.5rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.tool-panel__persona-item:hover {
+  border-color: var(--color-primary, #4a7c59);
+}
+
+.tool-panel__persona-item--active {
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.1));
+  border-color: var(--color-primary, #4a7c59);
+}
+
+.tool-panel__persona-name {
+  font-weight: 500;
+  font-size: 0.8125rem;
+  color: var(--studio-text);
+}
+
+.tool-panel__persona-desc {
+  font-size: 0.6875rem;
+  color: var(--studio-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.tool-panel__persona-active {
+  font-size: 0.75rem;
+  color: var(--color-primary, #4a7c59);
+  margin: 0.25rem 0;
+  padding: 0.25rem 0.5rem;
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.1));
+  border-radius: 4px;
+}
+
+/* Hint box */
+.tool-panel__hint {
+  padding: 0.5rem;
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.08));
+  border-radius: 4px;
+  margin-top: 0.75rem;
+}
+
+.tool-panel__hint p {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+/* Threads display */
+.tool-panel__threads {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.tool-panel__thread {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tool-panel__thread-theme {
+  font-weight: 500;
+  color: var(--studio-text);
+  z-index: 1;
+}
+
+.tool-panel__thread-count {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  z-index: 1;
+}
+
+.tool-panel__thread-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.15));
+}
+
+/* Chapters display */
+.tool-panel__chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.tool-panel__chapter {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+}
+
+.tool-panel__chapter-num {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  background: var(--color-primary, #4a7c59);
+  border-radius: 50%;
+}
+
+.tool-panel__chapter-title {
+  flex: 1;
+  font-size: 0.875rem;
+  color: var(--studio-text);
+}
+
+.tool-panel__chapter-words {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+/* Stats row */
+.tool-panel__stats {
+  display: flex;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: var(--studio-quote-bg);
+  border-radius: 4px;
+  margin-top: 0.75rem;
+}
+
+.tool-panel__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tool-panel__stat-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.tool-panel__stat-label {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+/* Tool cards - clickable action items */
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: left;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tool-card:hover {
+  background: var(--studio-hover);
+  border-color: var(--studio-accent);
+  transform: translateX(2px);
+}
+
+.tool-card__name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--studio-text);
+}
+
+.tool-card__desc {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  line-height: 1.3;
+}
+
+.tool-card--compact {
+  padding: 0.5rem 0.75rem;
+}
+
+.tool-card--compact .tool-card__name {
+  font-size: 0.8125rem;
+}
+
+/* Primary action card */
+.tool-card--primary {
+  background: linear-gradient(135deg, var(--studio-accent), #8b6914);
+  border-color: var(--studio-accent);
+  color: white;
+}
+
+.tool-card--primary .tool-card__name,
+.tool-card--primary .tool-card__desc {
+  color: white;
+}
+
+.tool-card--primary:hover {
+  background: linear-gradient(135deg, #8b6914, var(--studio-accent));
+  transform: translateX(2px);
+}
+
+.tool-card--primary:disabled {
+  background: var(--studio-border);
+  border-color: var(--studio-border);
+  cursor: not-allowed;
+  transform: none;
+  opacity: 0.6;
+}
+
+/* Selected state for persona/style cards */
+.tool-card--selected {
+  border-color: var(--studio-accent);
+  background: rgba(180, 140, 30, 0.15);
+  box-shadow: 0 0 0 2px rgba(180, 140, 30, 0.3);
+}
+
+/* Cancel button */
+.tool-card--cancel {
+  background: #dc3545;
+  border-color: #dc3545;
+  color: white;
+}
+
+.tool-card--cancel .tool-card__name {
+  color: white;
+}
+
+.tool-card--cancel:hover {
+  background: #c82333;
+  border-color: #c82333;
+  transform: translateX(2px);
+}
+
+/* Tool panel grid for card layouts */
+.tool-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+@media (max-width: 500px) {
+  .tool-panel__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
