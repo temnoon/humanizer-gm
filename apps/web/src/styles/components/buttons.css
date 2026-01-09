@@ -1,0 +1,46 @@
+/* ═══════════════════════════════════════════════════════════════════
+   BUTTONS
+   Primary and secondary button styles
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-small);
+  padding: var(--space-small) var(--space-large);
+  min-height: var(--touch-target);
+  font-size: var(--text-size-body);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  text-decoration: none;
+}
+
+.button:focus-visible {
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+.button--primary {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: none;
+}
+
+.button--primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.button--secondary {
+  background: transparent;
+  color: var(--color-primary);
+  border: var(--border-width-thin) solid var(--color-primary);
+}
+
+.button--secondary:hover {
+  background: var(--color-primary-subtle);
+}
+

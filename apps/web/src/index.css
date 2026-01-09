@@ -18,6 +18,8 @@
 /* Modularized feature styles */
 @import './styles/features/theme.css';
 @import './styles/features/markdown.css';
+/* Modularized component styles */
+@import './styles/components/buttons.css';
 
 /* ═══════════════════════════════════════════════════════════════════
    APP LAYOUT
@@ -98,51 +100,6 @@
   border-left: var(--border-width-thick) solid var(--color-primary);
   text-align: left;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   BUTTONS
-   ═══════════════════════════════════════════════════════════════════ */
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-small);
-  padding: var(--space-small) var(--space-large);
-  min-height: var(--touch-target);
-  font-size: var(--text-size-body);
-  font-weight: var(--font-weight-medium);
-  border-radius: var(--radius-medium);
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-  text-decoration: none;
-}
-
-.button:focus-visible {
-  box-shadow: var(--shadow-focus);
-  outline: none;
-}
-
-.button--primary {
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  border: none;
-}
-
-.button--primary:hover {
-  background: var(--color-primary-hover);
-}
-
-.button--secondary {
-  background: transparent;
-  color: var(--color-primary);
-  border: var(--border-width-thin) solid var(--color-primary);
-}
-
-.button--secondary:hover {
-  background: var(--color-primary-subtle);
-}
-
 /* ═══════════════════════════════════════════════════════════════════
    SIC COMPONENTS
    ═══════════════════════════════════════════════════════════════════ */
