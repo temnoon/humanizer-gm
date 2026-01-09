@@ -21,6 +21,8 @@
 @import './styles/features/aui.css';
 /* Modularized component styles */
 @import './styles/components/buttons.css';
+/* Modularized utility styles */
+@import './styles/utilities/electron.css';
 
 /* ═══════════════════════════════════════════════════════════════════
    APP LAYOUT
@@ -15105,88 +15107,6 @@ button.media-viewer__related-thumb {
 
 .image-card__associated-text::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-default);
-}
-
-/* ============================================================
-   ELECTRON - ChatGPT-style Traffic Light Integration
-   No separate title bar - traffic lights sit in the app's topbar
-   ============================================================ */
-
-/* Full-height container for Electron */
-.electron-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
-
-/* Make studio fill Electron container properly */
-.electron-container .studio {
-  min-height: auto;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Make studio__main scroll properly */
-.electron-container .studio__main {
-  flex: 1;
-  min-height: 0; /* Critical: Allow flex item to shrink below content size */
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* ============================================================
-   macOS-specific: Traffic light accommodation
-   ============================================================ */
-
-/* Topbar becomes the drag region for window movement */
-.electron-container--mac .studio-topbar {
-  -webkit-app-region: drag;
-  /* Extra padding on left for traffic lights (red/yellow/green) */
-  padding-left: 80px;
-}
-
-/* All interactive elements must be excluded from drag region */
-.electron-container--mac .studio-topbar button,
-.electron-container--mac .studio-topbar a,
-.electron-container--mac .studio-topbar input,
-.electron-container--mac .studio-topbar select,
-.electron-container--mac .studio-topbar [role="button"],
-.electron-container--mac .studio-topbar .theme-toggle,
-.electron-container--mac .studio-topbar .studio-topbar__btn,
-.electron-container--mac .studio-topbar .studio-topbar__nav,
-.electron-container--mac .studio-topbar .studio-topbar__breadcrumb {
-  -webkit-app-region: no-drag;
-}
-
-/* No-drag utility class */
-.no-drag {
-  -webkit-app-region: no-drag;
-}
-
-/* Legacy support */
-.window-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
-
-.window-title-bar {
-  -webkit-app-region: drag;
-  padding-left: 80px;
-}
-
-.window-title-bar button,
-.window-title-bar a,
-.window-title-bar input,
-.window-title-bar select,
-.window-title-bar [role="button"] {
-  -webkit-app-region: no-drag;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
