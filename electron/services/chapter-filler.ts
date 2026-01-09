@@ -261,7 +261,7 @@ export async function fillChapter(
   const style = options.style || 'academic';
   const targetWords = options.targetWords || 500;
   const maxPassages = options.maxPassages || 10;
-  const minSimilarity = options.minSimilarity || 0.6;
+  const minSimilarity = options.minSimilarity || 0.4; // Lowered from 0.6 for better recall
   const additionalQueries = options.additionalQueries || [];
 
   try {
@@ -283,31 +283,54 @@ export async function fillChapter(
     const chapterTitle = chapter.title as string;
     const bookName = book.name as string;
 
-    // Generate search queries
-    const titleQueries = generateQueriesFromTitle(chapterTitle);
-    const allQueries = [...titleQueries, ...additionalQueries].slice(0, 6);
+    // FIRST: Check for approved/gem passages in the book itself
+    // These are passages the user has already curated - use them directly!
+    const bookPassages = db.getBookPassages(bookId);
+    const approvedPassages = bookPassages.filter(
+      (p) => p.curationStatus === 'approved' || p.curationStatus === 'gem'
+    );
 
-    console.log(`[chapter-filler] Searching with queries:`, allQueries);
+    let passages: SearchResult[] = [];
 
-    // Search for passages
-    const rawPassages = await searchPassages(db, allQueries, { maxPassages: maxPassages * 2, minSimilarity });
+    if (approvedPassages.length > 0) {
+      // Use the book's own curated passages
+      console.log(`[chapter-filler] Using ${approvedPassages.length} approved book passages`);
+      passages = approvedPassages.slice(0, maxPassages).map((p, i) => ({
+        id: p.id as string,
+        content: p.text as string,
+        similarity: 1.0 - (i * 0.01), // Rank by order, all highly relevant
+        conversationTitle: (p.sourceRef as { conversationTitle?: string })?.conversationTitle,
+      }));
+    } else {
+      // FALLBACK: Search archive for passages
+      // Generate search queries
+      const titleQueries = generateQueriesFromTitle(chapterTitle);
+      const allQueries = [...titleQueries, ...additionalQueries].slice(0, 6);
 
-    if (rawPassages.length === 0) {
-      return {
-        success: false,
-        error: `No relevant passages found. Try broader search terms or lower similarity threshold.`,
-        stats: {
-          passagesFound: 0,
-          passagesUsed: 0,
-          generationTimeMs: Date.now() - startTime,
-          queriesUsed: allQueries,
-        },
-      };
+      console.log(`[chapter-filler] No approved passages, searching archive with queries:`, allQueries);
+
+      // Search for passages in archive
+      const rawPassages = await searchPassages(db, allQueries, { maxPassages: maxPassages * 2, minSimilarity });
+
+      if (rawPassages.length === 0) {
+        return {
+          success: false,
+          error: `No relevant passages found. Try harvesting content first, or use broader search terms.`,
+          stats: {
+            passagesFound: 0,
+            passagesUsed: 0,
+            generationTimeMs: Date.now() - startTime,
+            queriesUsed: allQueries,
+          },
+        };
+      }
+
+      // Deduplicate
+      passages = deduplicatePassages(rawPassages);
+      console.log(`[chapter-filler] Found ${rawPassages.length} archive passages, ${passages.length} after dedup`);
     }
 
-    // Deduplicate
-    const passages = deduplicatePassages(rawPassages);
-    console.log(`[chapter-filler] Found ${rawPassages.length} passages, ${passages.length} after dedup`);
+    console.log(`[chapter-filler] Using ${passages.length} passages for generation`);
 
     // Generate draft
     console.log(`[chapter-filler] Generating ${style} draft (~${targetWords} words)...`);
@@ -327,11 +350,12 @@ export async function fillChapter(
     });
 
     // Save version snapshot
+    const passageSource = approvedPassages.length > 0 ? 'book passages' : 'archive search';
     db.saveChapterVersion(
       chapterId,
       ((chapter.version as number) || 0) + 1,
       content,
-      `Auto-generated from ${passages.length} source passages`,
+      `Auto-generated from ${passages.length} ${passageSource}`,
       'aui'
     );
 
@@ -346,10 +370,10 @@ export async function fillChapter(
         wordCount,
       },
       stats: {
-        passagesFound: rawPassages.length,
+        passagesFound: approvedPassages.length > 0 ? approvedPassages.length : passages.length,
         passagesUsed: passages.length,
         generationTimeMs: Date.now() - startTime,
-        queriesUsed: allQueries,
+        queriesUsed: approvedPassages.length > 0 ? ['(used book passages)'] : additionalQueries,
       },
     };
   } catch (error) {
