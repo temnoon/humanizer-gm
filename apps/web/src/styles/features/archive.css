@@ -1,0 +1,115 @@
+/* ═══════════════════════════════════════════════════════════════════
+   ARCHIVE BROWSER STYLES
+   Conversation list and search interface
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.archive-browser__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.archive-item__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.875rem;
+  text-align: left;
+  color: var(--studio-text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.archive-item__header:hover {
+  background: var(--studio-hover);
+}
+
+.archive-item__header--expanded {
+  background: var(--studio-quote-bg);
+}
+
+/* Selected state - conversation currently in workspace */
+.archive-item--selected {
+  position: relative;
+}
+
+.archive-item--selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--color-primary, #4a7c59);
+  border-radius: 0 2px 2px 0;
+}
+
+.archive-item__header--selected {
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.08));
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.archive-item__header--selected:hover {
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.12));
+}
+
+.archive-item__icon {
+  font-size: 0.625rem;
+  color: var(--studio-text-secondary);
+  width: 1em;
+}
+
+.archive-item__title {
+  flex: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archive-item__date {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+.archive-item__messages {
+  padding-left: 1.5rem;
+  margin-top: 0.25rem;
+}
+
+.archive-message {
+  width: 100%;
+  display: block;
+  padding: 0.625rem 0.75rem;
+  font-family: Georgia, serif;
+  font-size: 0.8125rem;
+  font-style: italic;
+  text-align: left;
+  color: var(--studio-text-secondary);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.archive-message:hover {
+  background: var(--studio-hover);
+  border-left-color: var(--studio-accent);
+  color: var(--studio-text);
+}
+
+.archive-message__preview {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
