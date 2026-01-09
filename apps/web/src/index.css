@@ -39,6 +39,7 @@
 @import './styles/features/media-gallery.css';
 @import './styles/features/content-viewer.css';
 @import './styles/features/structure-inspector.css';
+@import './styles/features/hover-panels.css';
 /* Modularized component styles */
 @import './styles/components/buttons.css';
 @import './styles/components/profile-cards.css';
@@ -335,120 +336,6 @@
 
 .signal-count {
   color: var(--color-text-tertiary);
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   HOVER PANELS
-   ═══════════════════════════════════════════════════════════════════ */
-
-.studio-panel__trigger {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  width: 20px;
-  z-index: 50;
-}
-
-.studio-panel__trigger--left {
-  left: 0;
-}
-
-.studio-panel__trigger--right {
-  right: 0;
-}
-
-.studio-panel {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  width: 320px;
-  max-width: 85vw;
-  background: var(--studio-panel-bg);
-  border: 1px solid var(--studio-border);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  z-index: 200;
-  transform: translateX(-100%);
-  transition: transform 0.3s ease;
-  display: flex;
-  flex-direction: column;
-}
-
-.studio-panel--left {
-  left: 0;
-  border-left: none;
-  border-radius: 0 8px 8px 0;
-}
-
-.studio-panel--right {
-  right: 0;
-  left: auto;
-  transform: translateX(100%);
-  border-right: none;
-  border-radius: 8px 0 0 8px;
-}
-
-.studio-panel--open {
-  transform: translateX(0);
-}
-
-.studio-panel__backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.2);
-  z-index: 150;
-}
-
-.studio-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--studio-border);
-}
-
-.studio-panel__title {
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--studio-text-secondary);
-  margin: 0;
-}
-
-.studio-panel__close {
-  min-width: var(--touch-target-min, 44px);
-  min-height: var(--touch-target-min, 44px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
-  color: var(--studio-text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.studio-panel__close:hover {
-  background: var(--studio-hover);
-  color: var(--studio-text);
-}
-
-.studio-panel__close:focus {
-  outline: none;
-}
-
-.studio-panel__close:focus-visible {
-  outline: 2px solid var(--color-primary, #4a7c59);
-  outline-offset: 2px;
-}
-
-.studio-panel__content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
