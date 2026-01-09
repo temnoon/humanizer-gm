@@ -4,6 +4,9 @@
  * Components for the main workspace pane
  */
 
+// Main workspace
+export { MainWorkspace, type MainWorkspaceProps, type WorkspaceViewMode } from './MainWorkspace';
+
 // Core content views
 export { BookContentView, type BookContent, type BookContentType } from './BookContentView';
 export { ContainerWorkspace } from './ContainerWorkspace';
