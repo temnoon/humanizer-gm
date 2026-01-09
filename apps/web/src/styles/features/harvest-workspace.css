@@ -1,0 +1,440 @@
+/* ═══════════════════════════════════════════════════════════════════
+   HARVEST WORKSPACE VIEW
+   Full conversation review in workspace
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.harvest-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-surface-primary);
+  color: var(--color-text-primary);
+}
+
+/* Header */
+.harvest-workspace__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-secondary);
+}
+
+.harvest-workspace__header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.harvest-workspace__back {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface-primary);
+  cursor: pointer;
+  font-size: 1.25rem;
+  color: var(--color-text-secondary);
+  transition: all 0.15s ease;
+}
+
+.harvest-workspace__back:hover {
+  background: var(--color-surface-tertiary);
+  color: var(--color-text-primary);
+}
+
+.harvest-workspace__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.harvest-workspace__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+.harvest-workspace__meta {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.harvest-workspace__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.harvest-workspace__view-toggle {
+  display: flex;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.harvest-workspace__view-btn {
+  padding: 0.375rem 0.75rem;
+  border: none;
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.harvest-workspace__view-btn:hover {
+  background: var(--color-surface-tertiary);
+}
+
+.harvest-workspace__view-btn--active {
+  background: var(--color-primary);
+  color: var(--color-text-inverse, white);
+}
+
+.harvest-workspace__staged-count {
+  font-size: 0.8125rem;
+  color: var(--color-success);
+  font-weight: 500;
+}
+
+.harvest-workspace__gem-count {
+  color: #7b1fa2;
+}
+
+.harvest-workspace__commit {
+  padding: 0.5rem 1rem;
+  min-height: 36px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-primary);
+  color: var(--color-text-inverse, white);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.harvest-workspace__commit:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.harvest-workspace__commit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Message Stepper */
+.harvest-workspace__stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-secondary);
+}
+
+.harvest-workspace__step-btn {
+  padding: 0.5rem 1rem;
+  min-height: 36px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface-primary);
+  color: var(--color-text-primary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.harvest-workspace__step-btn:hover:not(:disabled) {
+  background: var(--color-surface-tertiary);
+  border-color: var(--color-primary);
+}
+
+.harvest-workspace__step-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.harvest-workspace__step-position {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.harvest-workspace__step-input {
+  width: 48px;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  background: var(--color-surface-primary);
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.harvest-workspace__step-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.harvest-workspace__step-total {
+  color: var(--color-text-tertiary);
+}
+
+/* Body - Content Area */
+.harvest-workspace__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.harvest-workspace__body--single {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.harvest-workspace__body--all {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.harvest-workspace__single {
+  width: 100%;
+  max-width: 800px;
+}
+
+.harvest-workspace__all {
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Message Card */
+.harvest-message {
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-surface-primary);
+  transition: all 0.15s ease;
+}
+
+.harvest-message--current {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 74, 144, 217), 0.15);
+}
+
+.harvest-message--user {
+  background: var(--color-surface-secondary);
+}
+
+.harvest-message--assistant {
+  background: var(--color-surface-primary);
+}
+
+.harvest-message--system {
+  opacity: 0.7;
+  background: var(--color-surface-tertiary);
+}
+
+.harvest-message--staged {
+  border-left: 4px solid var(--color-success);
+}
+
+.harvest-message--gem {
+  border-left: 4px solid #7b1fa2;
+  background: linear-gradient(135deg, rgba(123, 31, 162, 0.05) 0%, transparent 50%);
+}
+
+.harvest-message__role {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.harvest-message__role-icon {
+  font-size: 1rem;
+}
+
+.harvest-message__role-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  color: var(--color-text-tertiary);
+}
+
+.harvest-message__staged-badge {
+  margin-left: auto;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.harvest-message__staged-badge--staged {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.harvest-message__staged-badge--gem {
+  background: rgba(123, 31, 162, 0.15);
+  color: #7b1fa2;
+}
+
+.harvest-message__content {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--color-text-primary);
+}
+
+.harvest-message__content p {
+  margin: 0 0 0.75rem 0;
+}
+
+.harvest-message__content p:last-child {
+  margin-bottom: 0;
+}
+
+.harvest-message__content pre {
+  background: var(--color-surface-tertiary);
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+}
+
+.harvest-message__content code {
+  background: var(--color-surface-tertiary);
+  padding: 0.125rem 0.25rem;
+  border-radius: 3px;
+  font-size: 0.875em;
+}
+
+.harvest-message__content pre code {
+  background: none;
+  padding: 0;
+}
+
+.harvest-message__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.harvest-message__action {
+  padding: 0.5rem 0.875rem;
+  min-height: 36px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.harvest-message__action:hover {
+  background: var(--color-surface-tertiary);
+  color: var(--color-text-primary);
+}
+
+.harvest-message__action--active {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: white;
+}
+
+.harvest-message__action--gem:hover {
+  border-color: #7b1fa2;
+  color: #7b1fa2;
+}
+
+.harvest-message__action--gem.harvest-message__action--active {
+  background: #7b1fa2;
+  border-color: #7b1fa2;
+  color: white;
+}
+
+.harvest-message__action--skip:hover {
+  border-color: var(--color-border-dark);
+}
+
+.harvest-message__time {
+  display: block;
+  margin-top: 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+}
+
+/* Keyboard Hints Footer */
+.harvest-workspace__hints {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--color-border-default);
+  background: var(--color-surface-secondary);
+}
+
+.harvest-workspace__hint {
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+}
+
+.harvest-workspace__hint kbd {
+  display: inline-block;
+  padding: 0.125rem 0.375rem;
+  margin-right: 0.25rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: 3px;
+  background: var(--color-surface-primary);
+  font-family: inherit;
+  font-size: 0.625rem;
+}
+
+/* Dark mode overrides */
+[data-theme='dark'] .harvest-workspace {
+  background: var(--color-surface-primary);
+}
+
+[data-theme='dark'] .harvest-workspace__header,
+[data-theme='dark'] .harvest-workspace__stepper,
+[data-theme='dark'] .harvest-workspace__hints {
+  background: var(--color-surface-secondary);
+}
+
+[data-theme='dark'] .harvest-message--gem {
+  background: linear-gradient(135deg, rgba(206, 147, 216, 0.1) 0%, transparent 50%);
+}
+
+[data-theme='dark'] .harvest-message__staged-badge--gem {
+  background: rgba(206, 147, 216, 0.2);
+  color: #ce93d8;
+}
+
+[data-theme='dark'] .harvest-message__action--gem:hover {
+  border-color: #ce93d8;
+  color: #ce93d8;
+}
+
+[data-theme='dark'] .harvest-message__action--gem.harvest-message__action--active {
+  background: #9c27b0;
+  border-color: #9c27b0;
+}
