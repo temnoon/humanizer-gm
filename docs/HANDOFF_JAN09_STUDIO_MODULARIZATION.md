@@ -1,19 +1,19 @@
 # Handoff: Studio.tsx Modularization
 
 **Date**: January 9, 2026
-**Status**: IN PROGRESS - 59.4% extracted. 1,955 lines remaining.
+**Status**: COMPLETE - 89% reduction (4,811 → 531 lines)
 **Predecessor**: HANDOFF_JAN09_CSS_PHASE3_COMPLETE.md
 
 ---
 
 ## Summary
 
-Studio.tsx modularization is **in progress**. File reduced from 4,811 to 1,955 lines.
+Studio.tsx modularization is **complete**. File reduced from 4,811 to 531 lines.
 
 | Metric | Before | After | Change |
 |--------|--------|-------|--------|
-| Studio.tsx | 4,811 lines | 1,955 lines | -59.4% |
-| Component files created | 0 | 6 | +6 |
+| Studio.tsx | 4,811 lines | 531 lines | -89% |
+| Component files created | 0 | 8 | +8 |
 
 ---
 
@@ -38,6 +38,16 @@ Studio.tsx modularization is **in progress**. File reduced from 4,811 to 1,955 l
 | BookToolPanels.tsx | 735 | Arc, Threads, Chapters, Persona tools |
 | index.ts | 15 | Exports for tools module |
 
+### components/workspace/ (1 file)
+| File | Lines | Contents |
+|------|-------|----------|
+| MainWorkspace.tsx | 1003 | Read/Edit mode, media viewer, navigation |
+
+### components/aui/ (1 file)
+| File | Lines | Contents |
+|------|-------|----------|
+| AUIFloatingChat.tsx | 391 | Draggable chat bubble, LLM responses |
+
 ### lib/tools/ (2 files)
 | File | Lines | Contents |
 |------|-------|----------|
@@ -46,19 +56,25 @@ Studio.tsx modularization is **in progress**. File reduced from 4,811 to 1,955 l
 
 ---
 
-## Remaining in Studio.tsx
+## Final Studio.tsx Content
 
-| Section | Lines | Status |
-|---------|-------|--------|
-| WORKSPACE | 74-1078 (~1004) | Not yet extracted |
-| AUI CHAT | 1079-1454 (~375) | Not yet extracted |
-| STUDIO (StudioContent) | 1455-1955 (~500) | **Keep** - Main orchestrator |
+```
+Studio.tsx: 531 lines
+  - StudioContent (main orchestrator)
+  - State management (workspaceState, harvestReview, etc.)
+  - Handler callbacks (handleSelectMedia, handleTransformComplete, etc.)
+  - Provider wrappers (ThemeProvider, BufferProvider, BookshelfProvider, AUIProvider)
+  - Layout composition (TopBar, MainWorkspace, CornerAssistant)
+```
 
 ---
 
-## Commits Made (This Session)
+## Commits Made (Full Session)
 
 ```
+d39a1e0 refactor(studio): clean up unused imports after modularization
+48c7fd0 refactor(studio): extract AUIFloatingChat to components/aui
+c1542f0 refactor(studio): extract MainWorkspace to components/workspace
 cf5eb11 refactor(studio): extract TopBar to components/layout
 4dced28 refactor(studio): extract UserDropdown to components/layout
 0496d5c refactor(studio): extract ToolsPanel and BookToolPanels to components/tools
@@ -75,50 +91,35 @@ All builds pass. No visual regressions detected.
 
 ---
 
-## Next Steps (To Complete)
-
-1. **Extract WORKSPACE** (~1004 lines) → `components/workspace/MainWorkspace.tsx`
-   - Large component with edit mode, navigation, keyboard shortcuts
-   - Uses many hooks: useBuffers, useTheme, useBookshelf, useSplitMode
-
-2. **Extract AUI CHAT** (~375 lines) → `components/aui/AUIFloatingChat.tsx`
-   - Floating chat bubble component (different from existing AUIChatTab.tsx)
-   - Uses drag/drop, bookshelf context
-
-3. **Clean up unused imports** in Studio.tsx
-   - Many imports are now only used by extracted components
-   - Should be removed for clean final state
-
----
-
-## Target Final State
-
-```
-Studio.tsx: ~500 lines
-  - StudioContent (main orchestrator)
-  - State management
-  - Provider wrappers
-  - Layout composition
-```
-
----
-
-## Architecture Notes
+## Architecture
 
 ### Import Hierarchy
 ```
-Studio.tsx
+Studio.tsx (531 lines)
 ├── components/layout/TopBar (uses ArchivePanel, ToolsPanel)
-├── components/layout/HoverPanel
-├── components/workspace/MainWorkspace (to be extracted)
-├── components/aui/AUIFloatingChat (to be extracted)
-└── lib/tools/toolRegistry
+├── components/layout/CornerAssistant
+├── components/workspace/MainWorkspace
+├── components/workspace/ContainerWorkspace
+├── components/workspace/StructureInspector
+├── components/workspace/HarvestWorkspaceView
+├── components/graph/SocialGraphView
+└── lib/aui/AUIProvider
 ```
 
 ### Component Dependencies
 - TopBar depends on: ArchivePanel, ToolsPanel, UserDropdown, HoverPanel
 - ToolsPanel depends on: BookToolPanels, ProfileCards, HarvestQueuePanel
 - ArchivePanel depends on: ArchiveTabs
+- MainWorkspace depends on: WelcomeScreen, AnalyzableMarkdown, AddToBookDialog
+
+---
+
+## Notes
+
+- AUIFloatingChat is currently **disabled** in Studio.tsx (commented out)
+- Will be integrated into Tools panel with proper styling in a future phase
+- MainWorkspace handles all the complex editing/viewing functionality
+- Studio.tsx is now purely an orchestrator with state management
 
 ---
 
