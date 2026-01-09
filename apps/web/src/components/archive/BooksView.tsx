@@ -131,6 +131,9 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
 
     const converted = {
       id: bsBook.id,
+      // CRITICAL: Preserve URI for active book lookup!
+      uri: bsBook.uri,
+      _uri: bsBook.uri,  // Also as _uri for backwards compatibility
       name: bsBook.name,
       subtitle: bsBook.subtitle,
       description: bsBook.description,
@@ -300,9 +303,8 @@ Start writing here...
     // Set active book in bookshelf context
     const project = bookProjects.find(p => p.id === projectId);
     if (project) {
-      // Get URI from converted project or construct it
-      const bookUri = (project as unknown as { _uri?: string })?._uri
-        || (project as unknown as { uri?: string })?.uri
+      // Get URI from converted project (now preserved in conversion)
+      const bookUri = (project as unknown as { uri?: string })?.uri
         || `book://${project.id}`;
       bookshelf.setActiveBookUri(bookUri as `${string}://${string}`);
     }
