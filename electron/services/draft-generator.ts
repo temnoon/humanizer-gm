@@ -30,12 +30,9 @@ import type {
   StartDraftResult,
   DraftStatusResult,
   DraftJobStatus,
-  PASSAGES_PER_SECTION,
-  WORDS_PER_SECTION,
-  MAX_CHARS_PER_PASSAGE,
 } from '@humanizer/core';
 
-// Re-import constants (can't import values from type-only imports)
+// Constants (matching @humanizer/core/types/draft.ts)
 const PASSAGES_PER_SECTION = 6;
 const WORDS_PER_SECTION = 1500;
 const MAX_CHARS_PER_PASSAGE = 600;
@@ -178,23 +175,32 @@ export class DraftGeneratorService extends EventEmitter {
         return { success: false, error: `Chapter not found: ${chapterId}` };
       }
 
-      // Get book info
-      const book = db.getBookByUri(bookUri);
+      // Get book info (getBook accepts URI or ID)
+      const book = db.getBook(bookUri);
       if (!book) {
         return { success: false, error: `Book not found: ${bookUri}` };
+      }
+      const bookId = book.id as string;
+
+      // Get all passages for this book upfront
+      const allPassages = db.getBookPassages(bookId);
+      const passageMap = new Map<string, Record<string, unknown>>();
+      for (const p of allPassages) {
+        passageMap.set(p.id as string, p);
       }
 
       // Get passages for this chapter
       // First try to get passage IDs from arc/chapter outline, then fall back to approved passages
       let passageIds: string[] = [];
-      let passageContents = new Map<string, { text: string; wordCount: number }>();
+      const passageContents = new Map<string, { text: string; wordCount: number }>();
 
       if (arcId) {
         // Get passages from arc's chapter outline
         const arc = db.getNarrativeArc(arcId);
-        if (arc?.chapters) {
-          const chapterOutline = arc.chapters.find(
-            (c: { number?: number }) => c.number === (chapter.number as number)
+        const arcChapters = arc?.chapters as Array<{ number?: number; passageIds?: string[] }> | undefined;
+        if (arcChapters) {
+          const chapterOutline = arcChapters.find(
+            (c) => c.number === (chapter.number as number)
           );
           if (chapterOutline?.passageIds) {
             passageIds = chapterOutline.passageIds;
@@ -204,19 +210,19 @@ export class DraftGeneratorService extends EventEmitter {
 
       // Fall back to approved passages from book
       if (passageIds.length === 0) {
-        const passages = db.getBookPassages(bookUri);
-        passageIds = passages
-          .filter((p: { status?: string }) => p.status === 'approved' || p.status === 'gem')
-          .map((p: { id: string }) => p.id);
+        passageIds = allPassages
+          .filter((p) => p.status === 'approved' || p.status === 'gem')
+          .map((p) => p.id as string);
       }
 
-      // Load passage content
+      // Load passage content from our pre-loaded map
       for (const passageId of passageIds) {
-        const passage = db.getPassage(passageId);
+        const passage = passageMap.get(passageId);
         if (passage) {
+          const text = (passage.content || passage.text || '') as string;
           passageContents.set(passageId, {
-            text: passage.content || passage.text || '',
-            wordCount: (passage.content || passage.text || '').split(/\s+/).filter(Boolean).length,
+            text,
+            wordCount: text.split(/\s+/).filter(Boolean).length,
           });
         }
       }
@@ -377,11 +383,21 @@ export class DraftGeneratorService extends EventEmitter {
     const db = new EmbeddingDatabase(this.archivePath);
     const router = getModelRouter({ preference: 'local-only' });
 
+    // Pre-load all passages for this book
+    const book = db.getBook(job.bookUri);
+    const bookId = book?.id as string;
+    const allPassages = bookId ? db.getBookPassages(bookId) : [];
+    const passageMap = new Map<string, Record<string, unknown>>();
+    for (const p of allPassages) {
+      passageMap.set(p.id as string, p);
+    }
+
     try {
       // Process each pending section
       while (job.currentSection < job.sections.length) {
         // Check if paused
-        if (job.status === 'paused') {
+        const currentJob = this.jobs.get(jobId);
+        if (!currentJob || currentJob.status === 'paused') {
           console.log(`[draft-generator] Job ${jobId} paused at section ${job.currentSection}`);
           break;
         }
@@ -401,12 +417,12 @@ export class DraftGeneratorService extends EventEmitter {
         const startTime = Date.now();
 
         try {
-          // Load passage content for this section
+          // Load passage content for this section from pre-loaded map
           const passageTexts: string[] = [];
           for (const passageId of section.passageIds) {
-            const passage = db.getPassage(passageId);
+            const passage = passageMap.get(passageId);
             if (passage) {
-              const text = (passage.content || passage.text || '').substring(0, MAX_CHARS_PER_PASSAGE);
+              const text = ((passage.content || passage.text || '') as string).substring(0, MAX_CHARS_PER_PASSAGE);
               passageTexts.push(text);
             }
           }

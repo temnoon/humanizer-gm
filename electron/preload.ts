@@ -1139,41 +1139,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('xanadu:analyze:passages', passages, config),
     },
     seedLibrary: () => ipcRenderer.invoke('xanadu:seed-library'),
-  },
 
-  // ─────────────────────────────────────────────────────────────────
-  // DRAFT GENERATION
-  // Iterative chapter generation with pause/resume support
-  // ─────────────────────────────────────────────────────────────────
-  draft: {
-    start: (params: {
-      bookUri: string;
-      chapterId: string;
-      arcId?: string;
-      style?: 'academic' | 'narrative' | 'conversational';
-      wordsPerSection?: number;
-    }) => ipcRenderer.invoke('draft:start', params),
+    // Draft generation - iterative chapter generation with pause/resume
+    draft: {
+      start: (params: {
+        bookUri: string;
+        chapterId: string;
+        arcId?: string;
+        style?: 'academic' | 'narrative' | 'conversational';
+        wordsPerSection?: number;
+      }) => ipcRenderer.invoke('draft:start', params),
 
-    pause: (jobId: string) => ipcRenderer.invoke('draft:pause', jobId),
+      pause: (jobId: string) => ipcRenderer.invoke('draft:pause', jobId),
 
-    resume: (jobId: string) => ipcRenderer.invoke('draft:resume', jobId),
+      resume: (jobId: string) => ipcRenderer.invoke('draft:resume', jobId),
 
-    status: (jobId: string) => ipcRenderer.invoke('draft:status', jobId),
+      status: (jobId: string) => ipcRenderer.invoke('draft:status', jobId),
 
-    list: () => ipcRenderer.invoke('draft:list'),
+      list: () => ipcRenderer.invoke('draft:list'),
 
-    // Subscribe to progress events
-    onProgress: (callback: (progress: DraftProgress) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, progress: DraftProgress) => callback(progress);
-      ipcRenderer.on('draft:progress', handler);
-      return () => ipcRenderer.removeListener('draft:progress', handler);
-    },
+      // Subscribe to progress events
+      onProgress: (callback: (progress: DraftProgress) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, progress: DraftProgress) => callback(progress);
+        ipcRenderer.on('draft:progress', handler);
+        return () => ipcRenderer.removeListener('draft:progress', handler);
+      },
 
-    // Subscribe to all draft events
-    onEvent: (callback: (event: DraftEvent) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, draftEvent: DraftEvent) => callback(draftEvent);
-      ipcRenderer.on('draft:event', handler);
-      return () => ipcRenderer.removeListener('draft:event', handler);
+      // Subscribe to all draft events
+      onEvent: (callback: (event: DraftEvent) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, draftEvent: DraftEvent) => callback(draftEvent);
+        ipcRenderer.on('draft:event', handler);
+        return () => ipcRenderer.removeListener('draft:event', handler);
+      },
     },
   },
 } as ElectronAPI);
