@@ -420,6 +420,9 @@ export async function executeTool(
     case 'generate_first_draft':
       return executeGenerateFirstDraft(params, context);
 
+    case 'fill_chapter':
+      return executeFillChapter(params, context);
+
     // Agent tools
     case 'list_agents':
       return executeListAgents();
@@ -3333,6 +3336,86 @@ Write the chapter now:`;
     return {
       success: false,
       error: e instanceof Error ? e.message : 'Draft generation failed',
+    };
+  }
+}
+
+/**
+ * Fill an existing chapter using the local chapter-filler service
+ * Uses approved book passages and local LLM (Ollama)
+ */
+async function executeFillChapter(
+  params: Record<string, unknown>,
+  context: AUIContext
+): Promise<AUIToolResult> {
+  const { chapterId, style, targetWords, additionalQueries } = params as {
+    chapterId?: string;
+    style?: 'academic' | 'narrative' | 'conversational';
+    targetWords?: number;
+    additionalQueries?: string[];
+  };
+
+  if (!chapterId) {
+    return { success: false, error: 'Missing chapterId parameter' };
+  }
+
+  if (!context.activeProject) {
+    return { success: false, error: 'No active book project' };
+  }
+
+  // Check if we have Electron API
+  const electronAPI = (window as unknown as { electronAPI?: { xanadu?: { chapters?: { fill?: (chapterId: string, bookId: string, options?: Record<string, unknown>) => Promise<{ success: boolean; chapter?: { id: string; title: string; content: string; wordCount: number }; stats?: { passagesFound: number; passagesUsed: number; generationTimeMs: number; queriesUsed: string[] }; error?: string }> } } } })?.electronAPI;
+
+  if (!electronAPI?.xanadu?.chapters?.fill) {
+    return {
+      success: false,
+      error: 'Local chapter filling not available. Use generate_first_draft instead.',
+    };
+  }
+
+  try {
+    const bookId = context.activeProject.id;
+    const result = await electronAPI.xanadu.chapters.fill(chapterId, bookId, {
+      style: style || 'academic',
+      targetWords: targetWords || 500,
+      additionalQueries: additionalQueries || [],
+    });
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error || 'Chapter fill failed',
+        teaching: {
+          whatHappened: 'Failed to generate chapter content',
+          guiPath: ['Archive', 'Books', 'Select Book', 'Chapter', 'Fill button'],
+          why: result.error?.includes('No relevant passages')
+            ? 'Harvest some passages first using harvest_archive, then mark them as approved.'
+            : 'Check that Ollama is running and the book has approved passages.',
+        },
+      };
+    }
+
+    return {
+      success: true,
+      message: `Filled chapter "${result.chapter?.title}" with ${result.chapter?.wordCount} words from ${result.stats?.passagesUsed} passages`,
+      data: {
+        chapterId: result.chapter?.id,
+        title: result.chapter?.title,
+        wordCount: result.chapter?.wordCount,
+        passagesFound: result.stats?.passagesFound,
+        passagesUsed: result.stats?.passagesUsed,
+        generationTimeMs: result.stats?.generationTimeMs,
+      },
+      teaching: {
+        whatHappened: `Generated ${result.chapter?.wordCount} words using ${result.stats?.passagesUsed} approved passages and local LLM`,
+        guiPath: ['Archive', 'Books', 'Chapters Tab', 'Click chapter to view'],
+        why: 'The chapter was filled using your curated passages. Edit it to refine the narrative flow.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Fill chapter failed',
     };
   }
 }
