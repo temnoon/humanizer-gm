@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import './FillChapterDialog.css';
 
 export interface FillChapterOptions {
@@ -94,7 +95,8 @@ export function FillChapterDialog({
 
   if (!isOpen || !chapter) return null;
 
-  return (
+  // Use portal to render at document.body level, bypassing any parent CSS containment
+  return createPortal(
     <div className="fill-dialog__overlay" onClick={isGenerating ? undefined : onClose}>
       <div
         className="fill-dialog"
@@ -196,6 +198,7 @@ export function FillChapterDialog({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

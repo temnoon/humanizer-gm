@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import './PromptDialog.css';
 
 export interface PromptDialogProps {
@@ -61,7 +62,8 @@ export function PromptDialog({
 
   if (!isOpen) return null;
 
-  return (
+  // Use portal to render at document.body level, bypassing any parent CSS containment
+  return createPortal(
     <div className="prompt-dialog__overlay" onClick={onCancel}>
       <div
         className="prompt-dialog"
@@ -98,7 +100,8 @@ export function PromptDialog({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
