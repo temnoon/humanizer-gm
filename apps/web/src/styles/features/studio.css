@@ -1,0 +1,234 @@
+/* ═══════════════════════════════════════════════════════════════════
+   STUDIO STYLES
+   Base studio layout, topbar, and core variables
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.studio {
+  --studio-bg: #f8f4e9;
+  --studio-text: #433422;
+  --studio-text-secondary: #6b5c4a;
+  --studio-text-tertiary: #8a7a68;
+  --studio-accent: #8b6914;
+  --studio-quote-bg: #f0e8d6;
+  --studio-border: #d4c4a8;
+  --studio-panel-bg: #fffdf8;
+  --studio-hover: rgba(139, 105, 20, 0.1);
+  --studio-surface: #f0e8d6;
+
+  min-height: 100vh;
+  background: var(--studio-bg);
+  color: var(--studio-text);
+  font-family: Georgia, 'Times New Roman', serif;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Dark mode studio overrides */
+[data-theme="dark"] .studio {
+  --studio-bg: var(--color-surface-primary, #1a1a1f);
+  --studio-text: var(--color-text-primary, #e8e6e0);
+  --studio-text-secondary: var(--color-text-secondary, #a0a0a0);
+  --studio-text-tertiary: var(--color-text-tertiary, #707070);
+  --studio-accent: var(--color-accent, #d4a574);
+  --studio-quote-bg: var(--color-surface-secondary, #252530);
+  --studio-border: var(--color-border-default, #3a3a45);
+  --studio-panel-bg: var(--color-surface-secondary, #22222a);
+  --studio-hover: var(--color-surface-tertiary, #2a2a35);
+  --studio-surface: var(--color-surface-secondary, #252530);
+}
+
+/* Light mode explicit overrides (for completeness) */
+[data-theme="light"] .studio {
+  --studio-bg: #ffffff;
+  --studio-text: #1a1a1a;
+  --studio-text-secondary: #555555;
+  --studio-text-tertiary: #888888;
+  --studio-accent: var(--color-primary, #2563eb);
+  --studio-quote-bg: #f5f5f5;
+  --studio-border: #e0e0e0;
+  --studio-panel-bg: #fafafa;
+  --studio-hover: rgba(37, 99, 235, 0.08);
+  --studio-surface: #f5f5f5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TOP BAR
+   ═══════════════════════════════════════════════════════════════════ */
+
+.studio-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: rgba(var(--studio-panel-bg-rgb, 248, 244, 233), 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--studio-border);
+  transition: opacity 0.3s ease, transform 0.3s ease, background 0.3s ease;
+}
+
+.studio-topbar--hidden {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+
+.studio-topbar__left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+
+.studio-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+/* Center section: absolutely positioned for TRUE viewport centering */
+.studio-topbar__center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 1;
+}
+
+/* Nav variant - inherits absolute centering */
+.studio-topbar__center--nav {
+  /* Inherits from .studio-topbar__center */
+}
+
+/* Title wrapper - centered by parent, no special positioning needed */
+.studio-topbar__title-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Navigation buttons group */
+.studio-topbar__nav-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Breadcrumb container */
+.studio-topbar__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.875rem;
+}
+
+.studio-topbar__breadcrumb-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.studio-topbar__breadcrumb-sep {
+  color: var(--studio-text-tertiary, #999);
+  flex-shrink: 0;
+}
+
+.studio-topbar__breadcrumb-link {
+  background: none;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  font-size: inherit;
+  font-family: inherit;
+  color: var(--studio-text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.studio-topbar__breadcrumb-link:hover {
+  color: var(--studio-text);
+  background: var(--studio-hover);
+}
+
+.studio-topbar__title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--studio-text);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Legacy logo style - kept for compatibility */
+.studio-topbar__logo {
+  font-size: 1.125rem;
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  color: var(--studio-text);
+}
+
+.studio-topbar__btn {
+  min-height: var(--touch-target-min, 44px);
+  padding: 0.5rem 0.875rem;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.8125rem;
+  color: var(--studio-text-secondary);
+  background: transparent;
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.studio-topbar__btn:hover {
+  background: var(--studio-hover);
+  color: var(--studio-text);
+}
+
+.studio-topbar__nav {
+  min-width: var(--touch-target-min, 44px);
+  min-height: var(--touch-target-min, 44px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  color: var(--studio-text-secondary);
+  background: transparent;
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.studio-topbar__nav:hover:not(:disabled) {
+  background: var(--studio-hover);
+  color: var(--studio-text);
+}
+
+.studio-topbar__nav:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+

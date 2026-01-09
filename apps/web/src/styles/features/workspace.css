@@ -1,0 +1,478 @@
+/* ═══════════════════════════════════════════════════════════════════
+   WORKSPACE STYLES
+   Main workspace, content areas, and welcome screen
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.studio__main {
+  min-height: 100vh;
+  padding: 5rem 1.5rem 3rem;
+}
+
+/* Remove padding when showing full-screen views like graph or media */
+.studio__main:has(.workspace--graph),
+.studio__main:has(.workspace--media) {
+  padding: 3.5rem 0 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WORKSPACE - Main content area with width-responsive layout
+   Responds to [data-editor-width] attribute on document root
+   ═══════════════════════════════════════════════════════════════════ */
+
+.workspace {
+  /* Width controlled by editor width setting */
+  --workspace-width-narrow: min(50rem, 95vw);  /* ~800px for comfortable reading */
+  --workspace-width-medium: min(64rem, 95vw);
+  --workspace-width-wide: 100%;
+
+  /* Default to narrow for reading mode - centered on viewport */
+  width: 100%;
+  max-width: var(--workspace-width-narrow);
+  margin-left: auto;
+  margin-right: auto;
+  min-height: calc(100vh - var(--space-3xl, 4rem) * 2);
+  padding: 0 var(--space-medium);
+  transition: max-width var(--duration-normal) var(--ease-out);
+  text-align: left; /* Keep text left-aligned within centered container */
+}
+
+/* Width variations based on theme setting */
+[data-editor-width="narrow"] .workspace {
+  max-width: var(--workspace-width-narrow);
+}
+
+[data-editor-width="medium"] .workspace {
+  max-width: var(--workspace-width-medium);
+}
+
+[data-editor-width="wide"] .workspace {
+  max-width: var(--workspace-width-wide);
+  padding: 0 var(--space-large);
+}
+
+/* Edit mode: always use wider layout for split view */
+.workspace:has(.workspace__split-view) {
+  max-width: var(--workspace-width-wide);
+  padding: 0 var(--space-medium);
+}
+
+/* Width-specific split view behavior */
+[data-editor-width="narrow"] .workspace:has(.workspace__split-view) {
+  max-width: min(64rem, 98vw);
+}
+
+[data-editor-width="medium"] .workspace:has(.workspace__split-view) {
+  max-width: min(80rem, 98vw);
+}
+
+[data-editor-width="wide"] .workspace:has(.workspace__split-view) {
+  max-width: 100%;
+}
+
+.workspace--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workspace__placeholder {
+  text-align: center;
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+}
+
+.workspace__placeholder h1 {
+  font-size: var(--text-size-heading-1, 2.5rem);
+  font-weight: var(--font-weight-normal, normal);
+  letter-spacing: 0.1em;
+  margin-bottom: var(--space-small);
+}
+
+.workspace__tagline {
+  font-style: italic;
+  font-size: var(--text-size-large, 1.125rem);
+  margin-bottom: var(--space-xl);
+}
+
+.workspace__divider {
+  color: var(--color-text-secondary);
+  letter-spacing: 0.5em;
+  margin: var(--space-xlarge, 32px) 0;
+}
+
+/* When divider is an hr element (semantic) */
+hr.workspace__divider {
+  border: none;
+  height: 1px;
+  background: var(--color-border-subtle);
+  width: 60px;
+  margin: var(--space-xlarge, 32px) auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WELCOME SCREEN - Drag & Drop File Indexing
+   Uses tokens from packages/ui/styles/tokens.css
+   ═══════════════════════════════════════════════════════════════════ */
+
+.welcome-screen {
+  position: relative;
+  transition: background-color var(--duration-fast, 150ms);
+}
+
+.welcome-screen--drag-active {
+  background: linear-gradient(
+    135deg,
+    hsla(var(--hue-primary, 220), var(--sat-primary, 60%), 45%, 0.05) 0%,
+    hsla(var(--hue-primary, 220), var(--sat-primary, 60%), 45%, 0.1) 100%
+  );
+}
+
+.welcome-screen__drop-hint {
+  margin-top: var(--space-xlarge, 32px);
+}
+
+.welcome-screen__instruction {
+  font-size: var(--text-size-large, 1.125rem);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-medium, 16px);
+}
+
+.welcome-screen__alt {
+  font-size: var(--text-size-body, 1rem);
+  color: var(--color-text-tertiary);
+}
+
+.welcome-screen__picker-btn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  padding: 0;
+  min-height: var(--touch-target, 44px);
+  transition: color var(--duration-fast, 150ms);
+}
+
+.welcome-screen__picker-btn:hover,
+.welcome-screen__picker-btn:focus-visible {
+  color: var(--color-primary-hover);
+}
+
+.welcome-screen__picker-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-small, 4px);
+}
+
+.welcome-screen__nav-hint {
+  margin-top: var(--space-huge, 48px);
+  font-size: var(--text-size-small, 0.875rem);
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+}
+
+/* Progress indicator */
+.welcome-screen__progress {
+  margin-top: var(--space-xlarge, 32px);
+  width: 100%;
+  max-width: 400px;
+}
+
+.welcome-screen__progress-status {
+  font-size: var(--text-size-body, 1rem);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-medium, 16px);
+}
+
+.welcome-screen__progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--color-surface-tertiary);
+  border-radius: var(--radius-full, 9999px);
+  overflow: hidden;
+}
+
+.welcome-screen__progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full, 9999px);
+  transition: width var(--duration-fast, 150ms);
+}
+
+.welcome-screen__progress-details {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-small, 8px);
+  font-size: var(--text-size-small, 0.875rem);
+  color: var(--color-text-tertiary);
+}
+
+.welcome-screen__current-file {
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Complete state */
+.welcome-screen__complete {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small, 8px);
+  margin-top: var(--space-xlarge, 32px);
+  font-size: var(--text-size-large, 1.125rem);
+  color: var(--color-status-success);
+}
+
+.welcome-screen__check {
+  font-size: 1.5rem;
+}
+
+/* Error state */
+.welcome-screen__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small, 8px);
+  margin-top: var(--space-xlarge, 32px);
+  font-size: var(--text-size-body, 1rem);
+  color: var(--color-status-error);
+}
+
+.welcome-screen__error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--color-status-error);
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-full, 9999px);
+  font-weight: bold;
+}
+
+/* Drag overlay */
+.welcome-screen__drag-overlay {
+  position: absolute;
+  inset: var(--space-medium, 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-medium, 16px);
+  background: hsla(var(--hue-primary, 220), var(--sat-primary, 60%), 45%, 0.1);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-large, 12px);
+  pointer-events: none;
+  animation: welcome-pulse 1.5s ease-in-out infinite;
+}
+
+.welcome-screen__drag-icon {
+  font-size: 3rem;
+  color: var(--color-primary);
+  animation: welcome-bounce 0.6s ease-in-out infinite;
+}
+
+.welcome-screen__drag-text {
+  font-size: var(--text-size-large, 1.125rem);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+@keyframes welcome-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes welcome-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(8px); }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .welcome-screen__drag-overlay,
+  .welcome-screen__drag-icon,
+  .welcome-screen__progress-fill {
+    animation: none;
+    transition: none;
+  }
+}
+
+.workspace__breadcrumb {
+  font-family: var(--font-family-body);
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+  margin-bottom: var(--space-large);
+}
+
+.workspace__breadcrumb-sep {
+  margin: 0 var(--space-small);
+  opacity: 0.5;
+}
+
+/* Conversation Navigation */
+.workspace__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-small);
+  margin-bottom: var(--space-medium);
+  padding: var(--space-small);
+  background: transparent;
+  border-radius: var(--radius-medium);
+}
+
+/* Centered navigation - title in middle with arrows on sides */
+.workspace__nav--centered {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0;
+  padding: 0;
+  margin-bottom: var(--space-medium);
+  width: 100%;
+}
+
+.workspace__nav-left,
+.workspace__nav-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.workspace__nav-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 var(--space-medium);
+  min-width: 0; /* Allow text truncation */
+  width: 100%;
+  /* Explicit centering for Electron compatibility */
+  place-items: center;
+}
+
+.workspace__nav-title {
+  font-family: var(--font-family-display, Georgia, serif);
+  font-size: var(--text-size-large, 1.125rem);
+  font-weight: normal;
+  color: var(--color-text-primary, var(--studio-text));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  /* Explicit centering for Electron compatibility */
+  display: block;
+  text-align: center;
+  width: 100%;
+}
+
+.workspace__nav--centered .workspace__nav-position {
+  font-size: var(--text-size-small, 0.875rem);
+  color: var(--color-text-tertiary, var(--studio-text-secondary));
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.workspace__nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target, 44px);
+  height: var(--touch-target, 44px);
+  font-size: var(--text-size-body);
+  color: var(--color-text-primary, var(--studio-text));
+  background: var(--color-surface-primary, var(--studio-panel-bg));
+  border: var(--border-width-thin) solid var(--color-border-subtle, var(--studio-border));
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.workspace__nav-btn:hover:not(:disabled) {
+  background: var(--color-surface-tertiary, var(--studio-hover));
+  border-color: var(--color-accent, var(--studio-accent));
+  color: var(--color-accent, var(--studio-accent));
+}
+
+.workspace__nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.workspace__nav-position {
+  font-family: var(--font-family-body);
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+  min-width: 4rem;
+  text-align: center;
+}
+
+/* Article typography (same as book reader) */
+.workspace__article h1 {
+  font-size: 1.75em;
+  font-weight: normal;
+  text-align: center;
+  margin: 0 0 0.5em;
+  letter-spacing: -0.02em;
+}
+
+.workspace__article h2 {
+  font-size: 1.375em;
+  font-weight: normal;
+  margin: 2em 0 0.75em;
+}
+
+.workspace__article h3 {
+  font-size: 1.125em;
+  font-weight: normal;
+  font-style: italic;
+  margin: 1.5em 0 0.5em;
+}
+
+.workspace__article p {
+  margin: 0 0 1.2em;
+  line-height: 1.7;
+  text-align: justify;
+  hyphens: auto;
+}
+
+/* Drop cap */
+.workspace__article > p:first-of-type::first-letter {
+  float: left;
+  font-size: 3.5em;
+  line-height: 0.8;
+  padding-right: 0.1em;
+  margin-top: 0.05em;
+  color: var(--studio-accent);
+}
+
+.workspace__article blockquote {
+  margin: 1.5em 0;
+  padding: 1.25em 1.5em;
+  background: var(--studio-quote-bg);
+  border-left: 3px solid var(--studio-accent);
+  font-style: italic;
+  color: var(--studio-text-secondary);
+}
+
+.workspace__article blockquote p {
+  text-align: left;
+  margin-bottom: 0.75em;
+}
+
+.workspace__article blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.workspace__article strong {
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.workspace__article em {
+  font-style: italic;
+}
+
