@@ -1,5 +1,6 @@
 export { ArchiveTabs } from './ArchiveTabs';
 export { ArchiveIconTabBar } from './ArchiveIconTabBar';
+export { ArchivePanel, type ArchivePanelProps } from './ArchivePanel';
 export { GalleryView } from './GalleryView';
 export { ImportView } from './ImportView';
 export { BooksView } from './BooksView';
