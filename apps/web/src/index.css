@@ -40,6 +40,7 @@
 @import './styles/features/content-viewer.css';
 @import './styles/features/structure-inspector.css';
 @import './styles/features/hover-panels.css';
+@import './styles/features/audio-player.css';
 /* Modularized component styles */
 @import './styles/components/buttons.css';
 @import './styles/components/profile-cards.css';
@@ -1050,73 +1051,6 @@
   overflow-y: auto;
   min-height: 0;
   padding: 1rem;
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   AUDIO PLAYER
-   ═══════════════════════════════════════════════════════════════════ */
-
-.audio-player {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: var(--studio-quote-bg);
-  border: 1px solid var(--studio-border);
-  border-radius: 8px;
-}
-
-.audio-player__btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  color: white;
-  background: var(--studio-accent);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.audio-player__btn:hover {
-  background: var(--studio-accent-hover);
-}
-
-.audio-player__info {
-  flex: 1;
-  min-width: 0;
-}
-
-.audio-player__title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--studio-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.audio-player__time {
-  font-size: 0.75rem;
-  color: var(--studio-text-secondary);
-}
-
-.audio-player__progress {
-  flex: 1;
-  height: 4px;
-  background: var(--studio-border);
-  border-radius: 2px;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.audio-player__progress-fill {
-  height: 100%;
-  background: var(--studio-accent);
-  transition: width 0.1s linear;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
