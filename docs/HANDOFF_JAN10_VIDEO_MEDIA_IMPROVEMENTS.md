@@ -154,9 +154,26 @@ curl -X POST http://localhost:3002/api/embeddings/search/unified \
 3. ✅ Fixed dates (`6a85f29`) - uses Facebook JSON timestamps
 4. ✅ Whisper research complete - use @kutalia/whisper-node-addon
 
+**Second continuation** (`ac8bdd7`):
+5. ✅ Installed @kutalia/whisper-node-addon
+6. ✅ Fixed macOS rpath issues (package has hardcoded CI paths)
+7. ✅ Added postinstall script for automatic rpath fix
+8. ✅ Migrated 605 Facebook media timestamps to correct values
+
+## Whisper Status
+
+**Working!** The whisper module loads successfully after rpath fix.
+
+**Bug fixed**: The package folder is `mac-arm64` but code looks for `darwin-arm64`.
+Also, dylibs have hardcoded rpaths from GitHub Actions CI that don't work locally.
+
+**Fix applied**:
+- Created symlink: `darwin-arm64 -> mac-arm64`
+- Added `@loader_path` rpath to whisper.node and all dylibs
+- Automated via `scripts/fix-whisper-rpath.sh` (runs on postinstall)
+
 ## Next Session Priority
 
-1. **Install whisper addon**: `npm install @kutalia/whisper-node-addon`
-2. **Update electron-builder.json**: Add whisper to asarUnpack
-3. **Test whisper**: Download model and test transcription
-4. **Re-parse Facebook media**: Run parser again to apply correct timestamps
+1. **Test whisper transcription**: Download a model and transcribe a video
+2. **Add transcription UI**: Button to transcribe videos/audio
+3. **Store transcripts**: Add to database for search
