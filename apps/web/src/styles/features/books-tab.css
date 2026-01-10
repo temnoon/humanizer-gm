@@ -297,7 +297,7 @@
   font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: white;
+  color: var(--color-text-inverse, white);
 }
 
 .book-project__stats {
@@ -339,7 +339,12 @@
 
 .book-project__tab.active {
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
+}
+
+.book-project__tab.active:hover {
+  background: var(--studio-accent-hover);
+  color: var(--studio-text);
 }
 
 .book-project__tab .tab-icon {
@@ -421,7 +426,22 @@
 .thread-badge.active {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: #433422;  /* Hardcoded dark for sepia */
+}
+
+.thread-badge.active:hover {
+  background: var(--studio-accent-hover);
+  color: #433422;
+}
+
+[data-theme="light"] .thread-badge.active,
+[data-theme="light"] .thread-badge.active:hover {
+  color: #1a1a2e;
+}
+
+[data-theme="dark"] .thread-badge.active,
+[data-theme="dark"] .thread-badge.active:hover {
+  color: #e8e8ed;
 }
 
 .thread-dot {
@@ -947,7 +967,22 @@
 
 .chapter-item.active {
   background: var(--studio-accent);
-  color: white;
+  color: #433422;
+}
+
+.chapter-item.active:hover {
+  background: var(--studio-accent-hover);
+  color: #433422;
+}
+
+[data-theme="light"] .chapter-item.active,
+[data-theme="light"] .chapter-item.active:hover {
+  color: #1a1a2e;
+}
+
+[data-theme="dark"] .chapter-item.active,
+[data-theme="dark"] .chapter-item.active:hover {
+  color: #e8e8ed;
 }
 
 .chapter-number {
@@ -1044,7 +1079,27 @@
 .version-toggle.active {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: #433422;
+}
+
+.edit-toggle.active:hover,
+.version-toggle.active:hover {
+  background: var(--studio-accent-hover);
+  color: #433422;
+}
+
+[data-theme="light"] .edit-toggle.active,
+[data-theme="light"] .version-toggle.active,
+[data-theme="light"] .edit-toggle.active:hover,
+[data-theme="light"] .version-toggle.active:hover {
+  color: #1a1a2e;
+}
+
+[data-theme="dark"] .edit-toggle.active,
+[data-theme="dark"] .version-toggle.active,
+[data-theme="dark"] .edit-toggle.active:hover,
+[data-theme="dark"] .version-toggle.active:hover {
+  color: #e8e8ed;
 }
 
 .version-history {
@@ -1695,7 +1750,22 @@
 .level-btn.active {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: #433422;
+}
+
+.level-btn.active:hover {
+  background: var(--studio-accent-hover);
+  color: #433422;
+}
+
+[data-theme="light"] .level-btn.active,
+[data-theme="light"] .level-btn.active:hover {
+  color: #1a1a2e;
+}
+
+[data-theme="dark"] .level-btn.active,
+[data-theme="dark"] .level-btn.active:hover {
+  color: #e8e8ed;
 }
 
 .level-count {
@@ -2157,7 +2227,22 @@
 .path-crumb.current {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: #433422;
+}
+
+.path-crumb.current:hover {
+  background: var(--studio-accent-hover);
+  color: #433422;
+}
+
+[data-theme="light"] .path-crumb.current,
+[data-theme="light"] .path-crumb.current:hover {
+  color: #1a1a2e;
+}
+
+[data-theme="dark"] .path-crumb.current,
+[data-theme="dark"] .path-crumb.current:hover {
+  color: #e8e8ed;
 }
 
 .detail-content {
@@ -2253,4 +2338,85 @@
   font-size: 0.75rem;
   color: var(--studio-text-tertiary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   Ensures all books-tab components work properly in dark theme
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Status badges for book cards */
+[data-theme='dark'] .book-card__status--draft {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .book-card__status--building,
+[data-theme='dark'] .book-card__status--curating {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .book-card__status--complete,
+[data-theme='dark'] .book-card__status--mastering {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+[data-theme='dark'] .book-card__status--harvesting {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .book-card__status--drafting {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+}
+
+/* Chapter status badges */
+[data-theme='dark'] .chapter-status--outline {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .chapter-status--drafting {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+}
+
+[data-theme='dark'] .chapter-status--revising {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .chapter-status--complete {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+/* Role badges */
+[data-theme='dark'] .role-badge--user {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .role-badge--assistant {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+/* Status badge (general) */
+[data-theme='dark'] .status-badge {
+  color: var(--color-text-inverse, white);
+}
+
+/* Passage card notes */
+[data-theme='dark'] .passage-card__notes {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+/* Compact node selected state */
+[data-theme='dark'] .compact-node.selected {
+  background: rgba(99, 102, 241, 0.2);
+}
+
 

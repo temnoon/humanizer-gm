@@ -98,7 +98,7 @@
 .book-nav__tab--active {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
 }
 
 .book-nav__content {
@@ -224,7 +224,7 @@
   background: var(--studio-accent);
   border: none;
   border-radius: 6px;
-  color: white;
+  color: var(--studio-text);
   font-size: 0.8125rem;
   cursor: pointer;
   transition: opacity 0.15s ease;
@@ -377,7 +377,7 @@
   font-size: 11px;
   font-weight: 500;
   background: var(--studio-accent, #8B4513);
-  color: white;
+  color: var(--studio-text);
   border: none;
   border-radius: 4px;
   cursor: pointer;

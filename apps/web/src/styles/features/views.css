@@ -42,7 +42,7 @@
 
 .gallery-view__tab--active {
   background: var(--studio-accent, #8b7355);
-  color: white;
+  color: var(--studio-text);
   border-color: var(--studio-accent, #8b7355);
 }
 
@@ -397,7 +397,7 @@
 .gallery-view__action {
   padding: 0.375rem 0.75rem;
   font-size: 0.75rem;
-  color: white;
+  color: var(--studio-text);
   background: var(--studio-accent, #8b7355);
   border: none;
   border-radius: 4px;
@@ -497,13 +497,13 @@
 
 .facebook-view__tab--active {
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
   border-color: var(--studio-accent);
 }
 
 .facebook-view__tab--graph {
   background: var(--studio-accent, #8b7355);
-  color: white;
+  color: var(--studio-text);
   border-color: var(--studio-accent, #8b7355);
 }
 
@@ -619,7 +619,7 @@
 
 .facebook-view__filter-btn--active {
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
   border-color: var(--studio-accent);
 }
 
