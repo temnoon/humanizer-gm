@@ -44,7 +44,8 @@
   --studio-text: #1a1a1a;
   --studio-text-secondary: #555555;
   --studio-text-tertiary: #888888;
-  --studio-accent: var(--color-primary, #2563eb);
+  --studio-accent: hsl(220, 84%, 77%);  /* Light pastel blue for dark text readability */
+  --studio-accent-hover: hsl(220, 84%, 70%);
   --studio-quote-bg: #f5f5f5;
   --studio-border: #e0e0e0;
   --studio-panel-bg: #fafafa;

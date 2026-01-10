@@ -29,10 +29,10 @@
   --studio-text: #1a1a2e;
   --studio-text-secondary: #4a4a5c;
   --studio-text-tertiary: #7a7a8c;
-  /* Accent: Light blue (~70% lightness) with dark text - hover goes slightly darker */
-  --studio-accent: hsl(220, 70%, 70%);
-  --studio-accent-hover: hsl(220, 70%, 62%);
-  --studio-accent-text: hsl(220, 60%, 25%);  /* Dark blue text */
+  /* Accent: Light pastel blue with dark text */
+  --studio-accent: #bbd2ff;
+  --studio-accent-hover: #a8c5f7;
+  --studio-accent-text: #1a1a2e;
   --studio-quote-bg: #f5f5f7;
   --studio-border: #e0e0e5;
   --studio-panel-bg: #ffffff;
@@ -86,10 +86,10 @@
   --studio-text: #1a1a2e;
   --studio-text-secondary: #4a4a5c;
   --studio-text-tertiary: #7a7a8c;
-  /* Accent: Light blue (~70% lightness) with dark text - hover goes slightly darker */
-  --studio-accent: hsl(220, 70%, 70%);
-  --studio-accent-hover: hsl(220, 70%, 62%);
-  --studio-accent-text: hsl(220, 60%, 25%);  /* Dark blue text */
+  /* Accent: Light pastel blue with dark text */
+  --studio-accent: #bbd2ff;
+  --studio-accent-hover: #a8c5f7;
+  --studio-accent-text: #1a1a2e;
   --studio-quote-bg: #f5f5f7;
   --studio-border: #e0e0e5;
   --studio-panel-bg: #ffffff;
@@ -178,8 +178,8 @@
 }
 
 [data-accent="blue"] .studio {
-  --studio-accent: hsl(220, 70%, 70%);
-  --studio-accent-hover: hsl(220, 70%, 62%);
+  --studio-accent: hsl(220, 84%, 77%);
+  --studio-accent-hover: hsl(220, 84%, 70%);
   --studio-accent-text: hsl(220, 60%, 25%);
 }
 
