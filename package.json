@@ -9,6 +9,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "bash scripts/fix-whisper-rpath.sh || true",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
@@ -21,6 +22,7 @@
     "build:electron": "tsc --project electron/tsconfig.json && cp electron/chat/schema.sql dist-electron/chat/ && mkdir -p dist-electron/agents/state && cp electron/agents/state/schema.sql dist-electron/agents/state/"
   },
   "dependencies": {
+    "@kutalia/whisper-node-addon": "^1.1.0",
     "adm-zip": "^0.5.10",
     "better-sqlite3": "^11.0.0",
     "chromadb-default-embed": "^2.13.2",
