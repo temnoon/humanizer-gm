@@ -949,12 +949,16 @@ function isValidSearchResult(content: string | undefined): boolean {
 }
 
 /**
- * Search ChatGPT archive semantically
+ * Search archive semantically (unified: AI conversations + Facebook + documents)
  */
 async function executeSearchArchive(
   params: Record<string, unknown>
 ): Promise<AUIToolResult> {
-  const { query, limit = 10 } = params as { query?: string; limit?: number };
+  const {
+    query,
+    limit = 10,
+    sources,  // Optional: ['facebook', 'openai', 'claude', 'conversations']
+  } = params as { query?: string; limit?: number; sources?: string[] };
 
   if (!query) {
     return { success: false, error: 'Missing query parameter' };
@@ -964,16 +968,20 @@ async function executeSearchArchive(
     const archiveServer = await getArchiveServerUrl();
     // Request more results than needed since we'll filter out JSON noise
     const fetchLimit = Math.min(limit * 3, 50);
-    const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+
+    // Use unified search endpoint (searches both messages AND content items)
+    const response = await fetch(`${archiveServer}/api/embeddings/search/unified`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit: fetchLimit }),
+      body: JSON.stringify({
+        query,
+        limit: fetchLimit,
+        sources,  // Pass through source filter if provided
+      }),
     });
 
     if (!response.ok) {
       // NO SILENT FALLBACK - User must be informed when semantic search fails
-      // Text search only returns conversation metadata (titles), not message content
-      // Using text results for harvest would corrupt the book with empty passages
       const statusCode = response.status;
       const statusText = response.statusText;
 
@@ -1007,23 +1015,36 @@ async function executeSearchArchive(
       .slice(0, limit);
 
     const resultCount = filteredResults.length;
-    // Map to SearchResultsPayload format - API returns camelCase fields
+
+    // Map to SearchResultsPayload format - unified API returns both message and content item fields
     const mappedResults = filteredResults.map((r: {
       id: string;
-      conversationId: string;
-      conversationFolder?: string;
-      conversationTitle?: string;
+      type: 'message' | 'post' | 'comment' | 'document';
+      source: string;
       content: string;
+      title?: string;
       similarity: number;
+      // Message-specific
+      conversationId?: string;
+      conversationTitle?: string;
       messageRole?: string;
+      // Content item-specific
+      authorName?: string;
+      createdAt?: number;
+      isOwnContent?: boolean;
     }) => ({
       id: r.id,
       messageId: r.id,
       conversationId: r.conversationId,
       content: r.content,  // Full content - don't truncate for harvest
       similarity: r.similarity,
-      role: r.messageRole || 'assistant',
-      title: r.conversationTitle,
+      role: r.messageRole || (r.isOwnContent ? 'user' : 'assistant'),
+      title: r.conversationTitle || r.title,
+      // Extended fields for unified results
+      type: r.type,
+      source: r.source,
+      authorName: r.authorName,
+      createdAt: r.createdAt,
     }));
 
     // GUI Bridge: Dispatch results to Archive pane (Show Don't Tell)
@@ -1037,22 +1058,32 @@ async function executeSearchArchive(
     // Also open the Archive panel to Explore tab
     dispatchOpenPanel('archives', 'explore');
 
+    // Build summary message with source breakdown
+    const stats = data.stats || {};
+    const sourceParts: string[] = [];
+    if (stats.messages) sourceParts.push(`${stats.messages} AI messages`);
+    if (stats.posts) sourceParts.push(`${stats.posts} Facebook posts`);
+    if (stats.comments) sourceParts.push(`${stats.comments} Facebook comments`);
+    if (stats.documents) sourceParts.push(`${stats.documents} documents`);
+    const sourceBreakdown = sourceParts.length > 0 ? ` (${sourceParts.join(', ')})` : '';
+
     return {
       success: true,
-      message: `Found ${resultCount} messages (semantic search)`,
+      message: `Found ${resultCount} results${sourceBreakdown}`,
       data: {
         results: mappedResults,
         searchType: 'semantic',
+        stats,
       },
       teaching: {
-        whatHappened: `Searched your ChatGPT archive for "${query}" - found ${resultCount} semantically similar passages`,
+        whatHappened: `Searched your archive for "${query}" - found ${resultCount} semantically similar passages across all content types`,
         guiPath: [
           'Open the Archive panel (left side)',
           'Click the "Explore" tab',
           'Enter your search in the semantic search box',
-          'Results are ranked by meaning similarity, not just keywords',
+          'Results include AI conversations, Facebook posts/comments, and documents',
         ],
-        why: 'Semantic search finds related ideas even when the words differ. Use it to find thematic connections across conversations.',
+        why: 'Unified semantic search finds related ideas across ALL your archive content - AI conversations, Facebook, and imported documents.',
       },
     };
   } catch (e) {

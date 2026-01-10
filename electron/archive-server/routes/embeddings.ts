@@ -379,6 +379,140 @@ export function createEmbeddingsRouter(): Router {
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // UNIFIED SEARCH (messages + content items)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Unified semantic search across all content types
+   * Searches both AI conversations (messages) and Facebook content (content_items)
+   * Returns merged results sorted by similarity
+   */
+  router.post('/search/unified', async (req: Request, res: Response) => {
+    try {
+      const {
+        query,
+        limit = 20,
+        sources,      // Optional: ['facebook', 'openai', 'claude'] to filter
+        types,        // Optional: ['post', 'comment', 'message'] to filter
+        includeMessages = true,
+        includeContentItems = true,
+      } = req.body;
+
+      if (!query) {
+        res.status(400).json({ error: 'query required' });
+        return;
+      }
+
+      // Initialize embedding model if needed
+      if (!embeddingModule.isInitialized()) {
+        await embeddingModule.initializeEmbedding();
+      }
+
+      // Generate query embedding
+      const queryEmbedding = await embeddingModule.embed(query);
+      const db = getEmbeddingDb();
+
+      // Collect results from both sources
+      const allResults: Array<{
+        id: string;
+        type: 'message' | 'post' | 'comment' | 'document';
+        source: string;
+        content: string;
+        title?: string;
+        similarity: number;
+        // Message-specific fields
+        conversationId?: string;
+        conversationTitle?: string;
+        conversationFolder?: string;
+        messageRole?: string;
+        // Content item-specific fields
+        authorName?: string;
+        createdAt?: number;
+        parentId?: string;
+        isOwnContent?: boolean;
+      }> = [];
+
+      // Search messages (AI conversations)
+      if (includeMessages) {
+        const messageResults = db.searchMessages(queryEmbedding, limit * 2);
+        for (const r of messageResults) {
+          // Filter by source if specified
+          if (sources && sources.length > 0) {
+            // Determine source from conversation folder
+            const msgSource = r.conversationFolder?.includes('claude') ? 'claude' : 'openai';
+            if (!sources.includes(msgSource) && !sources.includes('conversations')) continue;
+          }
+
+          allResults.push({
+            id: r.id,
+            type: 'message',
+            source: r.conversationFolder?.includes('claude') ? 'claude' : 'openai',
+            content: r.content,
+            title: r.conversationTitle,
+            similarity: r.similarity, // Already converted by searchMessages
+            conversationId: r.conversationId,
+            conversationTitle: r.conversationTitle,
+            conversationFolder: r.conversationFolder,
+            messageRole: r.messageRole,
+          });
+        }
+      }
+
+      // Search content items (Facebook, documents, etc.)
+      if (includeContentItems) {
+        const contentResults = db.searchContentItems(queryEmbedding, limit * 2);
+
+        // Get full content for each result
+        for (const r of contentResults) {
+          // Filter by source if specified
+          if (sources && sources.length > 0 && !sources.includes(r.source)) continue;
+          // Filter by type if specified
+          if (types && types.length > 0 && !types.includes(r.type)) continue;
+
+          // Fetch full content item
+          const contentItem = db.getContentItem(r.content_item_id);
+          if (!contentItem) continue;
+
+          allResults.push({
+            id: r.content_item_id,
+            type: contentItem.type as 'post' | 'comment' | 'document',
+            source: r.source,
+            content: contentItem.text || '',
+            title: contentItem.title,
+            similarity: 1 - r.distance, // Convert distance to similarity
+            authorName: contentItem.author_name,
+            createdAt: contentItem.created_at,
+            parentId: contentItem.parent_id,
+            isOwnContent: contentItem.is_own_content === 1,
+          });
+        }
+      }
+
+      // Sort by similarity (descending) and limit
+      allResults.sort((a, b) => b.similarity - a.similarity);
+      const limitedResults = allResults.slice(0, limit);
+
+      // Compute stats
+      const stats = {
+        messages: limitedResults.filter(r => r.type === 'message').length,
+        posts: limitedResults.filter(r => r.type === 'post').length,
+        comments: limitedResults.filter(r => r.type === 'comment').length,
+        documents: limitedResults.filter(r => r.type === 'document').length,
+      };
+
+      res.json({
+        query,
+        results: limitedResults,
+        total: limitedResults.length,
+        stats,
+      });
+    } catch (err) {
+      console.error('[embeddings] Unified search error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // CLUSTERING
   // ─────────────────────────────────────────────────────────────────
 
