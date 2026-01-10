@@ -3102,9 +3102,9 @@ async function executeHarvestArchive(
   }
 
   try {
-    // First, search the archive
+    // First, search the archive (unified: AI conversations + Facebook + documents)
     const archiveServer = await getArchiveServerUrl();
-    const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
+    const response = await fetch(`${archiveServer}/api/embeddings/search/unified`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit: limit * 2 }), // Get more, filter by similarity
@@ -3138,42 +3138,67 @@ async function executeHarvestArchive(
     }
 
     // Add each result as a passage to the book
-    const addedPassages: Array<{ id: string; content: string; similarity: number }> = [];
-    const skippedPassages: Array<{ reason: string; conversationTitle?: string }> = [];
+    const addedPassages: Array<{ id: string; content: string; similarity: number; type: string; source: string }> = [];
+    const skippedPassages: Array<{ reason: string; title?: string }> = [];
 
-    // API returns camelCase fields (conversationId, conversationTitle, messageRole)
+    // Unified API returns both AI messages and content items (Facebook posts/comments)
     for (const result of results as Array<{
+      id: string;
+      type: 'message' | 'post' | 'comment' | 'document';
+      source: string;
       content: string;
-      conversationId: string;
+      title?: string;
+      similarity: number;
+      // Message-specific fields
+      conversationId?: string;
       conversationTitle?: string;
       messageRole?: string;
-      similarity: number;
+      // Content item fields
+      authorName?: string;
+      isOwnContent?: boolean;
     }>) {
+      const resultTitle = result.conversationTitle || result.title || `${result.source}: ${result.type}`;
+
       // DEBT-002 FIX: Validate content before saving to prevent corrupted passages
       if (!result.content) {
-        skippedPassages.push({ reason: 'Missing content', conversationTitle: result.conversationTitle });
+        skippedPassages.push({ reason: 'Missing content', title: resultTitle });
         continue;
       }
 
       // Check for placeholder/degraded content patterns
       if (result.content.startsWith('[Conversation:') || result.content.includes('Use semantic search for full')) {
-        skippedPassages.push({ reason: 'Placeholder content detected', conversationTitle: result.conversationTitle });
+        skippedPassages.push({ reason: 'Placeholder content detected', title: resultTitle });
         continue;
       }
 
       // Minimum content threshold (at least 10 words)
       const wordCount = result.content.split(/\s+/).length;
       if (wordCount < 10) {
-        skippedPassages.push({ reason: `Content too short (${wordCount} words)`, conversationTitle: result.conversationTitle });
+        skippedPassages.push({ reason: `Content too short (${wordCount} words)`, title: resultTitle });
         continue;
       }
 
+      // Determine role based on content type
+      // - Messages have messageRole
+      // - Facebook posts/comments: isOwnContent ? 'user' : 'assistant'
+      let role: 'user' | 'assistant' = 'assistant';
+      if (result.type === 'message') {
+        role = (result.messageRole as 'user' | 'assistant') || 'assistant';
+      } else if (result.isOwnContent) {
+        role = 'user'; // User's own Facebook posts/comments
+      }
+
+      // Build tags based on content type and source
+      const tags = ['harvested', query.split(' ')[0]];
+      if (result.source === 'facebook') tags.push('facebook');
+      if (result.type !== 'message') tags.push(result.type);
+
       const passage = context.addPassage({
         content: result.content,
-        conversationId: result.conversationId,
-        conversationTitle: result.conversationTitle || `Harvested: ${query}`,
-        role: (result.messageRole as 'user' | 'assistant') || 'assistant',
-        tags: ['harvested', query.split(' ')[0]],
+        conversationId: result.conversationId || result.id, // Use id for non-message content
+        conversationTitle: resultTitle,
+        role,
+        tags,
       });
 
       if (passage) {
@@ -3181,6 +3206,8 @@ async function executeHarvestArchive(
           id: passage.id,
           content: result.content.substring(0, 100) + '...',
           similarity: result.similarity,
+          type: result.type,
+          source: result.source,
         });
       }
     }
@@ -3195,10 +3222,20 @@ async function executeHarvestArchive(
       ? ` (${skippedPassages.length} skipped due to validation)`
       : '';
 
+    // Count sources for reporting
+    const sourceBreakdown = addedPassages.reduce((acc, p) => {
+      const key = p.type === 'message' ? 'AI conversations' : `Facebook ${p.type}s`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const sourceInfo = Object.entries(sourceBreakdown)
+      .map(([k, v]) => `${v} from ${k}`)
+      .join(', ');
+
     return {
       success: addedPassages.length > 0,
       message: addedPassages.length > 0
-        ? `Harvested ${addedPassages.length} passages for "${query}"${skippedInfo}`
+        ? `Harvested ${addedPassages.length} passages for "${query}" (${sourceInfo})${skippedInfo}`
         : `No valid passages found for "${query}". ${results.length} results were skipped due to content validation.`,
       data: {
         harvested: addedPassages.length,
@@ -3206,10 +3243,11 @@ async function executeHarvestArchive(
         skipped: skippedPassages,
         query,
         minSimilarity,
+        sourceBreakdown,
       },
       teaching: {
         whatHappened: addedPassages.length > 0
-          ? `Found ${results.length} semantically relevant passages, validated content, and added ${addedPassages.length} to your bookshelf${skippedInfo}`
+          ? `Searched all content types (AI conversations + Facebook), found ${results.length} results, validated content, and added ${addedPassages.length} to your bookshelf${skippedInfo}`
           : `Search returned ${results.length} results, but none passed content validation. This may indicate an issue with embeddings or data quality.`,
         guiPath: [
           'Archive Panel → Explore Tab → Semantic Search',
