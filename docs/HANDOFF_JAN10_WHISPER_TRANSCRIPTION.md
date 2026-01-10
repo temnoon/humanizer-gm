@@ -110,13 +110,24 @@ Models are downloaded on-demand from HuggingFace.
 
 ---
 
-## Next Steps
+## Completed: UI Integration
 
-### 1. UI: Transcribe Button
-Add a transcribe button to the video player or gallery item:
-- `apps/web/src/components/media/VideoPlayer.tsx` - Add button
-- Show loading state during transcription
-- Display transcript below video
+### VideoPlayer Transcription Button
+**Modified**: `apps/web/src/components/media/VideoPlayer.tsx`
+- Added `mediaId` and `showTranscription` props
+- Auto-loads existing transcript on mount
+- "Transcribe" button with microphone icon
+- Loading/transcribing/error/done states
+- Displays transcript below video
+
+**Modified**: `apps/web/src/components/media/VideoPlayer.css`
+- Transcription UI styles
+- Dark theme support
+- Spinner animation for processing state
+
+---
+
+## Next Steps
 
 ### 2. Batch Transcription
 Add endpoint to transcribe multiple files in background:

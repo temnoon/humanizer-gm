@@ -6,6 +6,7 @@
  * - HTML5 controls (play, pause, seek, volume, fullscreen)
  * - Error handling with fallback message
  * - Uses Range requests for smooth seeking
+ * - Transcription support with whisper
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -17,6 +18,8 @@ interface VideoPlayerProps {
   src: string;
   /** Original file path (for thumbnail generation) */
   filePath: string;
+  /** Media ID for transcription lookup */
+  mediaId?: string;
   /** Additional CSS class */
   className?: string;
   /** Auto-play video */
@@ -25,19 +28,26 @@ interface VideoPlayerProps {
   muted?: boolean;
   /** Show loading state while fetching thumbnail */
   showLoading?: boolean;
+  /** Show transcription controls */
+  showTranscription?: boolean;
 }
 
 export function VideoPlayer({
   src,
   filePath,
+  mediaId,
   className,
   autoPlay,
   muted,
   showLoading = true,
+  showTranscription = true,
 }: VideoPlayerProps) {
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [posterLoading, setPosterLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const [transcriptStatus, setTranscriptStatus] = useState<'idle' | 'loading' | 'transcribing' | 'done' | 'error'>('idle');
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Load thumbnail poster
@@ -68,6 +78,76 @@ export function VideoPlayer({
 
     loadThumbnail();
   }, [filePath]);
+
+  // Load existing transcript if mediaId provided
+  useEffect(() => {
+    const loadTranscript = async () => {
+      if (!mediaId) return;
+
+      try {
+        setTranscriptStatus('loading');
+        const archiveServer = await getArchiveServerUrl();
+        if (!archiveServer) {
+          setTranscriptStatus('idle');
+          return;
+        }
+
+        const res = await fetch(`${archiveServer}/api/facebook/transcription/${mediaId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.transcript) {
+            setTranscript(data.transcript);
+            setTranscriptStatus('done');
+          } else {
+            setTranscriptStatus('idle');
+          }
+        } else {
+          setTranscriptStatus('idle');
+        }
+      } catch (err) {
+        console.warn('[VideoPlayer] Failed to load transcript:', err);
+        setTranscriptStatus('idle');
+      }
+    };
+
+    loadTranscript();
+  }, [mediaId]);
+
+  // Transcribe video
+  const handleTranscribe = async () => {
+    try {
+      setTranscriptStatus('transcribing');
+      setTranscriptError(null);
+
+      const archiveServer = await getArchiveServerUrl();
+      if (!archiveServer) {
+        throw new Error('Archive server not available');
+      }
+
+      const body = mediaId
+        ? { mediaId, model: 'ggml-tiny.en.bin' }
+        : { path: filePath, model: 'ggml-tiny.en.bin' };
+
+      const res = await fetch(`${archiveServer}/api/facebook/transcription/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Transcription failed');
+      }
+
+      setTranscript(data.transcript || '');
+      setTranscriptStatus('done');
+    } catch (err) {
+      console.error('[VideoPlayer] Transcription error:', err);
+      setTranscriptError((err as Error).message);
+      setTranscriptStatus('error');
+    }
+  };
 
   const handleError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
@@ -125,6 +205,59 @@ export function VideoPlayer({
         preload="metadata"
         onError={handleError}
       />
+
+      {/* Transcription UI */}
+      {showTranscription && (
+        <div className="video-player__transcription">
+          {transcriptStatus === 'idle' && (
+            <button
+              className="video-player__transcribe-btn"
+              onClick={handleTranscribe}
+              title="Transcribe audio"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+              Transcribe
+            </button>
+          )}
+
+          {transcriptStatus === 'loading' && (
+            <div className="video-player__transcribe-status">
+              Loading transcript...
+            </div>
+          )}
+
+          {transcriptStatus === 'transcribing' && (
+            <div className="video-player__transcribe-status video-player__transcribe-status--processing">
+              <span className="video-player__spinner" />
+              Transcribing audio...
+            </div>
+          )}
+
+          {transcriptStatus === 'error' && (
+            <div className="video-player__transcribe-error">
+              <span>{transcriptError}</span>
+              <button
+                className="video-player__retry-btn"
+                onClick={handleTranscribe}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {transcriptStatus === 'done' && transcript && (
+            <div className="video-player__transcript">
+              <div className="video-player__transcript-label">Transcript:</div>
+              <div className="video-player__transcript-text">{transcript}</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
