@@ -39,6 +39,15 @@ function normalizeMediaPath(filePath: string, archiveServerUrl: string | null): 
   return `${archiveServerUrl}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
 }
 
+/**
+ * Get video thumbnail URL
+ * Uses the video-thumbnail endpoint which generates thumbnails on first access
+ */
+function getVideoThumbnailUrl(filePath: string, archiveServerUrl: string | null): string {
+  if (!filePath || !archiveServerUrl) return '';
+  return `${archiveServerUrl}/api/facebook/video-thumbnail?path=${encodeURIComponent(filePath)}`;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════
@@ -742,9 +751,45 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                 </div>
                 {(() => {
                   try {
-                    const refs = item.media_refs ? JSON.parse(item.media_refs) : [];
+                    const refs: string[] = item.media_refs ? JSON.parse(item.media_refs) : [];
                     if (refs.length > 0) {
-                      return <div className="facebook-view__item-media">{refs.length} media</div>;
+                      // Show up to 4 thumbnails inline
+                      const displayRefs = refs.slice(0, 4);
+                      const remaining = refs.length - 4;
+                      return (
+                        <div className="facebook-view__item-media-grid">
+                          {displayRefs.map((ref, idx) => {
+                            const ext = ref.toLowerCase().split('.').pop() || '';
+                            const isVideo = ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+                            return (
+                              <div key={idx} className="facebook-view__item-media-thumb">
+                                {isVideo ? (
+                                  <>
+                                    <img
+                                      src={getVideoThumbnailUrl(ref, archiveServerUrl)}
+                                      alt=""
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="facebook-view__item-media-video-badge">Video</div>
+                                  </>
+                                ) : (
+                                  <img
+                                    src={normalizeMediaPath(ref, archiveServerUrl)}
+                                    alt=""
+                                    loading="lazy"
+                                  />
+                                )}
+                                {idx === 3 && remaining > 0 && (
+                                  <div className="facebook-view__item-media-more">+{remaining}</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
                     }
                   } catch {}
                   return null;
@@ -802,7 +847,28 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                     loading="lazy"
                   />
                 ) : (
-                  <div className="facebook-view__thumb-video">Video</div>
+                  <div className="facebook-view__thumb-video-wrapper">
+                    <img
+                      src={getVideoThumbnailUrl(item.file_path, archiveServerUrl)}
+                      alt={item.filename}
+                      loading="lazy"
+                      className="facebook-view__thumb-video-img"
+                      onError={(e) => {
+                        // Hide img and show fallback text
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          parent.classList.add('facebook-view__thumb-video-wrapper--no-thumb');
+                        }
+                      }}
+                    />
+                    <div className="facebook-view__thumb-video-fallback">Video</div>
+                    <div className="facebook-view__thumb-play-icon">
+                      <svg viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5,3 19,12 5,21" />
+                      </svg>
+                    </div>
+                  </div>
                 )}
               </div>
             ))}

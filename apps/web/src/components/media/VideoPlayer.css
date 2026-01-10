@@ -1,0 +1,61 @@
+/**
+ * VideoPlayer Component Styles
+ */
+
+.video-player {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+.video-player__video {
+  width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.video-player__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--studio-quote-bg, rgba(0, 0, 0, 0.1));
+  color: var(--studio-text-secondary, #666);
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+
+/* Error state */
+.video-player--error {
+  min-height: 200px;
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+  background: var(--studio-quote-bg, #f5f5f5);
+  color: var(--studio-text-secondary, #666);
+}
+
+.video-player__error-icon {
+  opacity: 0.5;
+}
+
+.video-player__error-icon svg {
+  width: 48px;
+  height: 48px;
+}
+
+.video-player__error-message {
+  font-size: 0.875rem;
+  text-align: center;
+  max-width: 200px;
+}
+
+/* Dark theme */
+[data-theme='dark'] .video-player--error {
+  background: var(--studio-quote-bg, #2a2a2a);
+}

@@ -20,10 +20,20 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { createReadStream, existsSync } from 'fs';
+import { createReadStream, existsSync, statSync } from 'fs';
 import path from 'path';
 import { getMediaItemsDatabase, getEmbeddingDatabase } from '../services/registry';
 import { getArchiveRoot } from '../config';
+import { ThumbnailService } from '../services/video';
+
+// Lazy-initialized thumbnail service
+let thumbnailService: ThumbnailService | null = null;
+function getThumbnailService(): ThumbnailService {
+  if (!thumbnailService) {
+    thumbnailService = new ThumbnailService(getArchiveRoot());
+  }
+  return thumbnailService;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ROUTER
@@ -312,7 +322,7 @@ export function createFacebookRouter(): Router {
     }
   });
 
-  // Serve media files (URL-encoded path)
+  // Serve media files with Range support for video seeking
   router.get('/serve-media', async (req: Request, res: Response) => {
     try {
       const { path: mediaPath } = req.query;
@@ -343,12 +353,79 @@ export function createFacebookRouter(): Router {
         '.mp4': 'video/mp4',
         '.mov': 'video/quicktime',
         '.webm': 'video/webm',
+        '.avi': 'video/x-msvideo',
+        '.mkv': 'video/x-matroska',
       };
 
-      res.setHeader('Content-Type', contentTypes[ext] || 'application/octet-stream');
-      createReadStream(resolved).pipe(res);
+      const contentType = contentTypes[ext] || 'application/octet-stream';
+      const stat = statSync(resolved);
+      const fileSize = stat.size;
+
+      // Handle Range requests for video seeking
+      const range = req.headers.range;
+      if (range && contentType.startsWith('video/')) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': contentType,
+        });
+
+        createReadStream(resolved, { start, end }).pipe(res);
+      } else {
+        // Full file response
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', fileSize);
+        res.setHeader('Accept-Ranges', 'bytes');
+        createReadStream(resolved).pipe(res);
+      }
     } catch (err) {
       console.error('[facebook] Error serving media:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get or generate video thumbnail
+  router.get('/video-thumbnail', async (req: Request, res: Response) => {
+    try {
+      const { path: videoPath } = req.query;
+
+      if (!videoPath || typeof videoPath !== 'string') {
+        res.status(400).json({ error: 'path required' });
+        return;
+      }
+
+      // Resolve path
+      const archiveRoot = getArchiveRoot();
+      const resolved = path.isAbsolute(videoPath)
+        ? videoPath
+        : path.resolve(archiveRoot, videoPath);
+
+      if (!existsSync(resolved)) {
+        res.status(404).json({ error: 'Video not found', path: resolved });
+        return;
+      }
+
+      const service = getThumbnailService();
+      const result = await service.getThumbnail(resolved);
+
+      if (result.success && result.thumbnailPath) {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1 year cache
+        createReadStream(result.thumbnailPath).pipe(res);
+      } else {
+        res.status(500).json({
+          error: 'Thumbnail generation failed',
+          details: result.error,
+        });
+      }
+    } catch (err) {
+      console.error('[facebook] Error serving video thumbnail:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });

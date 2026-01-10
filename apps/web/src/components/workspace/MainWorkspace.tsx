@@ -28,6 +28,7 @@ import { WelcomeScreen } from './WelcomeScreen';
 import { AnalyzableMarkdown } from './AnalyzableMarkdown';
 import { AddToBookDialog, type AddAction } from '../dialogs/AddToBookDialog';
 import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
+import { VideoPlayer } from '../media/VideoPlayer';
 
 /**
  * Convert ChatGPT-style LaTeX delimiters to standard $ delimiters
@@ -562,9 +563,9 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
                 title="Click to open lightbox"
               />
             ) : (
-              <video
+              <VideoPlayer
                 src={getMediaUrl(selectedMedia.file_path)}
-                controls
+                filePath={selectedMedia.file_path}
                 className="media-viewer__video"
               />
             )}

@@ -768,6 +768,113 @@
   object-fit: cover;
 }
 
+/* Video thumbnail wrapper in gallery */
+.facebook-view__thumb-video-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--studio-quote-bg);
+}
+
+.facebook-view__thumb-video-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.facebook-view__thumb-video-fallback {
+  display: none;
+  font-size: 0.625rem;
+  color: var(--studio-text-secondary);
+}
+
+/* Show fallback when thumbnail fails to load */
+.facebook-view__thumb-video-wrapper--no-thumb .facebook-view__thumb-video-fallback {
+  display: flex;
+}
+
+.facebook-view__thumb-video-wrapper--no-thumb .facebook-view__thumb-play-icon {
+  display: none;
+}
+
+/* Play icon overlay for videos */
+.facebook-view__thumb-play-icon {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.facebook-view__thumb-play-icon svg {
+  width: 10px;
+  height: 10px;
+  color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   INLINE MEDIA IN POSTS
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Media grid in feed posts */
+.facebook-view__item-media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  margin-top: 0.5rem;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.facebook-view__item-media-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--studio-quote-bg);
+  overflow: hidden;
+}
+
+.facebook-view__item-media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Video badge for inline media */
+.facebook-view__item-media-video-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  font-size: 0.5rem;
+  border-radius: 2px;
+  text-transform: uppercase;
+}
+
+/* "+N more" overlay */
+.facebook-view__item-media-more {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* Legacy single-line media indicator (kept for fallback) */
 .facebook-view__thumb-video {
   width: 100%;
   height: 100%;
