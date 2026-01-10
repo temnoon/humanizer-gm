@@ -284,13 +284,47 @@ export async function transcribeAudio(
 
     onProgress?.({ status: 'complete', progress: 100, message: 'Done' });
 
-    // Parse result - format depends on whisper-node-addon output
+    // Parse result - format from @kutalia/whisper-node-addon is:
+    // { transcription: [["00:00:00.000", "00:00:10.320", " text"], ...] }
     if (typeof result === 'string') {
       return { text: result };
     }
 
+    // Handle the array-of-arrays format
+    if (result.transcription && Array.isArray(result.transcription)) {
+      const segments: Array<{ start: number; end: number; text: string }> = [];
+      const textParts: string[] = [];
+
+      for (const segment of result.transcription) {
+        if (Array.isArray(segment) && segment.length >= 3) {
+          const [startTime, endTime, text] = segment;
+          const startSeconds = parseTimestamp(startTime);
+          const endSeconds = parseTimestamp(endTime);
+
+          segments.push({
+            start: startSeconds,
+            end: endSeconds,
+            text: text.trim(),
+          });
+
+          textParts.push(text.trim());
+        }
+      }
+
+      const fullText = textParts.join(' ').trim();
+      const duration = segments.length > 0 ? segments[segments.length - 1].end : 0;
+
+      return {
+        text: fullText,
+        segments,
+        language: 'en',
+        duration,
+      };
+    }
+
+    // Fallback for other formats
     return {
-      text: result.text || result.transcription || '',
+      text: result.text || '',
       segments: result.segments,
       language: result.language,
       duration: result.duration,
@@ -299,6 +333,20 @@ export async function transcribeAudio(
     onProgress?.({ status: 'error', progress: 0, message: (err as Error).message });
     throw err;
   }
+}
+
+/**
+ * Parse timestamp string "HH:MM:SS.mmm" to seconds
+ */
+function parseTimestamp(ts: string): number {
+  const parts = ts.split(':');
+  if (parts.length === 3) {
+    const hours = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    const seconds = parseFloat(parts[2]);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+  return 0;
 }
 
 /**

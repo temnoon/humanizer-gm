@@ -93,6 +93,22 @@ export class MediaItemsDatabase {
       // Column already exists
     }
 
+    // Migration: Add transcript column for whisper transcriptions
+    try {
+      this.db.exec(`ALTER TABLE facebook_media ADD COLUMN transcript TEXT`);
+      console.log('✅ Added transcript column');
+    } catch {
+      // Column already exists
+    }
+
+    // Migration: Add transcription_status column
+    try {
+      this.db.exec(`ALTER TABLE facebook_media ADD COLUMN transcription_status TEXT`);
+      console.log('✅ Added transcription_status column');
+    } catch {
+      // Column already exists
+    }
+
     console.log('✅ Facebook media schema initialized');
   }
 
@@ -383,6 +399,98 @@ export class MediaItemsDatabase {
       withVideo: withVideo.count,
       audioOnly: audioOnly.count,
     };
+  }
+
+  /**
+   * Update transcript for a media item
+   */
+  updateTranscript(id: string, transcript: string, status: 'pending' | 'processing' | 'completed' | 'failed' = 'completed'): void {
+    const stmt = this.db.prepare(`
+      UPDATE facebook_media SET transcript = ?, transcription_status = ? WHERE id = ?
+    `);
+    stmt.run(transcript, status, id);
+  }
+
+  /**
+   * Update transcription status
+   */
+  updateTranscriptionStatus(id: string, status: 'pending' | 'processing' | 'completed' | 'failed'): void {
+    const stmt = this.db.prepare(`
+      UPDATE facebook_media SET transcription_status = ? WHERE id = ?
+    `);
+    stmt.run(status, id);
+  }
+
+  /**
+   * Get transcript for a media item
+   */
+  getTranscript(id: string): { transcript: string | null; status: string | null } | null {
+    const stmt = this.db.prepare(`
+      SELECT transcript, transcription_status FROM facebook_media WHERE id = ?
+    `);
+    const result = stmt.get(id) as { transcript: string | null; transcription_status: string | null } | undefined;
+    return result ? { transcript: result.transcript, status: result.transcription_status } : null;
+  }
+
+  /**
+   * Get items pending transcription
+   */
+  getUntranscribedMedia(limit: number = 100): Array<{ id: string; file_path: string; media_type: string }> {
+    const stmt = this.db.prepare(`
+      SELECT id, file_path, media_type FROM facebook_media
+      WHERE (media_type = 'video' OR file_path LIKE '%.mp3' OR file_path LIKE '%.m4a' OR file_path LIKE '%.wav')
+        AND transcription_status IS NULL
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(limit) as Array<{ id: string; file_path: string; media_type: string }>;
+  }
+
+  /**
+   * Get transcription stats
+   */
+  getTranscriptionStats(): { total: number; transcribed: number; pending: number; processing: number; failed: number } {
+    const total = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media
+      WHERE media_type = 'video' OR file_path LIKE '%.mp3' OR file_path LIKE '%.m4a' OR file_path LIKE '%.wav'
+    `).get() as { count: number };
+
+    const transcribed = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE transcription_status = 'completed'
+    `).get() as { count: number };
+
+    const pending = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE transcription_status = 'pending'
+    `).get() as { count: number };
+
+    const processing = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE transcription_status = 'processing'
+    `).get() as { count: number };
+
+    const failed = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE transcription_status = 'failed'
+    `).get() as { count: number };
+
+    return {
+      total: total.count,
+      transcribed: transcribed.count,
+      pending: pending.count,
+      processing: processing.count,
+      failed: failed.count,
+    };
+  }
+
+  /**
+   * Search transcripts
+   */
+  searchTranscripts(query: string, limit: number = 50): MediaItem[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM facebook_media
+      WHERE transcript LIKE ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(`%${query}%`, limit) as MediaItem[];
   }
 
   /**

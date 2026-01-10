@@ -24,8 +24,15 @@ import { createReadStream, existsSync, statSync } from 'fs';
 import path from 'path';
 import { getMediaItemsDatabase, getEmbeddingDatabase } from '../services/registry';
 import { getArchiveRoot } from '../config';
-import { ThumbnailService } from '../services/video';
+import { ThumbnailService, getAudioConverter } from '../services/video';
 import { probeVideo } from '../services/video/VideoProbeService';
+import {
+  isWhisperAvailable,
+  getWhisperStatus,
+  downloadModel,
+  listAvailableModels,
+  transcribeAudio as whisperTranscribe,
+} from '../../whisper/whisper-manager';
 
 // Lazy-initialized thumbnail service
 let thumbnailService: ThumbnailService | null = null;
@@ -720,6 +727,232 @@ export function createFacebookRouter(): Router {
       });
     } catch (err) {
       console.error('[facebook] Error getting messenger thread:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // TRANSCRIPTION ROUTES
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Get whisper status
+  router.get('/transcription/status', async (_req: Request, res: Response) => {
+    try {
+      const status = await getWhisperStatus();
+      const mediaDb = getMediaItemsDatabase();
+      const stats = mediaDb.getTranscriptionStats();
+
+      res.json({
+        whisper: status,
+        stats,
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting transcription status:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // List available models
+  router.get('/transcription/models', async (_req: Request, res: Response) => {
+    try {
+      const models = listAvailableModels();
+      res.json({ models });
+    } catch (err) {
+      console.error('[facebook] Error listing models:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Download a model
+  router.post('/transcription/models/download', async (req: Request, res: Response) => {
+    try {
+      const { model = 'ggml-base.en.bin' } = req.body || {};
+
+      console.log(`[facebook] Downloading whisper model: ${model}`);
+
+      const success = await downloadModel(model, (progress) => {
+        console.log(`[facebook] Download progress: ${progress.percent}%`);
+      });
+
+      if (success) {
+        res.json({ success: true, model });
+      } else {
+        res.status(500).json({ success: false, error: 'Download failed' });
+      }
+    } catch (err) {
+      console.error('[facebook] Error downloading model:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Transcribe a single media file
+  router.post('/transcription/transcribe', async (req: Request, res: Response) => {
+    try {
+      const { mediaId, path: mediaPath, model = 'ggml-tiny.en.bin' } = req.body || {};
+
+      if (!mediaId && !mediaPath) {
+        res.status(400).json({ error: 'mediaId or path required' });
+        return;
+      }
+
+      // Check if whisper is available
+      if (!isWhisperAvailable()) {
+        res.status(503).json({
+          error: 'Whisper not available. Module may not be loaded.',
+          hint: 'Restart the app to initialize whisper.'
+        });
+        return;
+      }
+
+      const mediaDb = getMediaItemsDatabase();
+      let filePath = mediaPath;
+      let id = mediaId;
+
+      // If mediaId provided, look up the file path
+      if (mediaId && !mediaPath) {
+        const item = mediaDb.getMediaItems({ limit: 1 }).find(m => m.id === mediaId);
+        if (!item) {
+          res.status(404).json({ error: 'Media item not found' });
+          return;
+        }
+        filePath = item.file_path;
+        id = item.id;
+      }
+
+      // Resolve path
+      const archiveRoot = getArchiveRoot();
+      const resolved = path.isAbsolute(filePath)
+        ? filePath
+        : path.resolve(archiveRoot, filePath);
+
+      if (!existsSync(resolved)) {
+        res.status(404).json({ error: 'File not found', path: resolved });
+        return;
+      }
+
+      console.log(`[facebook] Starting transcription: ${path.basename(resolved)}`);
+
+      // Update status to processing
+      if (id) {
+        mediaDb.updateTranscriptionStatus(id, 'processing');
+      }
+
+      // Convert to WAV if needed
+      const ext = path.extname(resolved).toLowerCase();
+      let audioPath = resolved;
+
+      if (ext !== '.wav') {
+        const converter = getAudioConverter(archiveRoot);
+        const convResult = await converter.convertToWav(resolved);
+
+        if (!convResult.success || !convResult.wavPath) {
+          if (id) {
+            mediaDb.updateTranscriptionStatus(id, 'failed');
+          }
+          res.status(500).json({
+            error: 'Failed to convert audio',
+            details: convResult.error
+          });
+          return;
+        }
+
+        audioPath = convResult.wavPath;
+        console.log(`[facebook] Converted to WAV: ${path.basename(audioPath)}`);
+      }
+
+      // Transcribe using whisper
+      try {
+        const result = await whisperTranscribe(audioPath, model);
+
+        // Store transcript in database
+        if (id && result.text) {
+          mediaDb.updateTranscript(id, result.text, 'completed');
+        }
+
+        console.log(`[facebook] Transcription complete: ${result.text?.slice(0, 100)}...`);
+
+        res.json({
+          success: true,
+          mediaId: id,
+          transcript: result.text,
+          segments: result.segments,
+          language: result.language,
+          duration: result.duration,
+        });
+      } catch (transcribeError) {
+        if (id) {
+          mediaDb.updateTranscriptionStatus(id, 'failed');
+        }
+        throw transcribeError;
+      }
+    } catch (err) {
+      console.error('[facebook] Error transcribing:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get transcript for a media item
+  router.get('/transcription/:mediaId', async (req: Request, res: Response) => {
+    try {
+      const { mediaId } = req.params;
+      const mediaDb = getMediaItemsDatabase();
+
+      const result = mediaDb.getTranscript(mediaId);
+      if (!result) {
+        res.status(404).json({ error: 'Media item not found' });
+        return;
+      }
+
+      res.json({
+        mediaId,
+        transcript: result.transcript,
+        status: result.status,
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting transcript:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Search transcripts
+  router.get('/transcription/search', async (req: Request, res: Response) => {
+    try {
+      const { q, query, limit = '50' } = req.query;
+      const searchQuery = (q || query) as string;
+
+      if (!searchQuery) {
+        res.status(400).json({ error: 'q or query parameter required' });
+        return;
+      }
+
+      const mediaDb = getMediaItemsDatabase();
+      const results = mediaDb.searchTranscripts(searchQuery, parseInt(limit as string));
+
+      res.json({
+        query: searchQuery,
+        results,
+        count: results.length,
+      });
+    } catch (err) {
+      console.error('[facebook] Error searching transcripts:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get untranscribed media
+  router.get('/transcription/pending', async (req: Request, res: Response) => {
+    try {
+      const { limit = '50' } = req.query;
+      const mediaDb = getMediaItemsDatabase();
+
+      const pending = mediaDb.getUntranscribedMedia(parseInt(limit as string));
+
+      res.json({
+        count: pending.length,
+        items: pending,
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting pending transcriptions:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });
