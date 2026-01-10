@@ -885,6 +885,39 @@
   color: var(--studio-text-secondary);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   GALLERY MEDIA TYPE FILTERS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.facebook-view__media-filters {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--studio-border);
+  margin-bottom: 0.5rem;
+}
+
+.facebook-view__filter-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.facebook-view__filter-checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--studio-accent);
+  cursor: pointer;
+}
+
+.facebook-view__filter-checkbox:hover {
+  color: var(--studio-text);
+}
+
 /* Common */
 .facebook-view__loading {
   text-align: center;

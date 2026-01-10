@@ -72,3 +72,20 @@ export function getFfmpegPath(): string | null {
 export function isFFmpegAvailable(): boolean {
   return getFfmpegPath() !== null;
 }
+
+/**
+ * Get the path to the ffprobe binary (bundled with ffmpeg-static)
+ * ffprobe is in the same directory as ffmpeg
+ */
+export function getFfprobePath(): string | null {
+  const ffmpegPath = getFfmpegPath();
+  if (!ffmpegPath) return null;
+
+  // ffprobe is alongside ffmpeg in ffmpeg-static
+  const ffprobePath = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+  if (existsSync(ffprobePath)) {
+    return ffprobePath;
+  }
+
+  return null;
+}

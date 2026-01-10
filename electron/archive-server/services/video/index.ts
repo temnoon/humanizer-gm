@@ -3,5 +3,6 @@
  * Provides video processing capabilities including thumbnail generation
  */
 
-export { getFfmpegPath, isFFmpegAvailable } from './ffmpeg-path';
+export { getFfmpegPath, getFfprobePath, isFFmpegAvailable } from './ffmpeg-path';
 export { ThumbnailService, type ThumbnailOptions, type ThumbnailResult } from './ThumbnailService';
+export { probeVideo, probeVideos, type ProbeResult } from './VideoProbeService';

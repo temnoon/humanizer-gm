@@ -62,7 +62,9 @@ export class MediaItemsDatabase {
         context_id TEXT,
         related_post_id TEXT,
         exif_data TEXT,
-        metadata TEXT
+        metadata TEXT,
+        has_video_track INTEGER,
+        original_timestamp REAL
       );
 
       CREATE INDEX IF NOT EXISTS idx_fb_media_source_type ON facebook_media(source_type);
@@ -72,7 +74,24 @@ export class MediaItemsDatabase {
       CREATE INDEX IF NOT EXISTS idx_fb_media_size ON facebook_media(file_size);
       CREATE INDEX IF NOT EXISTS idx_fb_media_dimensions ON facebook_media(width, height);
       CREATE INDEX IF NOT EXISTS idx_fb_media_context ON facebook_media(context_id);
+      CREATE INDEX IF NOT EXISTS idx_fb_media_video_track ON facebook_media(has_video_track);
     `);
+
+    // Migration: Add has_video_track column if it doesn't exist
+    try {
+      this.db.exec(`ALTER TABLE facebook_media ADD COLUMN has_video_track INTEGER`);
+      console.log('✅ Added has_video_track column');
+    } catch {
+      // Column already exists
+    }
+
+    // Migration: Add original_timestamp column if it doesn't exist
+    try {
+      this.db.exec(`ALTER TABLE facebook_media ADD COLUMN original_timestamp REAL`);
+      console.log('✅ Added original_timestamp column');
+    } catch {
+      // Column already exists
+    }
 
     console.log('✅ Facebook media schema initialized');
   }
@@ -294,6 +313,76 @@ export class MediaItemsDatabase {
     const stmt = this.db.prepare('SELECT COUNT(*) as count FROM facebook_media');
     const result = stmt.get() as { count: number };
     return result.count;
+  }
+
+  /**
+   * Get videos that haven't been probed yet (has_video_track is NULL)
+   */
+  getUnprobedVideos(limit: number = 100): Array<{ id: string; file_path: string }> {
+    const stmt = this.db.prepare(`
+      SELECT id, file_path FROM facebook_media
+      WHERE media_type = 'video' AND has_video_track IS NULL
+      LIMIT ?
+    `);
+    return stmt.all(limit) as Array<{ id: string; file_path: string }>;
+  }
+
+  /**
+   * Update has_video_track for a media item
+   */
+  updateVideoTrack(id: string, hasVideoTrack: boolean): void {
+    const stmt = this.db.prepare(`
+      UPDATE facebook_media SET has_video_track = ? WHERE id = ?
+    `);
+    stmt.run(hasVideoTrack ? 1 : 0, id);
+  }
+
+  /**
+   * Batch update has_video_track for multiple items
+   */
+  batchUpdateVideoTrack(updates: Array<{ id: string; hasVideoTrack: boolean }>): number {
+    const stmt = this.db.prepare(`
+      UPDATE facebook_media SET has_video_track = ? WHERE id = ?
+    `);
+
+    const updateMany = this.db.transaction((items: Array<{ id: string; hasVideoTrack: boolean }>) => {
+      let count = 0;
+      for (const item of items) {
+        stmt.run(item.hasVideoTrack ? 1 : 0, item.id);
+        count++;
+      }
+      return count;
+    });
+
+    return updateMany(updates);
+  }
+
+  /**
+   * Get video track stats
+   */
+  getVideoTrackStats(): { total: number; probed: number; withVideo: number; audioOnly: number } {
+    const total = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE media_type = 'video'
+    `).get() as { count: number };
+
+    const probed = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE media_type = 'video' AND has_video_track IS NOT NULL
+    `).get() as { count: number };
+
+    const withVideo = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE media_type = 'video' AND has_video_track = 1
+    `).get() as { count: number };
+
+    const audioOnly = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facebook_media WHERE media_type = 'video' AND has_video_track = 0
+    `).get() as { count: number };
+
+    return {
+      total: total.count,
+      probed: probed.count,
+      withVideo: withVideo.count,
+      audioOnly: audioOnly.count,
+    };
   }
 
   /**

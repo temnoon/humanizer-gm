@@ -90,6 +90,7 @@ interface MediaItem {
   context?: string;
   related_post_id?: string;
   album_name?: string;
+  has_video_track?: boolean; // false = audio-only MP4
 }
 
 interface MediaStats {
@@ -160,6 +161,11 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
   const [mediaHasMore, setMediaHasMore] = useState(true);
   const [mediaStats, setMediaStats] = useState<MediaStats | null>(null);
   const [thumbnailSize, setThumbnailSize] = useState(90);
+
+  // Gallery media type filters
+  const [showImages, setShowImages] = useState(true);
+  const [showVideos, setShowVideos] = useState(true);
+  const [showAudioOnly, setShowAudioOnly] = useState(true);
 
   // Lightbox state
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -815,6 +821,34 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             </div>
           )}
 
+          {/* Media type filters */}
+          <div className="facebook-view__media-filters">
+            <label className="facebook-view__filter-checkbox">
+              <input
+                type="checkbox"
+                checked={showImages}
+                onChange={(e) => setShowImages(e.target.checked)}
+              />
+              <span>Images</span>
+            </label>
+            <label className="facebook-view__filter-checkbox">
+              <input
+                type="checkbox"
+                checked={showVideos}
+                onChange={(e) => setShowVideos(e.target.checked)}
+              />
+              <span>Videos</span>
+            </label>
+            <label className="facebook-view__filter-checkbox">
+              <input
+                type="checkbox"
+                checked={showAudioOnly}
+                onChange={(e) => setShowAudioOnly(e.target.checked)}
+              />
+              <span>Audio-only</span>
+            </label>
+          </div>
+
           {/* Size slider */}
           <div className="facebook-view__size-slider">
             <span>Size:</span>
@@ -833,7 +867,17 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             className="facebook-view__grid"
             style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}
           >
-            {media.map((item, index) => (
+            {media.filter(item => {
+              // Filter by media type checkboxes
+              if (item.media_type === 'image') return showImages;
+              if (item.media_type === 'video') {
+                // has_video_track: true = video, false = audio-only, undefined = assume video
+                const hasVideo = item.has_video_track !== false;
+                if (hasVideo) return showVideos;
+                return showAudioOnly;
+              }
+              return true; // Unknown type, show
+            }).map((item, index) => (
               <div
                 key={item.id}
                 className="facebook-view__thumb"

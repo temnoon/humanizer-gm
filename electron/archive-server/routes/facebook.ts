@@ -25,6 +25,7 @@ import path from 'path';
 import { getMediaItemsDatabase, getEmbeddingDatabase } from '../services/registry';
 import { getArchiveRoot } from '../config';
 import { ThumbnailService } from '../services/video';
+import { probeVideo } from '../services/video/VideoProbeService';
 
 // Lazy-initialized thumbnail service
 let thumbnailService: ThumbnailService | null = null;
@@ -426,6 +427,60 @@ export function createFacebookRouter(): Router {
       }
     } catch (err) {
       console.error('[facebook] Error serving video thumbnail:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get video probe stats
+  router.get('/video-probe/stats', async (_req: Request, res: Response) => {
+    try {
+      const mediaDb = getMediaItemsDatabase();
+      const stats = mediaDb.getVideoTrackStats();
+      res.json(stats);
+    } catch (err) {
+      console.error('[facebook] Error getting video probe stats:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Probe videos to detect audio-only MP4s
+  router.post('/video-probe/run', async (req: Request, res: Response) => {
+    try {
+      const { limit = 50 } = req.body || {};
+      const mediaDb = getMediaItemsDatabase();
+
+      // Get unprobed videos
+      const unprobed = mediaDb.getUnprobedVideos(limit);
+
+      if (unprobed.length === 0) {
+        res.json({ probed: 0, message: 'All videos have been probed' });
+        return;
+      }
+
+      console.log(`[facebook] Probing ${unprobed.length} videos...`);
+
+      // Probe each video
+      const updates: Array<{ id: string; hasVideoTrack: boolean }> = [];
+      let audioOnlyCount = 0;
+
+      for (const video of unprobed) {
+        const result = await probeVideo(video.file_path);
+        updates.push({ id: video.id, hasVideoTrack: result.hasVideoTrack });
+        if (!result.hasVideoTrack) audioOnlyCount++;
+      }
+
+      // Batch update database
+      const updated = mediaDb.batchUpdateVideoTrack(updates);
+
+      console.log(`[facebook] Probed ${updated} videos, ${audioOnlyCount} are audio-only`);
+
+      res.json({
+        probed: updated,
+        audioOnly: audioOnlyCount,
+        remaining: mediaDb.getUnprobedVideos(1).length > 0,
+      });
+    } catch (err) {
+      console.error('[facebook] Error probing videos:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });
