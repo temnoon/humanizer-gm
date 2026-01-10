@@ -170,11 +170,11 @@
 .add-to-book-dialog__warning {
   margin-top: var(--space-small);
   padding: var(--space-small) var(--space-medium);
-  background: var(--color-status-warning-subtle, #fef3c7);
-  border-left: 3px solid var(--color-status-warning, #f59e0b);
+  background: var(--color-status-warning-subtle);
+  border-left: 3px solid var(--color-status-warning);
   border-radius: var(--radius-small);
   font-size: var(--text-size-small);
-  color: var(--color-text-primary, var(--studio-text));
+  color: var(--color-text-primary);
 }
 
 .add-to-book-dialog__footer {
