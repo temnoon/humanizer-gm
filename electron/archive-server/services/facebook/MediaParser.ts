@@ -179,15 +179,15 @@ export class MediaParser {
   }
 
   /**
-   * Parse message thread photos
+   * Parse message thread photos using JSON metadata for timestamps
    */
   private async parseMessagePhotos(): Promise<MediaItem[]> {
     const messagesDir = path.join(this.exportDir, 'your_facebook_activity/messages');
     const mediaItems: MediaItem[] = [];
 
     try {
-      // Check inbox, archived_threads, filtered_threads
-      const threadDirs = ['inbox', 'archived_threads', 'filtered_threads'];
+      // Check inbox, archived_threads, filtered_threads, e2ee_cutover
+      const threadDirs = ['inbox', 'archived_threads', 'filtered_threads', 'e2ee_cutover'];
 
       for (const threadType of threadDirs) {
         const threadPath = path.join(messagesDir, threadType);
@@ -196,7 +196,12 @@ export class MediaParser {
           const threads = await fs.readdir(threadPath);
 
           for (const thread of threads) {
-            const photosDir = path.join(threadPath, thread, 'photos');
+            const threadDir = path.join(threadPath, thread);
+
+            // Build map of photo URI -> creation_timestamp from message JSON files
+            const photoTimestamps = await this.extractMediaTimestampsFromMessages(threadDir, 'photos');
+
+            const photosDir = path.join(threadDir, 'photos');
 
             try {
               const photoFiles = await fs.readdir(photosDir);
@@ -208,8 +213,9 @@ export class MediaParser {
                 const stats = await fs.stat(fullPath);
                 const dimensions = await this.getImageDimensions(fullPath);
 
-                // Use file mtime as creation_at if not available
-                const created_at = Math.floor(stats.mtimeMs / 1000);
+                // Use JSON creation_timestamp if available, otherwise fall back to mtime
+                const relativeUri = `your_facebook_activity/messages/${threadType}/${thread}/photos/${photoFile}`;
+                const created_at = photoTimestamps.get(relativeUri) || Math.floor(stats.mtimeMs / 1000);
 
                 mediaItems.push({
                   id: this.generateId(fullPath, created_at),
@@ -242,10 +248,13 @@ export class MediaParser {
   }
 
   /**
-   * Parse videos
+   * Parse videos with proper timestamps from Facebook JSON metadata
    */
   private async parseVideos(): Promise<MediaItem[]> {
     const mediaItems: MediaItem[] = [];
+
+    // Build a global map of video URI -> creation_timestamp from all message threads
+    const videoTimestamps = await this.buildVideoTimestampMap();
 
     // Find all video files in the export
     const videoExtensions = ['.mp4', '.mov', '.avi', '.webm'];
@@ -271,7 +280,9 @@ export class MediaParser {
             sourceType = 'story';
           }
 
-          const created_at = Math.floor(stats.mtimeMs / 1000);
+          // Look up timestamp from JSON metadata, fall back to mtime
+          const relativeUri = videoPath.replace(this.exportDir + '/', '');
+          const created_at = videoTimestamps.get(relativeUri) || Math.floor(stats.mtimeMs / 1000);
 
           mediaItems.push({
             id: this.generateId(videoPath, created_at),
@@ -294,6 +305,70 @@ export class MediaParser {
       console.warn('⚠️  No videos found');
       return [];
     }
+  }
+
+  /**
+   * Build a map of video URIs to creation timestamps from all message JSON files
+   */
+  private async buildVideoTimestampMap(): Promise<Map<string, number>> {
+    const timestampMap = new Map<string, number>();
+    const messagesDir = path.join(this.exportDir, 'your_facebook_activity/messages');
+    const threadDirs = ['inbox', 'archived_threads', 'filtered_threads', 'e2ee_cutover'];
+
+    for (const threadType of threadDirs) {
+      const threadPath = path.join(messagesDir, threadType);
+      try {
+        const threads = await fs.readdir(threadPath);
+        for (const thread of threads) {
+          const threadDir = path.join(threadPath, thread);
+          const videoTimestamps = await this.extractMediaTimestampsFromMessages(threadDir, 'videos');
+          for (const [uri, ts] of videoTimestamps) {
+            timestampMap.set(uri, ts);
+          }
+        }
+      } catch {
+        // Thread type doesn't exist
+      }
+    }
+
+    return timestampMap;
+  }
+
+  /**
+   * Extract media timestamps from message_*.json files in a thread directory
+   */
+  private async extractMediaTimestampsFromMessages(
+    threadDir: string,
+    mediaType: 'photos' | 'videos'
+  ): Promise<Map<string, number>> {
+    const timestampMap = new Map<string, number>();
+
+    try {
+      const files = await fs.readdir(threadDir);
+      const messageFiles = files.filter(f => f.startsWith('message_') && f.endsWith('.json'));
+
+      for (const messageFile of messageFiles) {
+        try {
+          const content = await fs.readFile(path.join(threadDir, messageFile), 'utf-8');
+          const data = JSON.parse(content);
+
+          for (const msg of data.messages || []) {
+            const mediaItems = msg[mediaType] || [];
+            for (const item of mediaItems) {
+              if (item.uri && item.creation_timestamp) {
+                timestampMap.set(item.uri, item.creation_timestamp);
+              }
+            }
+          }
+        } catch {
+          // Error reading/parsing message file
+        }
+      }
+    } catch {
+      // Error reading thread directory
+    }
+
+    return timestampMap;
   }
 
   /**
