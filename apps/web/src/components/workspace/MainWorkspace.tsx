@@ -471,17 +471,24 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
               <h3 className="content-viewer__media-header">
                 Attached Media ({selectedContent.media.length})
               </h3>
-              <div className="content-viewer__media-grid">
+              <div className="content-viewer__media-list">
                 {selectedContent.media.map(item => (
-                  <div key={item.id} className="content-viewer__media-thumb">
+                  <div key={item.id} className="content-viewer__media-item">
                     {item.media_type === 'image' ? (
                       <img
                         src={getMediaUrl(item.file_path)}
                         alt="Attached media"
                         loading="lazy"
+                        className="content-viewer__media-image"
                       />
                     ) : (
-                      <div className="content-viewer__media-video">Video</div>
+                      <VideoPlayer
+                        src={getMediaUrl(item.file_path)}
+                        filePath={item.file_path}
+                        mediaId={item.id}
+                        showTranscription={true}
+                        className="content-viewer__media-video"
+                      />
                     )}
                   </div>
                 ))}

@@ -125,6 +125,7 @@
   margin: 0 0 var(--space-md);
 }
 
+/* Grid layout for thumbnails (legacy) */
 .content-viewer__media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -144,15 +145,30 @@
   object-fit: cover;
 }
 
+/* List layout for full-size media display */
+.content-viewer__media-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.content-viewer__media-item {
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--studio-quote-bg);
+}
+
+.content-viewer__media-image {
+  width: 100%;
+  height: auto;
+  max-height: 600px;
+  object-fit: contain;
+  display: block;
+}
+
 .content-viewer__media-video {
   width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--studio-bg);
-  color: var(--studio-text-secondary);
-  font-size: 0.75rem;
 }
 
 .content-viewer__context {
