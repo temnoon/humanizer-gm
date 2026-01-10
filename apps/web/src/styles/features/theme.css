@@ -11,8 +11,10 @@
   --studio-text: #433422;
   --studio-text-secondary: #6b5c4a;
   --studio-text-tertiary: #8a7a66;
-  --studio-accent: #8b6914;
-  --studio-accent-hover: #7a5c12;
+  /* Accent: Light amber (~70% lightness) with dark text - hover goes slightly darker */
+  --studio-accent: hsl(38, 70%, 70%);
+  --studio-accent-hover: hsl(38, 70%, 62%);
+  --studio-accent-text: hsl(38, 50%, 20%);  /* Dark amber text */
   --studio-quote-bg: #f0e8d6;
   --studio-border: #d4c4a8;
   --studio-panel-bg: #fffdf8;
@@ -27,8 +29,10 @@
   --studio-text: #1a1a2e;
   --studio-text-secondary: #4a4a5c;
   --studio-text-tertiary: #7a7a8c;
-  --studio-accent: #2563eb;
-  --studio-accent-hover: #1d4ed8;
+  /* Accent: Light blue (~70% lightness) with dark text - hover goes slightly darker */
+  --studio-accent: hsl(220, 70%, 70%);
+  --studio-accent-hover: hsl(220, 70%, 62%);
+  --studio-accent-text: hsl(220, 60%, 25%);  /* Dark blue text */
   --studio-quote-bg: #f5f5f7;
   --studio-border: #e0e0e5;
   --studio-panel-bg: #ffffff;
@@ -43,8 +47,10 @@
   --studio-text: #e8e8ed;
   --studio-text-secondary: #a0a0b0;
   --studio-text-tertiary: #6b6b7a;
-  --studio-accent: #60a5fa;
-  --studio-accent-hover: #93c5fd;
+  /* Accent: Dark blue (~35% lightness) with light text - hover goes slightly lighter */
+  --studio-accent: hsl(220, 70%, 35%);
+  --studio-accent-hover: hsl(220, 70%, 42%);
+  --studio-accent-text: #ffffff;  /* White text */
   --studio-quote-bg: #1a1a24;
   --studio-border: #2a2a38;
   --studio-panel-bg: #16161d;
@@ -61,8 +67,10 @@
   --studio-text: #433422;
   --studio-text-secondary: #6b5c4a;
   --studio-text-tertiary: #8a7a66;
-  --studio-accent: #8b6914;
-  --studio-accent-hover: #7a5c12;
+  /* Accent: Light amber (~70% lightness) with dark text - hover goes slightly darker */
+  --studio-accent: hsl(38, 70%, 70%);
+  --studio-accent-hover: hsl(38, 70%, 62%);
+  --studio-accent-text: hsl(38, 50%, 20%);  /* Dark amber text */
   --studio-quote-bg: #f0e8d6;
   --studio-border: #d4c4a8;
   --studio-panel-bg: #fffdf8;
@@ -78,8 +86,10 @@
   --studio-text: #1a1a2e;
   --studio-text-secondary: #4a4a5c;
   --studio-text-tertiary: #7a7a8c;
-  --studio-accent: #2563eb;
-  --studio-accent-hover: #1d4ed8;
+  /* Accent: Light blue (~70% lightness) with dark text - hover goes slightly darker */
+  --studio-accent: hsl(220, 70%, 70%);
+  --studio-accent-hover: hsl(220, 70%, 62%);
+  --studio-accent-text: hsl(220, 60%, 25%);  /* Dark blue text */
   --studio-quote-bg: #f5f5f7;
   --studio-border: #e0e0e5;
   --studio-panel-bg: #ffffff;
@@ -95,8 +105,10 @@
   --studio-text: #e8e8ed;
   --studio-text-secondary: #a0a0b0;
   --studio-text-tertiary: #6b6b7a;
-  --studio-accent: #60a5fa;
-  --studio-accent-hover: #93c5fd;
+  /* Accent: Dark blue (~35% lightness) with light text - hover goes slightly lighter */
+  --studio-accent: hsl(220, 70%, 35%);
+  --studio-accent-hover: hsl(220, 70%, 42%);
+  --studio-accent-text: #ffffff;  /* White text */
   --studio-quote-bg: #1a1a24;
   --studio-border: #2a2a38;
   --studio-panel-bg: #16161d;
@@ -156,24 +168,56 @@
 }
 
 /* Color accent variations */
+/* Accent color variations
+   Light themes: ~70% lightness with dark text, hover darker
+   Dark theme overrides below adjust for light text */
 [data-accent="amber"] .studio {
-  --studio-accent: #8b6914;
-  --studio-accent-hover: #7a5c12;
+  --studio-accent: hsl(38, 70%, 70%);
+  --studio-accent-hover: hsl(38, 70%, 62%);
+  --studio-accent-text: hsl(38, 50%, 20%);
 }
 
 [data-accent="blue"] .studio {
-  --studio-accent: #2563eb;
-  --studio-accent-hover: #1d4ed8;
+  --studio-accent: hsl(220, 70%, 70%);
+  --studio-accent-hover: hsl(220, 70%, 62%);
+  --studio-accent-text: hsl(220, 60%, 25%);
 }
 
 [data-accent="green"] .studio {
-  --studio-accent: #16a34a;
-  --studio-accent-hover: #15803d;
+  --studio-accent: hsl(145, 60%, 65%);
+  --studio-accent-hover: hsl(145, 60%, 55%);
+  --studio-accent-text: hsl(145, 50%, 20%);
 }
 
 [data-accent="purple"] .studio {
-  --studio-accent: #9333ea;
-  --studio-accent-hover: #7e22ce;
+  --studio-accent: hsl(270, 60%, 70%);
+  --studio-accent-hover: hsl(270, 60%, 62%);
+  --studio-accent-text: hsl(270, 50%, 25%);
+}
+
+/* Dark theme accent overrides - dark backgrounds with light text */
+[data-theme="dark"][data-accent="amber"] .studio {
+  --studio-accent: hsl(38, 70%, 35%);
+  --studio-accent-hover: hsl(38, 70%, 42%);
+  --studio-accent-text: #ffffff;
+}
+
+[data-theme="dark"][data-accent="blue"] .studio {
+  --studio-accent: hsl(220, 70%, 35%);
+  --studio-accent-hover: hsl(220, 70%, 42%);
+  --studio-accent-text: #ffffff;
+}
+
+[data-theme="dark"][data-accent="green"] .studio {
+  --studio-accent: hsl(145, 60%, 32%);
+  --studio-accent-hover: hsl(145, 60%, 40%);
+  --studio-accent-text: #ffffff;
+}
+
+[data-theme="dark"][data-accent="purple"] .studio {
+  --studio-accent: hsl(270, 60%, 38%);
+  --studio-accent-hover: hsl(270, 60%, 45%);
+  --studio-accent-text: #ffffff;
 }
 
 /* ═══════════════════════════════════════════════════════════════════

@@ -17,12 +17,17 @@
   --color-primary-hover: hsl(var(--hue-primary), var(--sat-primary), 40%);
   --color-primary-subtle: hsl(var(--hue-primary), 30%, 95%);
 
-  /* Accent - Warm amber for highlights */
+  /* Accent - Warm amber for highlights
+     Lightness set to 35% to ensure contrast with white text across all themes */
   --hue-accent: 38;
   --sat-accent: 90%;
-  --color-accent: hsl(var(--hue-accent), var(--sat-accent), 50%);
-  --color-accent-hover: hsl(var(--hue-accent), var(--sat-accent), 45%);
+  --lit-accent: 35%;  /* Darker amber - ensures white text has proper contrast */
+  --color-accent: hsl(var(--hue-accent), var(--sat-accent), var(--lit-accent));
+  --color-accent-hover: hsl(var(--hue-accent), var(--sat-accent), calc(var(--lit-accent) + 5%));
   --color-accent-subtle: hsl(var(--hue-accent), 50%, 95%);
+
+  /* Text color for use ON accent backgrounds - always white for contrast */
+  --color-accent-text: hsl(0, 0%, 100%);
 
   /* ─────────────────────────────────────────────────────────────────
      Semantic Text Colors (Light Mode)
@@ -260,9 +265,12 @@
     --color-primary-hover: hsl(var(--hue-primary), var(--sat-primary), 65%);
     --color-primary-subtle: hsl(var(--hue-primary), 30%, 18%);
 
-    --color-accent: hsl(var(--hue-accent), var(--sat-accent), 55%);
-    --color-accent-hover: hsl(var(--hue-accent), var(--sat-accent), 60%);
+    /* Accent - darker in dark mode for contrast with light text */
+    --lit-accent: 35%;
+    --color-accent: hsl(var(--hue-accent), var(--sat-accent), var(--lit-accent));
+    --color-accent-hover: hsl(var(--hue-accent), var(--sat-accent), calc(var(--lit-accent) + 5%));
     --color-accent-subtle: hsl(var(--hue-accent), 40%, 18%);
+    --color-accent-text: hsl(0, 0%, 100%);  /* White text on dark accent */
 
     /* Status - adjusted for dark */
     --color-status-success: hsl(var(--hue-success), 55%, 50%);
@@ -327,9 +335,12 @@
   --color-primary-hover: hsl(var(--hue-primary), var(--sat-primary), 65%);
   --color-primary-subtle: hsl(var(--hue-primary), 30%, 18%);
 
-  --color-accent: hsl(var(--hue-accent), var(--sat-accent), 55%);
-  --color-accent-hover: hsl(var(--hue-accent), var(--sat-accent), 60%);
+  /* Accent - darker in dark mode for contrast with white text */
+  --lit-accent: 35%;
+  --color-accent: hsl(var(--hue-accent), var(--sat-accent), var(--lit-accent));
+  --color-accent-hover: hsl(var(--hue-accent), var(--sat-accent), calc(var(--lit-accent) + 5%));
   --color-accent-subtle: hsl(var(--hue-accent), 40%, 18%);
+  --color-accent-text: hsl(0, 0%, 100%);  /* White text on accent */
 
   /* Status */
   --color-status-success: hsl(var(--hue-success), 55%, 50%);
