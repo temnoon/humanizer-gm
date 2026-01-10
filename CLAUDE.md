@@ -132,6 +132,44 @@ border-radius: var(--radius-md);
 <div className="my-component">
 ```
 
+### Active/Selected Button States (CRITICAL)
+**Use `--studio-text` (primary text) for active states, never hardcoded white/light colors.**
+
+The key insight: active states should be MORE emphasized than inactive states.
+- Inactive uses `--studio-text-secondary` (muted grey)
+- Active uses `--studio-text` (primary, emphasized)
+
+This creates correct visual hierarchy in ALL themes:
+- Light/Sepia: inactive = dark grey, active = very dark (near black)
+- Dark: inactive = light grey, active = near white
+
+```css
+/* WRONG - hardcoded white text */
+.btn.active {
+  background: var(--studio-accent);
+  color: white;                               /* BAD - breaks in light modes */
+}
+
+/* CORRECT - theme-aware emphasized text */
+.btn.active {
+  background: var(--studio-accent);
+  color: var(--studio-text);                  /* PRIMARY text, not secondary */
+}
+
+.btn.active:hover {
+  background: var(--studio-accent-hover);
+  color: var(--studio-text);
+}
+```
+
+**Accent color usage:**
+- ✅ Background fills: `background: var(--studio-accent)` WITH `color: var(--studio-text)`
+- ✅ Borders: `border-color: var(--studio-accent)`
+- ✅ Underlines: `box-shadow: inset 0 -2px 0 var(--studio-accent)`
+- ❌ NEVER use `color: white` or `color: var(--color-text-inverse)` on accent backgrounds
+
+This pattern works consistently across all themes (light, dark, sepia) without special mode overrides.
+
 ---
 
 ## Migration Status
