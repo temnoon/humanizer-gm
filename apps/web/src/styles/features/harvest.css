@@ -556,3 +556,192 @@
   background: #e3f2fd;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   Ensures all harvest components work properly in dark theme
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme='dark'] .harvest-panel--empty {
+  color: var(--studio-text-secondary, #a0a0b0);
+}
+
+[data-theme='dark'] .harvest-panel__header {
+  border-bottom-color: var(--studio-border, #2a2a38);
+}
+
+[data-theme='dark'] .harvest-panel__count {
+  background: var(--studio-surface, #1a1a24);
+  color: var(--studio-text-secondary, #a0a0b0);
+}
+
+/* Bucket container */
+[data-theme='dark'] .harvest-bucket {
+  background: var(--studio-surface, #1a1a24);
+  border-color: var(--studio-border, #2a2a38);
+}
+
+/* Bucket header */
+[data-theme='dark'] .bucket-header {
+  background: var(--color-surface-secondary, hsl(220, 12%, 14%));
+}
+
+[data-theme='dark'] .bucket-stat {
+  color: var(--studio-text-secondary, #a0a0b0);
+}
+
+/* Status badges - themed for dark mode */
+[data-theme='dark'] .bucket-header__status--collecting {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .bucket-header__status--reviewing {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .bucket-header__status--staged {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+/* Bucket actions */
+[data-theme='dark'] .bucket-action--stage {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+[data-theme='dark'] .bucket-action--stage:hover {
+  background: rgba(34, 197, 94, 0.25);
+}
+
+[data-theme='dark'] .bucket-action--commit {
+  background: var(--studio-accent, #60a5fa);
+  border-color: var(--studio-accent, #60a5fa);
+  color: var(--color-text-inverse, white);
+}
+
+[data-theme='dark'] .bucket-action--commit:hover {
+  background: var(--studio-accent-hover, #93c5fd);
+}
+
+[data-theme='dark'] .bucket-action--discard {
+  background: transparent;
+  border-color: var(--studio-border, #2a2a38);
+  color: var(--studio-text-secondary, #a0a0b0);
+}
+
+[data-theme='dark'] .bucket-action--discard:hover {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+/* Progress bar */
+[data-theme='dark'] .bucket-header__progress {
+  background: var(--color-surface-tertiary, hsl(220, 10%, 18%));
+}
+
+[data-theme='dark'] .bucket-header__progress-text {
+  color: var(--studio-text-secondary, #a0a0b0);
+}
+
+/* Bucket content */
+[data-theme='dark'] .harvest-bucket__content {
+  border-top-color: var(--studio-border, #2a2a38);
+}
+
+[data-theme='dark'] .harvest-bucket__tabs {
+  border-bottom-color: var(--studio-border, #2a2a38);
+}
+
+/* Harvest tabs */
+[data-theme='dark'] .harvest-tab {
+  color: var(--studio-text-secondary, #a0a0b0);
+}
+
+[data-theme='dark'] .harvest-tab:hover {
+  background: var(--color-surface-tertiary, hsl(220, 10%, 18%));
+}
+
+[data-theme='dark'] .harvest-tab--active {
+  color: var(--studio-accent, #60a5fa);
+  border-bottom-color: var(--studio-accent, #60a5fa);
+}
+
+[data-theme='dark'] .harvest-empty {
+  color: var(--studio-text-secondary, #a0a0b0);
+}
+
+/* Harvest cards */
+[data-theme='dark'] .harvest-card {
+  background: var(--color-surface-secondary, hsl(220, 12%, 14%));
+  border-color: var(--studio-border, #2a2a38);
+}
+
+[data-theme='dark'] .harvest-card:hover {
+  border-color: var(--studio-accent, #60a5fa);
+}
+
+[data-theme='dark'] .harvest-card--gem {
+  border-left-color: #c084fc;
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.1) 0%, var(--color-surface-secondary) 50%);
+}
+
+[data-theme='dark'] .harvest-card--approved {
+  border-left-color: #4ade80;
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.08) 0%, var(--color-surface-secondary) 50%);
+}
+
+[data-theme='dark'] .harvest-card--rejected {
+  border-left-color: #f87171;
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.08) 0%, var(--color-surface-secondary) 50%);
+}
+
+[data-theme='dark'] .harvest-card__source {
+  color: var(--studio-text-tertiary, #6b6b7a);
+}
+
+[data-theme='dark'] .harvest-card__text {
+  color: var(--studio-text, #e8e8ed);
+}
+
+[data-theme='dark'] .harvest-card__meta {
+  color: var(--studio-text-tertiary, #6b6b7a);
+}
+
+/* Harvest action buttons */
+[data-theme='dark'] .harvest-btn {
+  background: var(--color-surface-tertiary, hsl(220, 10%, 18%));
+  border-color: var(--studio-border, #2a2a38);
+}
+
+[data-theme='dark'] .harvest-btn--gem:hover {
+  border-color: #c084fc;
+  background: rgba(192, 132, 252, 0.15);
+}
+
+[data-theme='dark'] .harvest-btn--approve:hover {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.15);
+}
+
+[data-theme='dark'] .harvest-btn--reject:hover {
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+}
+
+[data-theme='dark'] .harvest-btn--undo:hover {
+  border-color: var(--studio-accent, #60a5fa);
+  background: rgba(96, 165, 250, 0.15);
+}
+
+/* Stat colors for dark mode */
+[data-theme='dark'] .bucket-stat--approved {
+  color: #4ade80;
+}
+
+[data-theme='dark'] .bucket-stat--gems {
+  color: #c084fc;
+}
+
