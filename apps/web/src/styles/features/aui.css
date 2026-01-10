@@ -18,7 +18,7 @@
   justify-content: center;
   font-size: 1.5rem;
   font-weight: 300;
-  color: white;
+  color: var(--color-text-inverse, white);
   background: var(--studio-accent);
   border: none;
   border-radius: 50%;
@@ -164,7 +164,7 @@
 /* User message */
 .aui-chat__message--user {
   background: var(--studio-accent);
-  color: white;
+  color: var(--color-text-inverse, white);
   align-self: flex-end;
   max-width: 85%;
   border-bottom-right-radius: 4px;
@@ -236,7 +236,7 @@
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  color: white;
+  color: var(--color-text-inverse, white);
   background: var(--studio-accent);
   border: none;
   border-radius: 50%;
@@ -245,7 +245,7 @@
 }
 
 .aui-chat__send:hover:not(:disabled) {
-  background: #7a5c12;
+  background: var(--studio-accent-hover, #7a5c12);
 }
 
 .aui-chat__send:disabled {
@@ -350,7 +350,12 @@
 
 .aui-chat-tab__settings-btn.active {
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
+}
+
+.aui-chat-tab__settings-btn.active:hover {
+  background: var(--studio-accent-hover);
+  color: var(--studio-text);
 }
 
 .aui-chat-tab__stop-btn {
@@ -764,4 +769,5 @@
   background: var(--studio-bg);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
+
 

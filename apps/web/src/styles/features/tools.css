@@ -591,8 +591,8 @@
   justify-content: center;
   font-size: 0.75rem;
   font-weight: 600;
-  color: white;
-  background: var(--color-primary, #4a7c59);
+  color: var(--color-text-inverse, white);
+  background: var(--color-primary);
   border-radius: 50%;
 }
 
@@ -679,18 +679,18 @@
 
 /* Primary action card */
 .tool-card--primary {
-  background: linear-gradient(135deg, var(--studio-accent), #8b6914);
+  background: linear-gradient(135deg, var(--studio-accent), var(--studio-accent-hover, var(--studio-accent)));
   border-color: var(--studio-accent);
-  color: white;
+  color: var(--color-text-inverse, white);
 }
 
 .tool-card--primary .tool-card__name,
 .tool-card--primary .tool-card__desc {
-  color: white;
+  color: var(--color-text-inverse, white);
 }
 
 .tool-card--primary:hover {
-  background: linear-gradient(135deg, #8b6914, var(--studio-accent));
+  background: linear-gradient(135deg, var(--studio-accent-hover, var(--studio-accent)), var(--studio-accent));
   transform: translateX(2px);
 }
 
@@ -705,24 +705,24 @@
 /* Selected state for persona/style cards */
 .tool-card--selected {
   border-color: var(--studio-accent);
-  background: rgba(180, 140, 30, 0.15);
-  box-shadow: 0 0 0 2px rgba(180, 140, 30, 0.3);
+  background: var(--studio-hover);
+  box-shadow: 0 0 0 2px var(--studio-hover);
 }
 
-/* Cancel button */
+/* Cancel button - uses error status colors for proper theming */
 .tool-card--cancel {
-  background: #dc3545;
-  border-color: #dc3545;
-  color: white;
+  background: var(--color-status-error);
+  border-color: var(--color-status-error);
+  color: var(--color-text-inverse, white);
 }
 
 .tool-card--cancel .tool-card__name {
-  color: white;
+  color: var(--color-text-inverse, white);
 }
 
 .tool-card--cancel:hover {
-  background: #c82333;
-  border-color: #c82333;
+  background: hsl(var(--hue-error, 0), 70%, 45%);
+  border-color: hsl(var(--hue-error, 0), 70%, 45%);
   transform: translateX(2px);
 }
 
