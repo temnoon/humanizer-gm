@@ -18,6 +18,61 @@ import type { BookProject } from '../archive/book-project/types';
 import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
 
 /**
+ * Image component with fallback for missing/broken images
+ */
+function ImageWithFallback({
+  src,
+  alt,
+  className,
+  onClick,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  onClick?: (e: React.MouseEvent) => void;
+}) {
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  if (error) {
+    return (
+      <div
+        className={`container-workspace__media-unavailable ${className || ''}`}
+        onClick={onClick}
+      >
+        <div className="container-workspace__media-unavailable-icon">🖼️</div>
+        <div className="container-workspace__media-unavailable-text">
+          Media not available
+        </div>
+        <div className="container-workspace__media-unavailable-path" title={src}>
+          {src.split('/').pop() || 'Unknown file'}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {loading && (
+        <div className="container-workspace__media-loading">Loading...</div>
+      )}
+      <img
+        src={src}
+        alt={alt}
+        className={className}
+        onClick={onClick}
+        onLoad={() => setLoading(false)}
+        onError={() => {
+          setLoading(false);
+          setError(true);
+        }}
+        style={loading ? { display: 'none' } : undefined}
+      />
+    </>
+  );
+}
+
+/**
  * Linkify URLs in text - makes URLs clickable
  */
 function linkifyText(text: string): React.ReactNode {
@@ -374,14 +429,14 @@ function ContentView({
               <div
                 key={i}
                 className="container-workspace__media-thumb container-workspace__media-thumb--clickable"
-                onClick={() => {
-                  setLightboxIndex(i);
-                  setLightboxOpen(true);
-                }}
               >
-                <img
+                <ImageWithFallback
                   src={m.url || getMediaUrl(m.filePath || '')}
                   alt={m.description || `Media ${i + 1}`}
+                  onClick={() => {
+                    setLightboxIndex(i);
+                    setLightboxOpen(true);
+                  }}
                 />
               </div>
             ))}
@@ -420,7 +475,7 @@ function ContentView({
             </button>
           )}
 
-          <img
+          <ImageWithFallback
             src={imageMedia[lightboxIndex].url || getMediaUrl(imageMedia[lightboxIndex].filePath || '')}
             alt="Full size"
             className="container-workspace__lightbox-image"
