@@ -21,19 +21,73 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://npe-api.tem-527.worker
 const TOKEN_KEY = 'humanizer-auth-token';
 
 // ═══════════════════════════════════════════════════════════════════
-// TOKEN MANAGEMENT
+// TOKEN MANAGEMENT (Secure Storage)
 // ═══════════════════════════════════════════════════════════════════
+//
+// Security: Tokens are stored in memory-only (not localStorage) to prevent
+// XSS attacks from stealing tokens. In Electron, we also sync to the main
+// process store for persistence across app restarts (secure, not renderer-accessible).
+//
+// Trade-off: In web browser, tokens don't survive page refresh (user must re-login).
+// In Electron desktop app, tokens persist securely via main process store.
+
+// In-memory token storage (primary - always used)
+let memoryToken: string | null = null;
+
+// Initialize token from Electron secure store on startup
+let tokenInitialized = false;
+async function initTokenFromElectronStore(): Promise<void> {
+  if (tokenInitialized) return;
+  tokenInitialized = true;
+
+  if (isElectron) {
+    const api = getElectronAPI();
+    if (api?.store) {
+      try {
+        const storedToken = await api.store.get(TOKEN_KEY);
+        if (typeof storedToken === 'string' && storedToken) {
+          memoryToken = storedToken;
+        }
+      } catch {
+        // Electron store unavailable, use memory only
+      }
+    }
+  }
+}
+
+// Call initialization (non-blocking, will complete by the time token is needed)
+initTokenFromElectronStore();
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return memoryToken;
 }
 
 export function setStoredToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  memoryToken = token;
+
+  // Also persist to Electron's secure store (main process, not XSS-accessible)
+  if (isElectron) {
+    const api = getElectronAPI();
+    if (api?.store) {
+      api.store.set(TOKEN_KEY, token).catch(() => {
+        // Ignore errors - memory storage is primary
+      });
+    }
+  }
 }
 
 export function clearStoredToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  memoryToken = null;
+
+  // Also clear from Electron's secure store
+  if (isElectron) {
+    const api = getElectronAPI();
+    if (api?.store) {
+      api.store.set(TOKEN_KEY, '').catch(() => {
+        // Ignore errors
+      });
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

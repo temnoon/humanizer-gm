@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import type {
   BookProject,
   BookProjectTab,
@@ -17,6 +18,14 @@ import type {
 } from './types';
 import type { PyramidStructure } from '@humanizer/core';
 import { BookProfileView } from './BookProfileView';
+
+// Configure DOMPurify for markdown HTML rendering
+const sanitizeMarkdown = (html: string): string =>
+  DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'strong', 'em', 'blockquote', 'hr', 'br', 'ul', 'ol', 'li', 'a', 'code', 'pre'],
+    ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
+  });
+
 // PyramidViewer is used within BookProfileView for detailed pyramid navigation
 export { PyramidViewer } from './PyramidViewer';
 
@@ -823,7 +832,7 @@ function MarkdownPreview({ content }: { content: string }) {
   return (
     <div
       className="markdown-preview"
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: sanitizeMarkdown(html) }}
     />
   );
 }

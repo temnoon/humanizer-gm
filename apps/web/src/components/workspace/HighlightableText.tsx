@@ -10,12 +10,20 @@
  */
 
 import { useMemo, useCallback, type ReactNode, type MouseEvent } from 'react';
+import DOMPurify from 'dompurify';
 import type {
   HighlightRange,
   HighlightLayer,
   AIScoreLevel,
 } from '../../lib/analysis';
 import { getAIScoreLevel } from '../../lib/analysis';
+
+// Configure DOMPurify for safe inline HTML rendering
+const sanitize = (html: string): string =>
+  DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'span', 'br'],
+    ALLOWED_ATTR: ['class'],
+  });
 
 // ============================================
 // Types
@@ -200,7 +208,7 @@ export function HighlightableText({
           return (
             <span
               key={index}
-              dangerouslySetInnerHTML={{ __html: segment.text }}
+              dangerouslySetInnerHTML={{ __html: sanitize(segment.text) }}
             />
           );
         }
@@ -218,7 +226,7 @@ export function HighlightableText({
             className={classes}
             data-tooltip={tooltip || undefined}
             onClick={(e) => handleClick(segment, e)}
-            dangerouslySetInnerHTML={{ __html: segment.text }}
+            dangerouslySetInnerHTML={{ __html: sanitize(segment.text) }}
           />
         );
       }
