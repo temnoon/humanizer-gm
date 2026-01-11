@@ -10,11 +10,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
+import { MathMarkdown } from '../markdown';
 
 import { useBuffers } from '../../lib/buffer';
 import {
@@ -667,12 +663,7 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
           {/* Preview Pane */}
           <div className="workspace__preview-pane">
             <article className="workspace__article">
-              <ReactMarkdown
-                remarkPlugins={[remarkMath, remarkGfm]}
-                rehypePlugins={[[rehypeKatex, { strict: false, trust: true }]]}
-              >
-                {processLatex(editContent)}
-              </ReactMarkdown>
+              <MathMarkdown>{processLatex(editContent)}</MathMarkdown>
             </article>
           </div>
         </div>

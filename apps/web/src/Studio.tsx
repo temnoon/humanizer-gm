@@ -1,9 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import { MathMarkdown } from './components/markdown';
 
 import {
   BufferProvider,
@@ -22,7 +18,8 @@ import { ThemeProvider } from './lib/theme/ThemeContext';
 import { type SelectedFacebookMedia, type SelectedFacebookContent, type ArchiveTabId, type SearchResult } from './components/archive';
 import { MainWorkspace, ContainerWorkspace, StructureInspector, HarvestWorkspaceView, type BookContent, type HarvestConversation, type StagedMessage } from './components/workspace';
 import type { BookProject } from './components/archive/book-project/types';
-import { SocialGraphView } from './components/graph';
+// Lazy load SocialGraphView (d3-force is ~50KB, only needed for graph mode)
+const SocialGraphView = lazy(() => import('./components/graph/SocialGraphView').then(m => ({ default: m.SocialGraphView })));
 import { CornerAssistant, useSplitScreen, SplitScreenWorkspace, useSplitMode, TopBar, type SplitPaneContent } from './components/layout';
 import type { ArchiveContainer } from '@humanizer/core';
 import { getArchiveServerUrlSync } from './lib/platform';
@@ -414,7 +411,9 @@ function StudioContent() {
     if (showSocialGraph) {
       return (
         <div className="workspace workspace--graph">
-          <SocialGraphView onClose={() => setShowSocialGraph(false)} />
+          <Suspense fallback={<div className="workspace__loading">Loading graph...</div>}>
+            <SocialGraphView onClose={() => setShowSocialGraph(false)} />
+          </Suspense>
         </div>
       );
     }
@@ -454,12 +453,7 @@ function StudioContent() {
     readOnly: true,
     children: (
       <article className="split-pane__content">
-        <ReactMarkdown
-          remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[[rehypeKatex, { strict: false }]]}
-        >
-          {splitPaneContent.text}
-        </ReactMarkdown>
+        <MathMarkdown>{splitPaneContent.text}</MathMarkdown>
       </article>
     ),
   } : null;

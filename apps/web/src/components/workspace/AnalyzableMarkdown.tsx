@@ -11,10 +11,7 @@
  */
 
 import { useMemo, type MouseEvent } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
+import { MathMarkdown } from '../markdown';
 
 import { HighlightableText } from './HighlightableText';
 import { useHighlights, useSplitMode } from '../layout/LayoutContext';
@@ -97,12 +94,7 @@ export function AnalyzableMarkdown({
   // Render standard markdown
   return (
     <div className={`analyzable-markdown analyzable-markdown--markdown ${className}`.trim()}>
-      <ReactMarkdown
-        remarkPlugins={[remarkMath, remarkGfm]}
-        rehypePlugins={[[rehypeKatex, { strict: false, trust: true }]]}
-      >
-        {processedContent}
-      </ReactMarkdown>
+      <MathMarkdown>{processedContent}</MathMarkdown>
     </div>
   );
 }

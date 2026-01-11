@@ -6,10 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
+import { MathMarkdown } from '../markdown';
 
 import type { SourcePassage, CurationStatus } from '@humanizer/core';
 
@@ -435,12 +432,7 @@ function MessageCard({
 
       {/* Content */}
       <div className="harvest-message__content">
-        <ReactMarkdown
-          remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[[rehypeKatex, { strict: false, trust: true }]]}
-        >
-          {message.content}
-        </ReactMarkdown>
+        <MathMarkdown>{message.content}</MathMarkdown>
       </div>
 
       {/* Actions - only for non-system messages */}

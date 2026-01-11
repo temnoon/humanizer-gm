@@ -6,10 +6,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
+import { MathMarkdown } from '../markdown';
 
 import { useBookshelf } from '../../lib/bookshelf';
 import type {
@@ -263,12 +260,7 @@ export function BookContentView({
                   )}
                 </blockquote>
               )}
-              <ReactMarkdown
-                remarkPlugins={[remarkMath, remarkGfm]}
-                rehypePlugins={[[rehypeKatex, { strict: false, trust: true }]]}
-              >
-                {content.content}
-              </ReactMarkdown>
+              <MathMarkdown>{content.content}</MathMarkdown>
             </article>
           )}
         </div>
