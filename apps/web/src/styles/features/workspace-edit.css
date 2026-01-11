@@ -76,6 +76,11 @@
   background: var(--color-surface-tertiary);
 }
 
+.workspace__go-to-book-btn:focus-visible {
+  outline: 2px solid var(--studio-accent, #6366f1);
+  outline-offset: 2px;
+}
+
 /* Action buttons group - download, copy, md */
 .workspace__actions {
   display: flex;

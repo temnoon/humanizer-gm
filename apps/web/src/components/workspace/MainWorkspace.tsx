@@ -395,13 +395,14 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
 
       {/* Conversation Navigation - Title centered with arrows on sides */}
       {hasConversationNav && (
-        <div className="workspace__nav workspace__nav--centered">
+        <nav className="workspace__nav workspace__nav--centered" aria-label="Conversation navigation">
           <div className="workspace__nav-left">
             <button
               className="workspace__nav-btn"
               onClick={() => navigateToMessage(currentIndex - 1)}
               disabled={!canGoPrev || navLoading}
               title="Previous message"
+              aria-label={`Previous message (${currentIndex} of ${totalMessages})`}
             >
               ←
             </button>
@@ -415,7 +416,7 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
                 return (text.slice(0, 80).replace(/\n/g, ' ').trim()) || activeNode.metadata.title || 'Untitled';
               })()}
             </span>
-            <span className="workspace__nav-position">
+            <span className="workspace__nav-position" aria-live="polite">
               {currentIndex + 1} / {totalMessages}
             </span>
           </div>
@@ -425,11 +426,12 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
               onClick={() => navigateToMessage(currentIndex + 1)}
               disabled={!canGoNext || navLoading}
               title="Next message"
+              aria-label={`Next message (${currentIndex + 2} of ${totalMessages})`}
             >
               →
             </button>
           </div>
-        </div>
+        </nav>
       )}
 
       {/* Stats bar */}
@@ -451,10 +453,11 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
 
       {/* Workspace Header: View Toggle + Actions */}
       <div className="workspace__header">
-        <div className="workspace__view-toggle">
+        <div className="workspace__view-toggle" role="group" aria-label="View mode">
           <button
             className={`workspace__view-btn ${viewMode === 'read' ? 'workspace__view-btn--active' : ''}`}
             onClick={() => setViewMode('read')}
+            aria-pressed={viewMode === 'read'}
           >
             Read
           </button>
@@ -464,15 +467,18 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
               setViewMode('edit');
               setTimeout(() => editorRef.current?.focus(), 0);
             }}
+            aria-pressed={viewMode === 'edit'}
           >
             Edit
           </button>
-          <span className="workspace__view-hint">⌘E</span>
+          <span className="workspace__view-hint" aria-hidden="true">⌘E</span>
         </div>
 
         {/* Book Selector Dropdown */}
         <div className="workspace__book-selector">
+          <label htmlFor="workspace-book-select" className="sr-only">Active book for Add to Book</label>
           <select
+            id="workspace-book-select"
             value={bookshelf.activeBookUri || ''}
             onChange={(e) => {
               const uri = e.target.value;
@@ -493,6 +499,7 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
               className="workspace__go-to-book-btn"
               onClick={onGoToBook}
               title="Go to this book in Archive"
+              aria-label="Go to selected book in Archive"
             >
               →
             </button>

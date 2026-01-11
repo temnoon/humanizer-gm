@@ -52,11 +52,24 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
   ];
 
   const modalContent = (
-    <div className="theme-modal" onClick={onClose}>
+    <div
+      className="theme-modal"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="theme-modal-title"
+    >
       <div className="theme-modal__content" onClick={e => e.stopPropagation()}>
         <div className="theme-modal__header">
-          <h2 className="theme-modal__title">Appearance</h2>
-          <button className="theme-modal__close" onClick={onClose}>×</button>
+          <h2 id="theme-modal-title" className="theme-modal__title">Appearance</h2>
+          <button
+            className="theme-modal__close"
+            onClick={onClose}
+            aria-label="Close theme settings"
+            autoFocus
+          >
+            ×
+          </button>
         </div>
 
         {/* Theme Mode */}
@@ -68,8 +81,10 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
                 key={opt.mode}
                 className={`theme-modal__option ${settings.mode === opt.mode ? 'theme-modal__option--active' : ''}`}
                 onClick={() => setMode(opt.mode)}
+                aria-pressed={settings.mode === opt.mode}
+                aria-label={`${opt.label} theme`}
               >
-                <span className="theme-modal__option-icon">{opt.icon}</span>
+                <span className="theme-modal__option-icon" aria-hidden="true">{opt.icon}</span>
                 <span className="theme-modal__option-label">{opt.label}</span>
               </button>
             ))}
@@ -86,8 +101,10 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
                 className={`theme-modal__option ${settings.fontFamily === opt.family ? 'theme-modal__option--active' : ''}`}
                 onClick={() => setFontFamily(opt.family)}
                 style={{ fontFamily: opt.family === 'mono' ? 'monospace' : opt.family }}
+                aria-pressed={settings.fontFamily === opt.family}
+                aria-label={`${opt.label} font`}
               >
-                <span className="theme-modal__option-icon">{opt.icon}</span>
+                <span className="theme-modal__option-icon" aria-hidden="true">{opt.icon}</span>
                 <span className="theme-modal__option-label">{opt.label}</span>
               </button>
             ))}
@@ -104,8 +121,10 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
                 className={`theme-modal__option ${settings.fontSize === opt.size ? 'theme-modal__option--active' : ''}`}
                 onClick={() => setFontSize(opt.size)}
                 style={{ fontSize: opt.size === 'small' ? '0.8rem' : opt.size === 'large' ? '1.2rem' : '1rem' }}
+                aria-pressed={settings.fontSize === opt.size}
+                aria-label={`${opt.label} font size`}
               >
-                <span className="theme-modal__option-icon">{opt.icon}</span>
+                <span className="theme-modal__option-icon" aria-hidden="true">{opt.icon}</span>
                 <span className="theme-modal__option-label">{opt.label}</span>
               </button>
             ))}
@@ -121,8 +140,10 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
                 key={opt.height}
                 className={`theme-modal__option ${settings.lineHeight === opt.height ? 'theme-modal__option--active' : ''}`}
                 onClick={() => setLineHeight(opt.height)}
+                aria-pressed={settings.lineHeight === opt.height}
+                aria-label={`${opt.label} line spacing`}
               >
-                <span className="theme-modal__option-icon">{opt.icon}</span>
+                <span className="theme-modal__option-icon" aria-hidden="true">{opt.icon}</span>
                 <span className="theme-modal__option-label">{opt.label}</span>
               </button>
             ))}
@@ -138,8 +159,10 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
                 key={opt.accent}
                 className={`theme-modal__option ${settings.colorAccent === opt.accent ? 'theme-modal__option--active' : ''}`}
                 onClick={() => setColorAccent(opt.accent)}
+                aria-pressed={settings.colorAccent === opt.accent}
+                aria-label={`${opt.label} accent color`}
               >
-                <span className={`theme-modal__swatch theme-modal__swatch--${opt.accent}`} />
+                <span className={`theme-modal__swatch theme-modal__swatch--${opt.accent}`} aria-hidden="true" />
                 <span className="theme-modal__option-label">{opt.label}</span>
               </button>
             ))}
@@ -155,8 +178,10 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
                 key={opt.width}
                 className={`theme-modal__option ${settings.editorWidth === opt.width ? 'theme-modal__option--active' : ''}`}
                 onClick={() => setEditorWidth(opt.width)}
+                aria-pressed={settings.editorWidth === opt.width}
+                aria-label={`${opt.label} editor width`}
               >
-                <span className="theme-modal__option-icon">{opt.icon}</span>
+                <span className="theme-modal__option-icon" aria-hidden="true">{opt.icon}</span>
                 <span className="theme-modal__option-label">{opt.label}</span>
               </button>
             ))}

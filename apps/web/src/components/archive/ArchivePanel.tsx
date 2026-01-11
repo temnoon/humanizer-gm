@@ -315,21 +315,30 @@ export function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGr
       )}
 
       {/* Search */}
-      <div className="archive-browser__search">
+      <div className="archive-browser__search" role="search">
+        <label htmlFor="archive-search" className="sr-only">Search conversations</label>
         <input
+          id="archive-search"
           type="text"
           placeholder="Search conversations..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="archive-browser__search-input"
+          aria-describedby={searchQuery ? 'archive-search-status' : undefined}
         />
         {searchQuery && (
           <button
             className="archive-browser__search-clear"
             onClick={() => setSearchQuery('')}
+            aria-label="Clear search"
           >
             ×
           </button>
+        )}
+        {searchQuery && (
+          <span id="archive-search-status" className="sr-only">
+            {filteredConversations.length} results found
+          </span>
         )}
       </div>
 
@@ -465,21 +474,23 @@ export function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGr
 
           {/* Pagination */}
           {total > PAGE_SIZE && (
-            <div className="archive-browser__pagination">
+            <nav className="archive-browser__pagination" aria-label="Conversation list pagination">
               <button
                 disabled={offset === 0}
                 onClick={() => loadConversations(Math.max(0, offset - PAGE_SIZE))}
+                aria-label="Previous page"
               >
                 ← Prev
               </button>
-              <span>{offset + 1}-{Math.min(offset + PAGE_SIZE, total)} of {total}</span>
+              <span aria-live="polite">{offset + 1}-{Math.min(offset + PAGE_SIZE, total)} of {total}</span>
               <button
                 disabled={offset + PAGE_SIZE >= total}
                 onClick={() => loadConversations(offset + PAGE_SIZE)}
+                aria-label="Next page"
               >
                 Next →
               </button>
-            </div>
+            </nav>
           )}
 
           {/* Empty state when no conversations */}

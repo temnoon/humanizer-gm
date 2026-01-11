@@ -12,11 +12,13 @@ export function ThemeToggle() {
 
   return (
     <>
-      <div className="theme-toggle">
+      <div className="theme-toggle" role="group" aria-label="Theme selection">
         <button
           className={`theme-toggle__btn ${resolved === 'sepia' ? 'theme-toggle__btn--active' : ''}`}
           onClick={() => setMode('sepia')}
           title="Sepia theme"
+          aria-label="Sepia theme"
+          aria-pressed={resolved === 'sepia'}
         >
           📜
         </button>
@@ -24,6 +26,8 @@ export function ThemeToggle() {
           className={`theme-toggle__btn ${resolved === 'light' ? 'theme-toggle__btn--active' : ''}`}
           onClick={() => setMode('light')}
           title="Light theme"
+          aria-label="Light theme"
+          aria-pressed={resolved === 'light'}
         >
           ☀️
         </button>
@@ -31,6 +35,8 @@ export function ThemeToggle() {
           className={`theme-toggle__btn ${resolved === 'dark' ? 'theme-toggle__btn--active' : ''}`}
           onClick={() => setMode('dark')}
           title="Dark theme"
+          aria-label="Dark theme"
+          aria-pressed={resolved === 'dark'}
         >
           🌙
         </button>
@@ -38,6 +44,8 @@ export function ThemeToggle() {
           className="theme-toggle__btn"
           onClick={() => setShowSettings(true)}
           title="Theme settings"
+          aria-label="Open theme settings"
+          aria-haspopup="dialog"
         >
           ⚙
         </button>

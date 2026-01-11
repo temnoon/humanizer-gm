@@ -31,6 +31,12 @@
   background: var(--studio-hover);
 }
 
+.archive-item__header:focus-visible {
+  outline: 2px solid var(--studio-accent, #6366f1);
+  outline-offset: 2px;
+  background: var(--studio-hover);
+}
+
 .archive-item__header--expanded {
   background: var(--studio-quote-bg);
 }
@@ -104,6 +110,13 @@
   background: var(--studio-hover);
   border-left-color: var(--studio-accent);
   color: var(--studio-text);
+}
+
+.archive-message:focus-visible {
+  outline: 2px solid var(--studio-accent, #6366f1);
+  outline-offset: 2px;
+  background: var(--studio-hover);
+  border-left-color: var(--studio-accent);
 }
 
 .archive-message__preview {

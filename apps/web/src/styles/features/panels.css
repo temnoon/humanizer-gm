@@ -12,8 +12,8 @@
   position: fixed;
   bottom: var(--space-xl, 2rem);
   right: var(--space-xl, 2rem);
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
