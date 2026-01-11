@@ -321,6 +321,9 @@ export class AgentAUIBridge {
   private config: BridgeConfig;
   private auiContext: AUIContext | null = null;
 
+  // Initialization guard to prevent re-initialization spam
+  private initialized = false;
+
   // Agent orchestrator connection (will be set from Electron IPC or direct import)
   private orchestratorConnected = false;
   private mockAgents: AgentInfo[] = [];
@@ -342,6 +345,12 @@ export class AgentAUIBridge {
    * Initialize the bridge with AUI context
    */
   initialize(context: AUIContext): void {
+    // Guard against re-initialization (prevents console spam)
+    if (this.initialized) {
+      return;
+    }
+    this.initialized = true;
+
     this.auiContext = context;
 
     // Try to connect to the orchestrator
@@ -367,6 +376,11 @@ export class AgentAUIBridge {
    * In Electron, this uses IPC. In web, this is a no-op until wired.
    */
   private connectToOrchestrator(): void {
+    // Already connected - skip
+    if (this.orchestratorConnected) {
+      return;
+    }
+
     // Check if we're in Electron with access to the agent council
     if (typeof window === 'undefined') {
       this.setupMockConnection();

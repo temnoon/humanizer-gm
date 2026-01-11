@@ -1,0 +1,150 @@
+/**
+ * Error Boundary & Error Handling Styles
+ *
+ * Styles for error states, fallback UIs, and image placeholders.
+ */
+
+/* ============================================
+   Error Boundary - Full Page
+   ============================================ */
+
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: var(--space-lg, 24px);
+  background: var(--studio-bg-secondary, #f9fafb);
+  border-radius: var(--radius-md, 8px);
+}
+
+.error-boundary__content {
+  max-width: 400px;
+  text-align: center;
+}
+
+.error-boundary__title {
+  margin: 0 0 var(--space-sm, 8px);
+  font-size: var(--font-size-lg, 1.25rem);
+  font-weight: 600;
+  color: var(--studio-text, #111827);
+}
+
+.error-boundary__message {
+  margin: 0 0 var(--space-md, 16px);
+  font-size: var(--font-size-base, 1rem);
+  color: var(--studio-text-secondary, #6b7280);
+  line-height: 1.5;
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: var(--space-sm, 8px);
+  justify-content: center;
+}
+
+.error-boundary__retry,
+.error-boundary__reload {
+  padding: var(--space-sm, 8px) var(--space-md, 16px);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 500;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  min-height: 44px; /* WCAG touch target */
+}
+
+.error-boundary__retry {
+  background: var(--studio-accent, #6366f1);
+  color: var(--studio-text);
+  border: none;
+}
+
+.error-boundary__retry:hover {
+  background: var(--studio-accent-hover, #4f46e5);
+}
+
+.error-boundary__retry:focus-visible {
+  outline: 2px solid var(--studio-accent, #6366f1);
+  outline-offset: 2px;
+}
+
+.error-boundary__reload {
+  background: transparent;
+  color: var(--studio-text-secondary, #6b7280);
+  border: 1px solid var(--studio-border, #e5e7eb);
+}
+
+.error-boundary__reload:hover {
+  background: var(--studio-bg-hover, #f3f4f6);
+}
+
+.error-boundary__reload:focus-visible {
+  outline: 2px solid var(--studio-accent, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   Error Boundary - Inline (for panels/views)
+   ============================================ */
+
+.error-boundary--inline {
+  min-height: 100px;
+  padding: var(--space-md, 16px);
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+}
+
+.error-boundary__inline-message {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--studio-text-secondary, #6b7280);
+}
+
+.error-boundary__inline-retry {
+  padding: var(--space-xs, 4px) var(--space-sm, 8px);
+  font-size: var(--font-size-sm, 0.875rem);
+  background: transparent;
+  color: var(--studio-accent, #6366f1);
+  border: 1px solid var(--studio-accent, #6366f1);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  min-height: 44px; /* WCAG touch target */
+}
+
+.error-boundary__inline-retry:hover {
+  background: var(--studio-accent, #6366f1);
+  color: var(--studio-text);
+}
+
+.error-boundary__inline-retry:focus-visible {
+  outline: 2px solid var(--studio-accent, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   Image Fallback States
+   ============================================ */
+
+.image-fallback {
+  background: var(--studio-bg-secondary, #f3f4f6);
+  object-fit: contain;
+}
+
+.profile-image {
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.profile-image.image-fallback {
+  background: var(--studio-bg-tertiary, #e5e7eb);
+}
+
+.media-thumbnail {
+  object-fit: cover;
+  background: var(--studio-bg-dark, #1f2937);
+}
+
+.media-thumbnail.image-fallback {
+  background: var(--studio-bg-dark, #1f2937);
+}

@@ -15,6 +15,7 @@ import { handleOAuthCallback } from './lib/auth/api';
 import { LoginPromptModal } from './components/auth/LoginPromptModal';
 import { LayoutProvider } from './components/layout';
 import { ElectronContainer } from './components/layout/WindowTitleBar';
+import { ErrorBoundary } from './components/errors';
 import { initPlatformConfig } from './lib/platform';
 
 // Initialize platform configuration early (fetches archive server port)
@@ -172,28 +173,30 @@ function AuthCallback() {
 export function App() {
   return (
     <ElectronContainer>
-      <AuthProvider>
-        <LayoutProvider>
-          <HashRouter>
-            <Routes>
-              {/* Studio is the default */}
-              <Route path="/" element={<Studio />} />
+      <ErrorBoundary componentName="App">
+        <AuthProvider>
+          <LayoutProvider>
+            <HashRouter>
+              <Routes>
+                {/* Studio is the default */}
+                <Route path="/" element={<Studio />} />
 
-              {/* Auth callback */}
-              <Route path="/auth/callback" element={<AuthCallback />} />
+                {/* Auth callback */}
+                <Route path="/auth/callback" element={<AuthCallback />} />
 
-              {/* Book reader */}
-              <Route path="/book" element={<BookPage />} />
+                {/* Book reader */}
+                <Route path="/book" element={<BookPage />} />
 
-              {/* Legacy SIC analyzer */}
-              <Route path="/analyze" element={<AnalyzePage />} />
-            </Routes>
-          </HashRouter>
+                {/* Legacy SIC analyzer */}
+                <Route path="/analyze" element={<AnalyzePage />} />
+              </Routes>
+            </HashRouter>
 
-          {/* Global login prompt modal - shows when auth is required */}
-          <LoginPromptModal />
-        </LayoutProvider>
-      </AuthProvider>
+            {/* Global login prompt modal - shows when auth is required */}
+            <LoginPromptModal />
+          </LayoutProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </ElectronContainer>
   );
 }

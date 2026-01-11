@@ -53,6 +53,7 @@
 @import './styles/components/buttons.css';
 @import './styles/components/profile-cards.css';
 @import './styles/components/cards.css';
+@import './styles/components/errors.css';
 /* Modularized utility styles */
 @import './styles/utilities/electron.css';
 @import './styles/utilities/responsive.css';

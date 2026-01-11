@@ -456,6 +456,16 @@ export function createFacebookRouter(): Router {
         return;
       }
 
+      // Pre-check: Audio files in /audio/ folders don't have video tracks
+      // Return early to avoid thumbnail service throwing on audio-only files
+      if (resolved.includes('/audio/') || resolved.includes('\\audio\\')) {
+        res.status(404).json({
+          error: 'Audio-only file',
+          audioOnly: true,
+        });
+        return;
+      }
+
       const service = getThumbnailService();
       const result = await service.getThumbnail(resolved);
 
