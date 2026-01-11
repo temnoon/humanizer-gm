@@ -125,18 +125,26 @@
   margin: 0 0 var(--space-md);
 }
 
-/* Grid layout for thumbnails (legacy) */
+/* 2-column grid for image thumbnails (~1/4 page each) */
 .content-viewer__media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: var(--space-sm);
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
 }
 
 .content-viewer__media-thumb {
-  aspect-ratio: 1;
+  aspect-ratio: 4/3;
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--studio-quote-bg);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.content-viewer__media-thumb:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .content-viewer__media-thumb img {
@@ -145,7 +153,20 @@
   object-fit: cover;
 }
 
-/* List layout for full-size media display */
+/* Video list below images */
+.content-viewer__video-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.content-viewer__video-item {
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Legacy list layout */
 .content-viewer__media-list {
   display: flex;
   flex-direction: column;

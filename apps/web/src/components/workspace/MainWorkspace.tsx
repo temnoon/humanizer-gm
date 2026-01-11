@@ -61,6 +61,9 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
   const [navLoading, setNavLoading] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  // Content media lightbox state (separate from gallery lightbox)
+  const [contentLightboxOpen, setContentLightboxOpen] = useState(false);
+  const [contentLightboxIndex, setContentLightboxIndex] = useState(0);
   const [viewMode, setViewMode] = useState<WorkspaceViewMode>('read');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [editContent, setEditContent] = useState('');
@@ -411,6 +414,27 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
     return () => window.removeEventListener('keydown', handleKey);
   }, [lightboxOpen, selectedMedia?.relatedMedia?.length]);
 
+  // Keyboard navigation for content media lightbox
+  useEffect(() => {
+    if (!contentLightboxOpen || !selectedContent?.media) return;
+
+    const imageMedia = selectedContent.media.filter(m => m.media_type === 'image');
+    const maxIndex = imageMedia.length - 1;
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setContentLightboxOpen(false);
+      } else if (e.key === 'ArrowLeft') {
+        setContentLightboxIndex(current => Math.max(0, current - 1));
+      } else if (e.key === 'ArrowRight') {
+        setContentLightboxIndex(current => Math.min(maxIndex, current + 1));
+      }
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [contentLightboxOpen, selectedContent?.media]);
+
   // Render content viewer if selectedContent is set (Facebook posts/comments)
   if (selectedContent) {
     const formatContentDate = (ts: number) => {
@@ -466,35 +490,108 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
           </div>
 
           {/* Media attachments if present */}
-          {selectedContent.media && selectedContent.media.length > 0 && (
-            <div className="content-viewer__media">
-              <h3 className="content-viewer__media-header">
-                Attached Media ({selectedContent.media.length})
-              </h3>
-              <div className="content-viewer__media-list">
-                {selectedContent.media.map(item => (
-                  <div key={item.id} className="content-viewer__media-item">
-                    {item.media_type === 'image' ? (
-                      <img
-                        src={getMediaUrl(item.file_path)}
-                        alt="Attached media"
-                        loading="lazy"
-                        className="content-viewer__media-image"
-                      />
-                    ) : (
-                      <VideoPlayer
-                        src={getMediaUrl(item.file_path)}
-                        filePath={item.file_path}
-                        mediaId={item.id}
-                        showTranscription={true}
-                        className="content-viewer__media-video"
-                      />
-                    )}
+          {selectedContent.media && selectedContent.media.length > 0 && (() => {
+            const imageMedia = selectedContent.media.filter(m => m.media_type === 'image');
+            const videoMedia = selectedContent.media.filter(m => m.media_type === 'video');
+
+            return (
+              <div className="content-viewer__media">
+                <h3 className="content-viewer__media-header">
+                  Attached Media ({selectedContent.media.length})
+                </h3>
+
+                {/* Images in 2-column grid */}
+                {imageMedia.length > 0 && (
+                  <div className="content-viewer__media-grid">
+                    {imageMedia.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="content-viewer__media-thumb"
+                        onClick={() => {
+                          setContentLightboxIndex(idx);
+                          setContentLightboxOpen(true);
+                        }}
+                      >
+                        <img
+                          src={getMediaUrl(item.file_path)}
+                          alt="Attached media"
+                          loading="lazy"
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {/* Videos below images */}
+                {videoMedia.length > 0 && (
+                  <div className="content-viewer__video-list">
+                    {videoMedia.map(item => (
+                      <div key={item.id} className="content-viewer__video-item">
+                        <VideoPlayer
+                          src={getMediaUrl(item.file_path)}
+                          filePath={item.file_path}
+                          mediaId={item.id}
+                          showTranscription={true}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
+
+          {/* Content Media Lightbox */}
+          {contentLightboxOpen && selectedContent.media && (() => {
+            const imageMedia = selectedContent.media.filter(m => m.media_type === 'image');
+            const currentImage = imageMedia[contentLightboxIndex];
+            if (!currentImage) return null;
+
+            return (
+              <div
+                className="media-lightbox"
+                onClick={() => setContentLightboxOpen(false)}
+              >
+                <button
+                  className="media-lightbox__close"
+                  onClick={() => setContentLightboxOpen(false)}
+                >
+                  ×
+                </button>
+
+                {contentLightboxIndex > 0 && (
+                  <button
+                    className="media-lightbox__nav media-lightbox__nav--prev"
+                    onClick={(e) => { e.stopPropagation(); setContentLightboxIndex(i => i - 1); }}
+                  >
+                    ‹
+                  </button>
+                )}
+
+                {contentLightboxIndex < imageMedia.length - 1 && (
+                  <button
+                    className="media-lightbox__nav media-lightbox__nav--next"
+                    onClick={(e) => { e.stopPropagation(); setContentLightboxIndex(i => i + 1); }}
+                  >
+                    ›
+                  </button>
+                )}
+
+                <img
+                  src={getMediaUrl(currentImage.file_path)}
+                  alt="Full size"
+                  className="media-lightbox__image"
+                  onClick={(e) => e.stopPropagation()}
+                />
+
+                <div className="media-lightbox__toolbar">
+                  <span className="media-lightbox__counter">
+                    {contentLightboxIndex + 1} / {imageMedia.length}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Context/thread info if present */}
           {selectedContent.context && (
