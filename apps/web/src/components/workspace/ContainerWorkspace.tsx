@@ -325,30 +325,33 @@ function ContentView({
         </div>
       </header>
 
-      <article className="container-workspace__content container-workspace__content--text">
-        {container.content.raw}
-      </article>
+      {/* Scrollable content area containing text AND media */}
+      <div className="container-workspace__scrollable">
+        <article className="container-workspace__content container-workspace__content--text">
+          {container.content.raw}
+        </article>
 
-      {/* Show linked media if any - 2 column grid */}
-      {imageMedia.length > 0 && (
-        <div className="container-workspace__media-grid">
-          {imageMedia.map((m, i) => (
-            <div
-              key={i}
-              className="container-workspace__media-thumb container-workspace__media-thumb--clickable"
-              onClick={() => {
-                setLightboxIndex(i);
-                setLightboxOpen(true);
-              }}
-            >
-              <img
-                src={m.url || getMediaUrl(m.filePath || '')}
-                alt={m.description || `Media ${i + 1}`}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+        {/* Show linked media if any - masonry 2 column grid */}
+        {imageMedia.length > 0 && (
+          <div className="container-workspace__media-grid">
+            {imageMedia.map((m, i) => (
+              <div
+                key={i}
+                className="container-workspace__media-thumb container-workspace__media-thumb--clickable"
+                onClick={() => {
+                  setLightboxIndex(i);
+                  setLightboxOpen(true);
+                }}
+              >
+                <img
+                  src={m.url || getMediaUrl(m.filePath || '')}
+                  alt={m.description || `Media ${i + 1}`}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Lightbox */}
       {lightboxOpen && imageMedia[lightboxIndex] && (
