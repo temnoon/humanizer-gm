@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from './types';
 import { getArchiveServerUrl, isElectron } from '../../lib/platform';
+import { ImageWithFallback, MediaThumbnail } from '../common';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -771,18 +772,15 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                               <div key={idx} className="facebook-view__item-media-thumb">
                                 {isVideo ? (
                                   <>
-                                    <img
+                                    <MediaThumbnail
                                       src={getVideoThumbnailUrl(ref, archiveServerUrl)}
                                       alt=""
                                       loading="lazy"
-                                      onError={(e) => {
-                                        e.currentTarget.style.display = 'none';
-                                      }}
                                     />
                                     <div className="facebook-view__item-media-video-badge">Video</div>
                                   </>
                                 ) : (
-                                  <img
+                                  <ImageWithFallback
                                     src={normalizeMediaPath(ref, archiveServerUrl)}
                                     alt=""
                                     loading="lazy"
@@ -885,28 +883,19 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                 onClick={() => handleSelectMedia(item, index)}
               >
                 {item.media_type === 'image' ? (
-                  <img
+                  <ImageWithFallback
                     src={getImageUrl(item)}
                     alt={item.filename}
                     loading="lazy"
                   />
                 ) : (
                   <div className="facebook-view__thumb-video-wrapper">
-                    <img
+                    <MediaThumbnail
                       src={getVideoThumbnailUrl(item.file_path, archiveServerUrl)}
                       alt={item.filename}
                       loading="lazy"
                       className="facebook-view__thumb-video-img"
-                      onError={(e) => {
-                        // Hide img and show fallback text
-                        e.currentTarget.style.display = 'none';
-                        const parent = e.currentTarget.parentElement;
-                        if (parent) {
-                          parent.classList.add('facebook-view__thumb-video-wrapper--no-thumb');
-                        }
-                      }}
                     />
-                    <div className="facebook-view__thumb-video-fallback">Video</div>
                     <div className="facebook-view__thumb-play-icon">
                       <svg viewBox="0 0 24 24" fill="currentColor">
                         <polygon points="5,3 19,12 5,21" />
@@ -974,7 +963,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
           )}
 
           {/* Image */}
-          <img
+          <ImageWithFallback
             className={`facebook-lightbox__image ${lightboxZoomed ? 'facebook-lightbox__image--zoomed' : ''}`}
             src={getImageUrl(media[lightboxIndex])}
             alt={media[lightboxIndex].filename}

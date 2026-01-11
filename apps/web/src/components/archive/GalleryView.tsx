@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQueue } from '../../lib/queue';
 import type { SelectedFacebookMedia } from './types';
 import { getArchiveServerUrl, isElectron } from '../../lib/platform';
+import { ImageWithFallback } from '../common';
 
 interface ImageAnalysis {
   id: string;
@@ -442,7 +443,7 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
             onClick={() => handleImageClick(image)}
             title={image.description || image.filename}
           >
-            <img
+            <ImageWithFallback
               src={image.thumbnail || image.url}
               alt={image.filename}
               loading="lazy"
@@ -518,7 +519,7 @@ export function GalleryView({ onSelectMedia }: GalleryViewProps) {
           {/* Main content area */}
           <div className="gallery-view__lightbox-content" onClick={(e) => e.stopPropagation()}>
             {/* Image */}
-            <img
+            <ImageWithFallback
               src={selectedImage.url}
               alt={imageAnalysis?.description || selectedImage.filename}
               className="gallery-view__lightbox-image"
