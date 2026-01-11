@@ -287,7 +287,7 @@ function MediaView({
 }
 
 /**
- * Simple text/post content viewer
+ * Simple text/post content viewer with image lightbox
  */
 function ContentView({
   container,
@@ -296,6 +296,12 @@ function ContentView({
   container: ArchiveContainer;
   onClose?: () => void;
 }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  // Filter to just images for lightbox navigation
+  const imageMedia = container.media?.filter(m => m.mediaType === 'image') || [];
+
   return (
     <div className="container-workspace container-workspace--content">
       <header className="container-workspace__header">
@@ -323,19 +329,68 @@ function ContentView({
         {container.content.raw}
       </article>
 
-      {/* Show linked media if any */}
-      {container.media && container.media.length > 0 && (
-        <div className="container-workspace__linked-media">
-          {container.media.map((m, i) => (
-            <div key={i} className="container-workspace__media-thumb">
-              {m.mediaType === 'image' && (
-                <img
-                  src={m.url || getMediaUrl(m.filePath || '')}
-                  alt={m.description || `Media ${i + 1}`}
-                />
-              )}
+      {/* Show linked media if any - 2 column grid */}
+      {imageMedia.length > 0 && (
+        <div className="container-workspace__media-grid">
+          {imageMedia.map((m, i) => (
+            <div
+              key={i}
+              className="container-workspace__media-thumb container-workspace__media-thumb--clickable"
+              onClick={() => {
+                setLightboxIndex(i);
+                setLightboxOpen(true);
+              }}
+            >
+              <img
+                src={m.url || getMediaUrl(m.filePath || '')}
+                alt={m.description || `Media ${i + 1}`}
+              />
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxOpen && imageMedia[lightboxIndex] && (
+        <div
+          className="container-workspace__lightbox"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            className="container-workspace__lightbox-close"
+            onClick={() => setLightboxOpen(false)}
+          >
+            ×
+          </button>
+
+          {lightboxIndex > 0 && (
+            <button
+              className="container-workspace__lightbox-nav container-workspace__lightbox-nav--prev"
+              onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i - 1); }}
+            >
+              ‹
+            </button>
+          )}
+
+          {lightboxIndex < imageMedia.length - 1 && (
+            <button
+              className="container-workspace__lightbox-nav container-workspace__lightbox-nav--next"
+              onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i + 1); }}
+            >
+              ›
+            </button>
+          )}
+
+          <img
+            src={imageMedia[lightboxIndex].url || getMediaUrl(imageMedia[lightboxIndex].filePath || '')}
+            alt="Full size"
+            className="container-workspace__lightbox-image"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          <div className="container-workspace__lightbox-counter">
+            {lightboxIndex + 1} / {imageMedia.length}
+          </div>
         </div>
       )}
     </div>
