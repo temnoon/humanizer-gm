@@ -122,6 +122,9 @@ export interface ArchiveSource {
  * Reference to linked media (not embedded)
  */
 export interface MediaReference {
+  /** Database ID for media item */
+  id?: string;
+
   /** Media container URI */
   uri: EntityURI;
 
@@ -130,6 +133,9 @@ export interface MediaReference {
 
   /** File path for local access */
   filePath?: string;
+
+  /** When media was created/uploaded (Unix timestamp or ISO string) */
+  created_at?: number | string;
 
   /** URL for remote access */
   url?: string;

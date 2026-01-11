@@ -151,11 +151,65 @@
 .video-player__transcript-text {
   color: var(--studio-text, #1a1918);
   line-height: 1.5;
-  max-height: 120px;
+  max-height: 200px;
   overflow-y: auto;
-  padding: var(--space-xs, 4px);
+  padding: var(--space-sm, 8px);
   background: var(--studio-quote-bg, rgba(0, 0, 0, 0.05));
   border-radius: var(--radius-sm, 4px);
+  user-select: text;
+  cursor: text;
+  white-space: pre-wrap;
+}
+
+/* Transcript header with label and actions */
+.video-player__transcript-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs, 4px);
+}
+
+.video-player__transcript-actions {
+  display: flex;
+  gap: var(--space-xs, 4px);
+}
+
+.video-player__action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--space-xs, 4px);
+  background: transparent;
+  color: var(--studio-text-secondary, #666);
+  border: 1px solid var(--studio-border, #e5e5e5);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.625rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.video-player__action-btn:hover {
+  background: var(--studio-bg-secondary, #f0f0f0);
+  color: var(--studio-text, #1a1918);
+}
+
+.video-player__action-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.video-player__action-btn--success {
+  color: var(--color-success, #28a745);
+  border-color: var(--color-success, #28a745);
+}
+
+/* Dark theme action buttons */
+[data-theme='dark'] .video-player__action-btn {
+  border-color: var(--studio-border, #444);
+}
+
+[data-theme='dark'] .video-player__action-btn:hover {
+  background: var(--studio-bg-secondary, #2a2a2a);
 }
 
 /* Dark theme transcription */

@@ -184,6 +184,14 @@ export class MediaItemsDatabase {
   }
 
   /**
+   * Get a single media item by ID
+   */
+  getMediaById(id: string): MediaItem | null {
+    const stmt = this.db.prepare('SELECT * FROM facebook_media WHERE id = ?');
+    return (stmt.get(id) as MediaItem) || null;
+  }
+
+  /**
    * Get all media items with filters
    */
   getMediaItems(filters: {

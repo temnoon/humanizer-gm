@@ -452,9 +452,47 @@ function MediaView({
                 <dd>{media.description}</dd>
               </>
             )}
-            <dt>Created</dt>
-            <dd>{new Date(container.meta.created).toLocaleDateString()}</dd>
+            <dt>Uploaded</dt>
+            <dd>
+              {media.created_at
+                ? new Date(
+                    typeof media.created_at === 'number' && media.created_at < 10000000000
+                      ? media.created_at * 1000 // Unix seconds to ms
+                      : media.created_at
+                  ).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })
+                : new Date(container.meta.created).toLocaleDateString()}
+            </dd>
           </dl>
+
+          {/* Linked content in info panel */}
+          {linkedContent.length > 0 && (
+            <div className="container-workspace__info-linked">
+              <h4>Referenced In</h4>
+              <ul className="container-workspace__info-linked-list">
+                {linkedContent.map((item) => (
+                  <li
+                    key={item.id}
+                    className="container-workspace__info-linked-item"
+                    onClick={() => onSelectContent?.(item.id)}
+                    role={onSelectContent ? 'button' : undefined}
+                    tabIndex={onSelectContent ? 0 : undefined}
+                  >
+                    <span className="container-workspace__info-linked-icon">
+                      {item.type === 'post' ? '📮' : '💬'}
+                    </span>
+                    <span className="container-workspace__info-linked-text">
+                      {item.title || item.text?.slice(0, 40) || 'Untitled'}
+                      {item.text && item.text.length > 40 ? '...' : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </aside>
       )}
     </div>

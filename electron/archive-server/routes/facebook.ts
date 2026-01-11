@@ -853,7 +853,7 @@ export function createFacebookRouter(): Router {
 
       // If mediaId provided, look up the file path
       if (mediaId && !mediaPath) {
-        const item = mediaDb.getMediaItems({ limit: 1 }).find(m => m.id === mediaId);
+        const item = mediaDb.getMediaById(mediaId);
         if (!item) {
           res.status(404).json({ error: 'Media item not found' });
           return;

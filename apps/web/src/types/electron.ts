@@ -302,6 +302,7 @@ export interface XanaduAPI {
 
 export interface ElectronAPI {
   xanadu: XanaduAPI;
+  openExternal?: (url: string) => Promise<{ success: boolean; error?: string }>;
   // Add other APIs as needed
 }
 
