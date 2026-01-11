@@ -225,11 +225,20 @@
   max-width: min(50rem, 95%);  /* ~800px centered for readability */
   margin-left: auto;
   margin-right: auto;
-  white-space: pre-wrap;
-  font-family: inherit;
-  line-height: 1.7;
-  color: var(--studio-text, #333);
-  text-align: left;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;  /* Break long URLs/strings */
+}
+
+/* Clickable links in content */
+.container-workspace__link {
+  color: var(--studio-accent, #4a90d9);
+  text-decoration: none;
+  word-break: break-all;  /* Break long URLs anywhere */
+}
+
+.container-workspace__link:hover {
+  text-decoration: underline;
 }
 
 /* Artifacts panel */

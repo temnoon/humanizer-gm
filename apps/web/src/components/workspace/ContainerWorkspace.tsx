@@ -9,13 +9,49 @@
  * - document → DocumentView
  */
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 import type { ArchiveContainer } from '@humanizer/core';
 import { BookContentView, type BookContent } from './BookContentView';
 import { AnalyzableMarkdownWithMetrics } from './AnalyzableMarkdown';
 import type { BookProject } from '../archive/book-project/types';
 import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
+
+/**
+ * Linkify URLs in text - makes URLs clickable
+ */
+function linkifyText(text: string): React.ReactNode {
+  // URL regex pattern
+  const urlPattern = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
+  const parts = text.split(urlPattern);
+
+  return parts.map((part, index) => {
+    if (urlPattern.test(part)) {
+      // Reset lastIndex since we're reusing the regex
+      urlPattern.lastIndex = 0;
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="container-workspace__link"
+          onClick={(e) => {
+            e.stopPropagation();
+            // In Electron, use shell.openExternal
+            if (isElectron && window.electronAPI?.openExternal) {
+              e.preventDefault();
+              window.electronAPI.openExternal(part);
+            }
+          }}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
 
 /**
  * Get media URL from file path - handles Electron vs browser
@@ -328,7 +364,7 @@ function ContentView({
       {/* Scrollable content area containing text AND media */}
       <div className="container-workspace__scrollable">
         <article className="container-workspace__content container-workspace__content--text">
-          {container.content.raw}
+          {linkifyText(container.content.raw)}
         </article>
 
         {/* Show linked media if any - masonry 2 column grid */}

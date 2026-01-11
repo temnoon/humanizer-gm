@@ -647,6 +647,7 @@
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
+  overflow: hidden;  /* Prevent long URLs from breaking layout */
 }
 
 .facebook-view__item:hover {
@@ -689,12 +690,19 @@
   font-weight: 500;
   color: var(--studio-text);
   margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .facebook-view__item-text {
   font-size: 0.75rem;
   line-height: 1.4;
   color: var(--studio-text);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;  /* Limit to 3 lines */
+  -webkit-box-orient: vertical;
 }
 
 .facebook-view__item-media {
