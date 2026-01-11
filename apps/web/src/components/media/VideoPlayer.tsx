@@ -102,8 +102,15 @@ export function VideoPlayer({
 
   // Load existing transcript if mediaId provided
   useEffect(() => {
+    // Reset transcript state when video changes
+    setTranscript(null);
+    setTranscriptError(null);
+
     const loadTranscript = async () => {
-      if (!mediaId) return;
+      if (!mediaId) {
+        setTranscriptStatus('idle');
+        return;
+      }
 
       try {
         setTranscriptStatus('loading');
