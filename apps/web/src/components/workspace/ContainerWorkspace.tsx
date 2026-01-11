@@ -14,6 +14,7 @@ import React, { useState } from 'react';
 import type { ArchiveContainer } from '@humanizer/core';
 import { BookContentView, type BookContent } from './BookContentView';
 import { AnalyzableMarkdownWithMetrics } from './AnalyzableMarkdown';
+import { VideoPlayer } from '../media/VideoPlayer';
 import type { BookProject } from '../archive/book-project/types';
 import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
 
@@ -390,8 +391,9 @@ function ContentView({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // Filter to just images for lightbox navigation
+  // Filter media by type
   const imageMedia = container.media?.filter(m => m.mediaType === 'image') || [];
+  const videoMedia = container.media?.filter(m => m.mediaType === 'video') || [];
 
   return (
     <div className="container-workspace container-workspace--content">
@@ -422,7 +424,7 @@ function ContentView({
           {linkifyText(container.content.raw)}
         </article>
 
-        {/* Show linked media if any - masonry 2 column grid */}
+        {/* Show linked media if any - masonry 2 column grid for images */}
         {imageMedia.length > 0 && (
           <div className="container-workspace__media-grid">
             {imageMedia.map((m, i) => (
@@ -437,6 +439,22 @@ function ContentView({
                     setLightboxIndex(i);
                     setLightboxOpen(true);
                   }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Show videos with VideoPlayer */}
+        {videoMedia.length > 0 && (
+          <div className="container-workspace__video-list">
+            {videoMedia.map((m, i) => (
+              <div key={i} className="container-workspace__video-item">
+                <VideoPlayer
+                  src={m.url || getMediaUrl(m.filePath || '')}
+                  filePath={m.filePath || ''}
+                  mediaId={m.id}
+                  showTranscription={true}
                 />
               </div>
             ))}

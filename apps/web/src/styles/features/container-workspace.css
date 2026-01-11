@@ -509,6 +509,31 @@
   border-radius: 20px;
 }
 
+/* Video list in posts */
+.container-workspace__video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.container-workspace__video-item {
+  max-width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--studio-quote-bg, #1a1a1a);
+}
+
+.container-workspace__video-item .video-player {
+  width: 100%;
+}
+
+.container-workspace__video-item .video-player__video {
+  width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+}
+
 /* Legacy linked-media (keep for backwards compat) */
 .container-workspace__linked-media {
   display: flex;
