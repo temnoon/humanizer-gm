@@ -165,8 +165,8 @@
 }
 
 .workspace__editor-btn:hover:not(:disabled) {
-  background: #7a5c12;
-  border-color: #7a5c12;
+  background: var(--studio-accent-hover);
+  border-color: var(--studio-accent-hover);
   box-shadow: var(--shadow-small);
 }
 

@@ -671,13 +671,13 @@
 }
 
 .facebook-view__item-type--post {
-  background: rgba(66, 103, 178, 0.15);
-  color: #4267B2;
+  background: var(--studio-info-bg);
+  color: var(--studio-info);
 }
 
 .facebook-view__item-type--comment {
-  background: rgba(76, 175, 80, 0.15);
-  color: #4CAF50;
+  background: var(--studio-success-bg);
+  color: var(--studio-success);
 }
 
 .facebook-view__item-date {
@@ -953,8 +953,8 @@
 .facebook-view__error {
   padding: 0.75rem;
   margin-bottom: 0.5rem;
-  background: rgba(220, 53, 69, 0.1);
-  color: #dc3545;
+  background: var(--studio-error-bg);
+  color: var(--studio-error);
   border-radius: 4px;
   font-size: 0.75rem;
 }
@@ -1313,8 +1313,8 @@
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #000;
-  background: rgba(255, 255, 255, 0.9);
+  color: var(--studio-text);
+  background: rgba(var(--studio-panel-bg-rgb), 0.9);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -1322,7 +1322,7 @@
 }
 
 .facebook-lightbox__close:hover {
-  background: #fff;
+  background: var(--studio-panel-bg);
 }
 
 .facebook-lightbox__nav {
@@ -1336,8 +1336,8 @@
   justify-content: center;
   font-size: 2rem;
   font-weight: 300;
-  color: #000;
-  background: rgba(255, 255, 255, 0.9);
+  color: var(--studio-text);
+  background: rgba(var(--studio-panel-bg-rgb), 0.9);
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -1345,7 +1345,7 @@
 }
 
 .facebook-lightbox__nav:hover {
-  background: #fff;
+  background: var(--studio-panel-bg);
 }
 
 .facebook-lightbox__nav--prev {
@@ -1646,18 +1646,18 @@
 }
 
 .explore-result__score--high {
-  background: rgba(34, 197, 94, 0.15);
-  color: #16a34a;
+  background: var(--studio-success-bg);
+  color: var(--studio-success);
 }
 
 .explore-result__score--medium {
-  background: rgba(245, 158, 11, 0.15);
-  color: #d97706;
+  background: var(--studio-warning-bg);
+  color: var(--studio-warning);
 }
 
 .explore-result__score--low {
-  background: rgba(107, 114, 128, 0.15);
-  color: #6b7280;
+  background: var(--studio-hover);
+  color: var(--studio-text-tertiary);
 }
 
 .explore-result__text {

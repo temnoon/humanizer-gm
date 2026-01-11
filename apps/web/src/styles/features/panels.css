@@ -1050,8 +1050,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: var(--color-info, #60a5fa);
-  color: #fff;
+  background: var(--studio-info);
+  color: var(--studio-panel-bg);
   border-radius: var(--radius-sm);
 }
 
@@ -1200,8 +1200,8 @@
   font-size: 0.625rem;
   font-weight: 600;
   text-transform: uppercase;
-  background: var(--color-info, #60a5fa);
-  color: #fff;
+  background: var(--studio-info);
+  color: var(--studio-panel-bg);
   border-radius: var(--radius-sm);
 }
 
