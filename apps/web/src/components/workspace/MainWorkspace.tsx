@@ -3,7 +3,7 @@
  *
  * The primary content editing panel for the Studio. Handles:
  * - Read/Edit mode toggle with split view editor
- * - Facebook media and content viewing
+ * - Facebook media and content viewing (via ContentViewer, MediaViewer)
  * - ChatGPT conversation navigation
  * - Book content with save functionality
  * - Keyboard shortcuts (Cmd+E, Cmd+S, Cmd+B, Cmd+1/2/3)
@@ -28,7 +28,8 @@ import { WelcomeScreen } from './WelcomeScreen';
 import { AnalyzableMarkdown } from './AnalyzableMarkdown';
 import { AddToBookDialog, type AddAction } from '../dialogs/AddToBookDialog';
 import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
-import { VideoPlayer } from '../media/VideoPlayer';
+import { ContentViewer } from './ContentViewer';
+import { MediaViewer } from './MediaViewer';
 
 /**
  * Convert ChatGPT-style LaTeX delimiters to standard $ delimiters
@@ -54,16 +55,38 @@ export interface MainWorkspaceProps {
 
 export type WorkspaceViewMode = 'read' | 'edit';
 
+/**
+ * Media URL helper - handles both full URLs and file paths
+ * Uses Electron's custom protocol for direct file serving, or falls back to archive server
+ */
+function getMediaUrl(filePath: string): string {
+  // If it's already a full URL, use it directly
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    return filePath;
+  }
+  // If it's already a local-media URL, use it directly
+  if (filePath.startsWith('local-media://')) {
+    return filePath;
+  }
+  // In Electron, use the custom protocol for direct file serving
+  if (isElectron) {
+    // URL format: local-media://serve/<absolute-path>
+    return `local-media://serve${filePath}`;
+  }
+  // In browser, use archive server with URL encoding (dynamic port from platform config)
+  const archiveServer = getArchiveServerUrlSync();
+  if (!archiveServer) {
+    console.warn('Archive server URL not initialized, media may not load');
+    return filePath; // Return raw path as fallback
+  }
+  return `${archiveServer}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
+}
+
 export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, onClearContent, onUpdateMedia, onGoToBook }: MainWorkspaceProps) {
   const { activeContent, activeNode, activeBuffer, getNodeHistory, importText, graph: _graph, buffers: _buffers } = useBuffers();
   const { setEditorWidth } = useTheme();
   const bookshelf = useBookshelf();
   const [navLoading, setNavLoading] = useState(false);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-  // Content media lightbox state (separate from gallery lightbox)
-  const [contentLightboxOpen, setContentLightboxOpen] = useState(false);
-  const [contentLightboxIndex, setContentLightboxIndex] = useState(0);
   const [viewMode, setViewMode] = useState<WorkspaceViewMode>('read');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [editContent, setEditContent] = useState('');
@@ -323,524 +346,26 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
     }
   };
 
-  // Media viewer helper - handles both full URLs and file paths
-  // Uses Electron's custom protocol for direct file serving, or falls back to archive server
-  const getMediaUrl = (filePath: string) => {
-    // If it's already a full URL, use it directly
-    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-      return filePath;
-    }
-    // If it's already a local-media URL, use it directly
-    if (filePath.startsWith('local-media://')) {
-      return filePath;
-    }
-    // In Electron, use the custom protocol for direct file serving
-    if (isElectron) {
-      // URL format: local-media://serve/<absolute-path>
-      return `local-media://serve${filePath}`;
-    }
-    // In browser, use archive server with URL encoding (dynamic port from platform config)
-    const archiveServer = getArchiveServerUrlSync();
-    if (!archiveServer) {
-      console.warn('Archive server URL not initialized, media may not load');
-      return filePath; // Return raw path as fallback
-    }
-    return `${archiveServer}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
-  };
-
-  const formatMediaDate = (ts: number) => {
-    return new Date(ts * 1000).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
-
-  // Get current index in related media
-  const getCurrentRelatedIndex = () => {
-    if (!selectedMedia?.relatedMedia) return -1;
-    return selectedMedia.relatedMedia.findIndex(m => m.id === selectedMedia.id);
-  };
-
-  // Handle clicking a related thumbnail - update main image
-  const handleRelatedClick = (item: { id: string; file_path: string; media_type: 'image' | 'video' }) => {
-    if (onUpdateMedia && selectedMedia) {
-      onUpdateMedia({
-        ...selectedMedia,
-        id: item.id,
-        file_path: item.file_path,
-        media_type: item.media_type,
-        filename: item.file_path.split('/').pop() || 'image',
-      });
-    }
-  };
-
-  // Open lightbox at current position
-  const openLightbox = () => {
-    const idx = getCurrentRelatedIndex();
-    setLightboxIndex(idx >= 0 ? idx : 0);
-    setLightboxOpen(true);
-  };
-
-  // Navigate lightbox using functional update to avoid stale closure
-  const navigateLightbox = (delta: number) => {
-    if (!selectedMedia?.relatedMedia) return;
-    setLightboxIndex(current => {
-      const newIndex = current + delta;
-      if (newIndex >= 0 && newIndex < (selectedMedia.relatedMedia?.length || 0)) {
-        return newIndex;
-      }
-      return current;
-    });
-  };
-
-  // Keyboard navigation for lightbox
-  useEffect(() => {
-    if (!lightboxOpen || !selectedMedia?.relatedMedia) return;
-
-    const maxIndex = selectedMedia.relatedMedia.length - 1;
-
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setLightboxOpen(false);
-      } else if (e.key === 'ArrowLeft') {
-        setLightboxIndex(current => Math.max(0, current - 1));
-      } else if (e.key === 'ArrowRight') {
-        setLightboxIndex(current => Math.min(maxIndex, current + 1));
-      }
-    };
-
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [lightboxOpen, selectedMedia?.relatedMedia?.length]);
-
-  // Keyboard navigation for content media lightbox
-  useEffect(() => {
-    if (!contentLightboxOpen || !selectedContent?.media) return;
-
-    const imageMedia = selectedContent.media.filter(m => m.media_type === 'image');
-    const maxIndex = imageMedia.length - 1;
-
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setContentLightboxOpen(false);
-      } else if (e.key === 'ArrowLeft') {
-        setContentLightboxIndex(current => Math.max(0, current - 1));
-      } else if (e.key === 'ArrowRight') {
-        setContentLightboxIndex(current => Math.min(maxIndex, current + 1));
-      }
-    };
-
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [contentLightboxOpen, selectedContent?.media]);
-
   // Render content viewer if selectedContent is set (Facebook posts/comments)
   if (selectedContent) {
-    const formatContentDate = (ts: number) => {
-      return new Date(ts * 1000).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    };
-
     return (
-      <div className="workspace workspace--content">
-        <div className="content-viewer">
-          {/* Header with back button and metadata */}
-          <header className="content-viewer__header">
-            <button
-              className="content-viewer__close"
-              onClick={onClearContent}
-              title="Close content viewer"
-            >
-              ← Back
-            </button>
-            <div className="content-viewer__meta">
-              <span className={`content-viewer__type content-viewer__type--${selectedContent.type}`}>
-                {selectedContent.type === 'post' ? '📄 Post' : '💬 Comment'}
-              </span>
-              <span className="content-viewer__date">
-                {formatContentDate(selectedContent.created_at)}
-              </span>
-              {selectedContent.author_name && (
-                <span className="content-viewer__author">
-                  by {selectedContent.author_name}
-                </span>
-              )}
-              {selectedContent.is_own_content && (
-                <span className="content-viewer__badge">Your content</span>
-              )}
-            </div>
-          </header>
-
-          {/* Title if present */}
-          {selectedContent.title && (
-            <h1 className="content-viewer__title">{selectedContent.title}</h1>
-          )}
-
-          {/* Main content */}
-          <div className="content-viewer__body">
-            <div className="content-viewer__text">
-              {selectedContent.text}
-            </div>
-          </div>
-
-          {/* Media attachments if present */}
-          {selectedContent.media && selectedContent.media.length > 0 && (() => {
-            const imageMedia = selectedContent.media.filter(m => m.media_type === 'image');
-            const videoMedia = selectedContent.media.filter(m => m.media_type === 'video');
-
-            return (
-              <div className="content-viewer__media">
-                <h3 className="content-viewer__media-header">
-                  Attached Media ({selectedContent.media.length})
-                </h3>
-
-                {/* Images in 2-column grid */}
-                {imageMedia.length > 0 && (
-                  <div
-                    className="content-viewer__media-grid"
-                    style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}
-                  >
-                    {imageMedia.map((item, idx) => (
-                      <div
-                        key={item.id}
-                        className="content-viewer__media-thumb"
-                        style={{
-                          aspectRatio: '4/3',
-                          cursor: 'pointer',
-                          borderRadius: '8px',
-                          overflow: 'hidden',
-                          background: '#f0f0f0'
-                        }}
-                        onClick={() => {
-                          console.log('[MainWorkspace] Image clicked, opening lightbox at index', idx);
-                          setContentLightboxIndex(idx);
-                          setContentLightboxOpen(true);
-                        }}
-                      >
-                        <img
-                          src={getMediaUrl(item.file_path)}
-                          alt="Attached media"
-                          loading="lazy"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Videos below images */}
-                {videoMedia.length > 0 && (
-                  <div className="content-viewer__video-list">
-                    {videoMedia.map(item => (
-                      <div key={item.id} className="content-viewer__video-item">
-                        <VideoPlayer
-                          src={getMediaUrl(item.file_path)}
-                          filePath={item.file_path}
-                          mediaId={item.id}
-                          showTranscription={true}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Content Media Lightbox */}
-          {contentLightboxOpen && selectedContent.media && (() => {
-            const imageMedia = selectedContent.media.filter(m => m.media_type === 'image');
-            const currentImage = imageMedia[contentLightboxIndex];
-            if (!currentImage) return null;
-
-            return (
-              <div
-                className="media-lightbox"
-                onClick={() => setContentLightboxOpen(false)}
-              >
-                <button
-                  className="media-lightbox__close"
-                  onClick={() => setContentLightboxOpen(false)}
-                >
-                  ×
-                </button>
-
-                {contentLightboxIndex > 0 && (
-                  <button
-                    className="media-lightbox__nav media-lightbox__nav--prev"
-                    onClick={(e) => { e.stopPropagation(); setContentLightboxIndex(i => i - 1); }}
-                  >
-                    ‹
-                  </button>
-                )}
-
-                {contentLightboxIndex < imageMedia.length - 1 && (
-                  <button
-                    className="media-lightbox__nav media-lightbox__nav--next"
-                    onClick={(e) => { e.stopPropagation(); setContentLightboxIndex(i => i + 1); }}
-                  >
-                    ›
-                  </button>
-                )}
-
-                <img
-                  src={getMediaUrl(currentImage.file_path)}
-                  alt="Full size"
-                  className="media-lightbox__image"
-                  onClick={(e) => e.stopPropagation()}
-                />
-
-                <div className="media-lightbox__toolbar">
-                  <span className="media-lightbox__counter">
-                    {contentLightboxIndex + 1} / {imageMedia.length}
-                  </span>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Context/thread info if present */}
-          {selectedContent.context && (
-            <div className="content-viewer__context">
-              <h3 className="content-viewer__context-header">Thread Context</h3>
-              <pre className="content-viewer__context-text">
-                {selectedContent.context}
-              </pre>
-            </div>
-          )}
-        </div>
-      </div>
+      <ContentViewer
+        content={selectedContent}
+        onClose={onClearContent}
+        getMediaUrl={getMediaUrl}
+      />
     );
   }
 
   // Render media viewer if selectedMedia is set
   if (selectedMedia) {
     return (
-      <div className="workspace workspace--media">
-        <div className="media-viewer media-viewer--fullscreen">
-          {/* Top bar with back button, info, and linked content */}
-          <header className="media-viewer__header media-viewer__header--expanded">
-            <div className="media-viewer__header-row">
-              <button
-                className="media-viewer__close"
-                onClick={onClearMedia}
-                title="Close media viewer"
-              >
-                ← Back
-              </button>
-              <div className="media-viewer__info">
-                <span className="media-viewer__filename">{selectedMedia.filename}</span>
-                <span className="media-viewer__meta">
-                  {formatMediaDate(selectedMedia.created_at)}
-                  {selectedMedia.width && selectedMedia.height && (
-                    <> · {selectedMedia.width}×{selectedMedia.height}</>
-                  )}
-                  {selectedMedia.context?.album && (
-                    <> · {selectedMedia.context.album}</>
-                  )}
-                </span>
-              </div>
-            </div>
-            {/* Linked posts/comments */}
-            {selectedMedia.linkedContent && selectedMedia.linkedContent.length > 0 && (
-              <div className="media-viewer__linked">
-                <span className="media-viewer__linked-label">Linked:</span>
-                <div className="media-viewer__linked-items">
-                  {selectedMedia.linkedContent.map((item, idx) => (
-                    <span key={item.id} className="media-viewer__linked-item">
-                      {idx > 0 && <span className="media-viewer__linked-sep">·</span>}
-                      <span className={`media-viewer__linked-type media-viewer__linked-type--${item.type}`}>
-                        {item.type === 'post' ? '📄' : '💬'}
-                      </span>
-                      <span className="media-viewer__linked-text">
-                        {item.title || (item.text ? item.text.slice(0, 60) + (item.text.length > 60 ? '...' : '') : `${item.type} from ${formatMediaDate(item.created_at)}`)}
-                      </span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </header>
-
-          {/* Main image area - fills most of viewport */}
-          <div className="media-viewer__stage">
-            {selectedMedia.media_type === 'image' ? (
-              <img
-                src={getMediaUrl(selectedMedia.file_path)}
-                alt={selectedMedia.filename}
-                className="media-viewer__image media-viewer__image--clickable"
-                onClick={openLightbox}
-                title="Click to open lightbox"
-              />
-            ) : (
-              <VideoPlayer
-                src={getMediaUrl(selectedMedia.file_path)}
-                filePath={selectedMedia.file_path}
-                mediaId={selectedMedia.id}
-                showTranscription={true}
-                className="media-viewer__video"
-              />
-            )}
-            {/* Navigation arrows for main viewer */}
-            {selectedMedia.relatedMedia && selectedMedia.relatedMedia.length > 1 && (() => {
-              const currentIdx = selectedMedia.relatedMedia.findIndex(m => m.id === selectedMedia.id);
-              const hasPrev = currentIdx > 0;
-              const hasNext = currentIdx < selectedMedia.relatedMedia.length - 1;
-
-              return (
-                <>
-                  {hasPrev && (
-                    <button
-                      className="media-viewer__nav media-viewer__nav--prev"
-                      onClick={() => handleRelatedClick(selectedMedia.relatedMedia![currentIdx - 1])}
-                      title="Previous image"
-                    >
-                      ‹
-                    </button>
-                  )}
-                  {hasNext && (
-                    <button
-                      className="media-viewer__nav media-viewer__nav--next"
-                      onClick={() => handleRelatedClick(selectedMedia.relatedMedia![currentIdx + 1])}
-                      title="Next image"
-                    >
-                      ›
-                    </button>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-
-          {/* Related thumbnails strip at bottom */}
-          {selectedMedia.relatedMedia && selectedMedia.relatedMedia.length > 1 && (
-            <div className="media-viewer__strip">
-              <span className="media-viewer__strip-label">
-                Related ({selectedMedia.relatedMedia.length})
-              </span>
-              <div className="media-viewer__strip-scroll">
-                {selectedMedia.relatedMedia.map(item => (
-                  <button
-                    key={item.id}
-                    className={`media-viewer__strip-thumb ${item.id === selectedMedia.id ? 'media-viewer__strip-thumb--active' : ''}`}
-                    onClick={() => handleRelatedClick(item)}
-                    title="Click to view"
-                  >
-                    <img
-                      src={getMediaUrl(item.file_path)}
-                      alt=""
-                      loading="lazy"
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Lightbox Modal */}
-        {lightboxOpen && selectedMedia.relatedMedia && selectedMedia.relatedMedia[lightboxIndex] && (() => {
-          const currentItem = selectedMedia.relatedMedia[lightboxIndex];
-          const currentUrl = getMediaUrl(currentItem.file_path);
-          const filename = currentItem.file_path.split('/').pop() || 'image';
-
-          const handleDownload = async (e: React.MouseEvent) => {
-            e.stopPropagation();
-            try {
-              const response = await fetch(currentUrl);
-              const blob = await response.blob();
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = filename;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            } catch (err) {
-              console.error('Download failed:', err);
-            }
-          };
-
-          const handleFullRes = (e: React.MouseEvent) => {
-            e.stopPropagation();
-            window.open(currentUrl, '_blank');
-          };
-
-          return (
-            <div
-              className="media-lightbox"
-              onClick={() => setLightboxOpen(false)}
-            >
-              <button
-                className="media-lightbox__close"
-                onClick={() => setLightboxOpen(false)}
-                title="Close (Esc)"
-              >
-                ✕
-              </button>
-
-              {/* Navigation arrows */}
-              {lightboxIndex > 0 && (
-                <button
-                  className="media-lightbox__nav media-lightbox__nav--prev"
-                  onClick={(e) => { e.stopPropagation(); navigateLightbox(-1); }}
-                  title="Previous (←)"
-                >
-                  ‹
-                </button>
-              )}
-              {lightboxIndex < selectedMedia.relatedMedia.length - 1 && (
-                <button
-                  className="media-lightbox__nav media-lightbox__nav--next"
-                  onClick={(e) => { e.stopPropagation(); navigateLightbox(1); }}
-                  title="Next (→)"
-                >
-                  ›
-                </button>
-              )}
-
-              {/* Image */}
-              <img
-                className="media-lightbox__image"
-                src={currentUrl}
-                alt=""
-                onClick={(e) => e.stopPropagation()}
-              />
-
-              {/* Bottom toolbar */}
-              <div className="media-lightbox__toolbar">
-                <span className="media-lightbox__counter">
-                  {lightboxIndex + 1} / {selectedMedia.relatedMedia.length}
-                </span>
-                <span className="media-lightbox__filename">{filename}</span>
-                <div className="media-lightbox__actions">
-                  <button
-                    className="media-lightbox__action"
-                    onClick={handleFullRes}
-                    title="View full resolution"
-                  >
-                    Full Size
-                  </button>
-                  <button
-                    className="media-lightbox__action"
-                    onClick={handleDownload}
-                    title="Download image"
-                  >
-                    Download
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-      </div>
+      <MediaViewer
+        media={selectedMedia}
+        onClose={onClearMedia}
+        onUpdateMedia={onUpdateMedia}
+        getMediaUrl={getMediaUrl}
+      />
     );
   }
 
