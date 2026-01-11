@@ -252,7 +252,7 @@ export function createFacebookRouter(): Router {
         return;
       }
 
-      // Parse media refs
+      // Parse media refs (these are file paths, not IDs)
       let mediaRefs: string[] = [];
       if (content.media_refs) {
         try {
@@ -263,10 +263,41 @@ export function createFacebookRouter(): Router {
         }
       }
 
-      // Get media items
-      const media = mediaRefs.length > 0 ? db.getRawDb().prepare(`
-        SELECT * FROM media_items WHERE id IN (${mediaRefs.map(() => '?').join(',')})
-      `).all(...mediaRefs) : [];
+      // Query by file_path since media_refs contains paths, not IDs
+      let media: any[] = [];
+      if (mediaRefs.length > 0) {
+        // First try to find in facebook_media table
+        const mediaDb = getMediaItemsDatabase();
+        const fbMedia = db.getRawDb().prepare(`
+          SELECT * FROM facebook_media WHERE file_path IN (${mediaRefs.map(() => '?').join(',')})
+        `).all(...mediaRefs);
+
+        if (fbMedia.length > 0) {
+          media = fbMedia;
+        } else {
+          // Fallback: try media_items table
+          const genericMedia = db.getRawDb().prepare(`
+            SELECT * FROM media_items WHERE file_path IN (${mediaRefs.map(() => '?').join(',')})
+          `).all(...mediaRefs);
+
+          if (genericMedia.length > 0) {
+            media = genericMedia;
+          } else {
+            // Last resort: construct minimal media objects from file paths
+            media = mediaRefs.map((filePath, idx) => {
+              const filename = path.basename(filePath);
+              const ext = path.extname(filePath).toLowerCase();
+              const isVideo = ['.mp4', '.mov', '.webm', '.avi'].includes(ext);
+              return {
+                id: `ref_${idx}`,
+                file_path: filePath,
+                filename,
+                media_type: isVideo ? 'video' : 'image',
+              };
+            });
+          }
+        }
+      }
 
       res.json({
         contentId,

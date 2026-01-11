@@ -573,6 +573,8 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
               <VideoPlayer
                 src={getMediaUrl(selectedMedia.file_path)}
                 filePath={selectedMedia.file_path}
+                mediaId={selectedMedia.id}
+                showTranscription={true}
                 className="media-viewer__video"
               />
             )}
