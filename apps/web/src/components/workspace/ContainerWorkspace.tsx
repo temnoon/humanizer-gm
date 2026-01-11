@@ -271,17 +271,58 @@ function MarkdownView({
 }
 
 /**
- * Media viewer for images/video/audio
+ * Linked content item type for media references
+ */
+interface LinkedContent {
+  id: string;
+  type: string;
+  title: string;
+  text: string;
+  created_at: string;
+  author_name?: string;
+}
+
+/**
+ * Media viewer for images/video/audio with linked content
  */
 function MediaView({
   container,
   onClose,
+  onSelectContent,
 }: {
   container: ArchiveContainer;
   onClose?: () => void;
+  onSelectContent?: (contentId: string) => void;
 }) {
   const media = container.media?.[0];
   const [showMetadata, setShowMetadata] = useState(false);
+  const [linkedContent, setLinkedContent] = useState<LinkedContent[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(false);
+
+  // Fetch linked content (posts/comments that reference this media)
+  React.useEffect(() => {
+    const fetchLinkedContent = async () => {
+      if (!media?.id) return;
+
+      setLoadingLinks(true);
+      try {
+        const archiveServer = getArchiveServerUrlSync();
+        if (!archiveServer) return;
+
+        const res = await fetch(`${archiveServer}/api/facebook/media/${media.id}/context`);
+        if (res.ok) {
+          const data = await res.json();
+          setLinkedContent(data.contentItems || []);
+        }
+      } catch (err) {
+        console.warn('[MediaView] Failed to load linked content:', err);
+      } finally {
+        setLoadingLinks(false);
+      }
+    };
+
+    fetchLinkedContent();
+  }, [media?.id]);
 
   if (!media) {
     return (
@@ -321,27 +362,69 @@ function MediaView({
         </div>
       </header>
 
-      <div className="container-workspace__media-container">
-        {media.mediaType === 'image' && (
-          <img
-            src={mediaUrl}
-            alt={media.description || container.meta.title}
-            className="container-workspace__image"
-          />
-        )}
-        {media.mediaType === 'video' && (
-          <video
-            src={mediaUrl}
-            controls
-            className="container-workspace__video"
-          />
-        )}
-        {media.mediaType === 'audio' && (
-          <audio
-            src={mediaUrl}
-            controls
-            className="container-workspace__audio"
-          />
+      <div className="container-workspace__media-main">
+        <div className="container-workspace__media-container">
+          {media.mediaType === 'image' && (
+            <img
+              src={mediaUrl}
+              alt={media.description || container.meta.title}
+              className="container-workspace__image"
+            />
+          )}
+          {media.mediaType === 'video' && (
+            <VideoPlayer
+              src={mediaUrl}
+              filePath={media.filePath || ''}
+              mediaId={media.id}
+              showTranscription={true}
+              className="container-workspace__video-player"
+            />
+          )}
+          {media.mediaType === 'audio' && (
+            <audio
+              src={mediaUrl}
+              controls
+              className="container-workspace__audio"
+            />
+          )}
+        </div>
+
+        {/* Linked content panel */}
+        {(linkedContent.length > 0 || loadingLinks) && (
+          <aside className="container-workspace__linked-content">
+            <h3>Referenced In</h3>
+            {loadingLinks ? (
+              <div className="container-workspace__linked-loading">Loading...</div>
+            ) : (
+              <ul className="container-workspace__linked-list">
+                {linkedContent.map((item) => (
+                  <li
+                    key={item.id}
+                    className="container-workspace__linked-item"
+                    onClick={() => onSelectContent?.(item.id)}
+                    role={onSelectContent ? 'button' : undefined}
+                    tabIndex={onSelectContent ? 0 : undefined}
+                  >
+                    <span className="container-workspace__linked-type">
+                      {item.type === 'post' ? '📮' : '💬'}
+                    </span>
+                    <div className="container-workspace__linked-info">
+                      <div className="container-workspace__linked-title">
+                        {item.title || item.text?.slice(0, 60) || 'Untitled'}
+                        {item.text && item.text.length > 60 ? '...' : ''}
+                      </div>
+                      <div className="container-workspace__linked-meta">
+                        {item.author_name && <span>{item.author_name}</span>}
+                        {item.created_at && (
+                          <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
         )}
       </div>
 

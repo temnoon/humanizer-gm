@@ -197,12 +197,17 @@ export function createFacebookRouter(): Router {
     try {
       const { mediaId } = req.params;
       const db = getEmbeddingDatabase();
-      const mediaDb = getMediaItemsDatabase();
 
-      // Get the media item
-      const mediaItem = db.getRawDb().prepare(`
-        SELECT * FROM media_items WHERE id = ?
+      // Try facebook_media table first, then media_items
+      let mediaItem = db.getRawDb().prepare(`
+        SELECT * FROM facebook_media WHERE id = ?
       `).get(mediaId);
+
+      if (!mediaItem) {
+        mediaItem = db.getRawDb().prepare(`
+          SELECT * FROM media_items WHERE id = ?
+        `).get(mediaId);
+      }
 
       if (!mediaItem) {
         res.status(404).json({ error: 'Media not found' });
@@ -214,19 +219,20 @@ export function createFacebookRouter(): Router {
       if ((mediaItem as any).context_id) {
         relatedMedia = db.getRawDb().prepare(`
           SELECT id, file_path, media_type, created_at
-          FROM media_items
+          FROM facebook_media
           WHERE context_id = ? AND id != ?
           ORDER BY created_at ASC
         `).all((mediaItem as any).context_id, mediaId);
       }
 
-      // Get linked content items that reference this media
+      // Get linked content items that reference this media (by ID or file_path)
+      const filePath = (mediaItem as any).file_path || '';
       const contentItems = db.getRawDb().prepare(`
         SELECT id, type, title, text, created_at, author_name
         FROM content_items
-        WHERE media_refs LIKE ?
+        WHERE media_refs LIKE ? OR media_refs LIKE ?
         ORDER BY created_at DESC
-      `).all(`%${mediaId}%`);
+      `).all(`%${mediaId}%`, `%${filePath}%`);
 
       res.json({
         media: mediaItem,
@@ -457,6 +463,12 @@ export function createFacebookRouter(): Router {
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1 year cache
         createReadStream(result.thumbnailPath).pipe(res);
+      } else if (result.audioOnly) {
+        // Audio-only files don't have thumbnails - return 404 (not an error)
+        res.status(404).json({
+          error: 'Audio-only file',
+          audioOnly: true,
+        });
       } else {
         res.status(500).json({
           error: 'Thumbnail generation failed',
@@ -862,6 +874,7 @@ export function createFacebookRouter(): Router {
       }
 
       console.log(`[facebook] Starting transcription: ${path.basename(resolved)}`);
+      console.log(`[facebook] Using model: ${model}`);
 
       // Update status to processing
       if (id) {

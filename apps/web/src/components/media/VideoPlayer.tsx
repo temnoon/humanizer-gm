@@ -13,6 +13,23 @@ import { useState, useRef, useEffect } from 'react';
 import { getArchiveServerUrl } from '../../lib/platform';
 import './VideoPlayer.css';
 
+/**
+ * Extract raw file path from URL or return as-is if already a raw path
+ */
+function extractFilePath(pathOrUrl: string): string {
+  if (!pathOrUrl) return '';
+  // Strip local-media://serve prefix if present
+  if (pathOrUrl.startsWith('local-media://serve')) {
+    return pathOrUrl.replace('local-media://serve', '');
+  }
+  // Strip http(s) archive server prefix if present
+  const httpMatch = pathOrUrl.match(/https?:\/\/[^/]+\/media\/(.+)/);
+  if (httpMatch) {
+    return decodeURIComponent(httpMatch[1]);
+  }
+  return pathOrUrl;
+}
+
 interface VideoPlayerProps {
   /** Video source URL */
   src: string;
@@ -50,18 +67,21 @@ export function VideoPlayer({
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // Extract raw file path (strip URL prefixes if present)
+  const rawFilePath = extractFilePath(filePath);
+
   // Load thumbnail poster
   useEffect(() => {
     const loadThumbnail = async () => {
       try {
         setPosterLoading(true);
         const archiveServer = await getArchiveServerUrl();
-        if (!archiveServer || !filePath) {
+        if (!archiveServer || !rawFilePath) {
           setPosterLoading(false);
           return;
         }
 
-        const url = `${archiveServer}/api/facebook/video-thumbnail?path=${encodeURIComponent(filePath)}`;
+        const url = `${archiveServer}/api/facebook/video-thumbnail?path=${encodeURIComponent(rawFilePath)}`;
 
         // Verify thumbnail exists via HEAD request
         const res = await fetch(url, { method: 'HEAD' });
@@ -77,7 +97,7 @@ export function VideoPlayer({
     };
 
     loadThumbnail();
-  }, [filePath]);
+  }, [rawFilePath]);
 
   // Load existing transcript if mediaId provided
   useEffect(() => {
@@ -126,7 +146,7 @@ export function VideoPlayer({
 
       const body = mediaId
         ? { mediaId, model: 'ggml-tiny.en.bin' }
-        : { path: filePath, model: 'ggml-tiny.en.bin' };
+        : { path: rawFilePath, model: 'ggml-tiny.en.bin' };
 
       const res = await fetch(`${archiveServer}/api/facebook/transcription/transcribe`, {
         method: 'POST',

@@ -13,9 +13,10 @@
 
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { getFfmpegPath, isFFmpegAvailable } from './ffmpeg-path';
+import { probeVideo } from './VideoProbeService';
 
 export interface ThumbnailOptions {
   /** Thumbnail width in pixels. Default: 320 */
@@ -31,6 +32,8 @@ export interface ThumbnailResult {
   thumbnailPath?: string;
   cached: boolean;
   error?: string;
+  /** True if the file is audio-only (no video track) */
+  audioOnly?: boolean;
 }
 
 export class ThumbnailService {
@@ -51,14 +54,21 @@ export class ThumbnailService {
   /**
    * Get or generate a thumbnail for a video file
    * Uses deduplication to prevent concurrent generation of same thumbnail
+   * Skips audio-only files (returns audioOnly: true)
    */
   async getThumbnail(videoPath: string, options: ThumbnailOptions = {}): Promise<ThumbnailResult> {
     const hash = this.getVideoHash(videoPath);
     const thumbnailPath = join(this.thumbnailDir, `${hash}.jpg`);
+    const audioOnlyMarker = join(this.thumbnailDir, `${hash}.audio-only`);
 
     // Return cached thumbnail if exists
     if (existsSync(thumbnailPath)) {
       return { success: true, thumbnailPath, cached: true };
+    }
+
+    // Check if we've already determined this is audio-only
+    if (existsSync(audioOnlyMarker)) {
+      return { success: false, cached: true, audioOnly: true, error: 'Audio-only file' };
     }
 
     // Check if ffmpeg is available
@@ -73,6 +83,19 @@ export class ThumbnailService {
     // Check if already generating
     if (this.generating.has(hash)) {
       return this.generating.get(hash)!;
+    }
+
+    // Probe to check if file has video track
+    const probeResult = await probeVideo(videoPath);
+    if (!probeResult.hasVideoTrack) {
+      // Mark as audio-only so we don't probe again
+      try {
+        writeFileSync(audioOnlyMarker, 'audio-only');
+      } catch {
+        // Ignore write errors
+      }
+      console.log('[Thumbnail] Skipping audio-only file:', videoPath);
+      return { success: false, cached: false, audioOnly: true, error: 'Audio-only file (no video track)' };
     }
 
     // Generate new thumbnail

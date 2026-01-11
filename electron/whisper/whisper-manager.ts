@@ -96,8 +96,11 @@ export async function initWhisper(): Promise<boolean> {
     // Try to load the whisper module
     try {
       // Dynamic import to handle case where package isn't installed
-      whisperModule = await import('@kutalia/whisper-node-addon');
+      const imported = await import('@kutalia/whisper-node-addon');
+      // Handle both default export and module itself
+      whisperModule = imported.default || imported;
       console.log('[Whisper] Module loaded successfully');
+      console.log('[Whisper] Module has transcribe:', typeof whisperModule.transcribe);
       return true;
     } catch (err) {
       console.log('[Whisper] Module not installed:', (err as Error).message);
@@ -257,12 +260,32 @@ export async function transcribeAudio(
   modelName: string = 'ggml-base.en.bin',
   onProgress?: (progress: TranscriptionProgress) => void
 ): Promise<TranscriptionResult> {
+  // Auto-initialize if not already done
   if (!whisperModule) {
-    throw new Error('Whisper module not loaded');
+    console.log('[Whisper] Auto-initializing for transcription...');
+    try {
+      const imported = await import('@kutalia/whisper-node-addon');
+      // Handle both default export and named export
+      whisperModule = imported.default || imported;
+      console.log('[Whisper] Module loaded successfully via auto-init');
+      console.log('[Whisper] Module keys:', Object.keys(whisperModule));
+    } catch (err) {
+      throw new Error(`Whisper module not available: ${(err as Error).message}`);
+    }
+  }
+
+  // Ensure modelsPath is set (fallback if initWhisper wasn't called)
+  if (!modelsPath) {
+    modelsPath = path.join(app.getPath('userData'), 'whisper-models');
+    if (!fs.existsSync(modelsPath)) {
+      fs.mkdirSync(modelsPath, { recursive: true });
+    }
   }
 
   const modelPath = path.join(modelsPath, modelName);
+  console.log(`[Whisper] Looking for model at: ${modelPath}`);
   if (!fs.existsSync(modelPath)) {
+    console.log(`[Whisper] Model not found at ${modelPath}`);
     throw new Error(`Model not found: ${modelName}. Please download it first.`);
   }
 
@@ -275,7 +298,18 @@ export async function transcribeAudio(
   try {
     onProgress?.({ status: 'transcribing', progress: 10, message: 'Transcribing...' });
 
-    const result = await whisperModule.default.transcribe({
+    // Handle both whisperModule.transcribe() and whisperModule.default.transcribe()
+    const transcribeFn = whisperModule.transcribe || whisperModule.default?.transcribe;
+    if (!transcribeFn) {
+      console.error('[Whisper] Module structure:', {
+        keys: Object.keys(whisperModule),
+        hasDefault: !!whisperModule.default,
+        defaultKeys: whisperModule.default ? Object.keys(whisperModule.default) : [],
+      });
+      throw new Error('Whisper transcribe function not found in module');
+    }
+
+    const result = await transcribeFn({
       fname_inp: audioPath,
       model: modelPath,
       language: 'en',

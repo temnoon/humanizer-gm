@@ -534,6 +534,112 @@
   object-fit: contain;
 }
 
+/* Media view main layout (media + linked content sidebar) */
+.container-workspace__media-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Video player in gallery view */
+.container-workspace__video-player {
+  width: 100%;
+  max-width: 100%;
+}
+
+.container-workspace__video-player .video-player__video {
+  max-height: 70vh;
+}
+
+/* Linked content panel */
+.container-workspace__linked-content {
+  width: 280px;
+  min-width: 280px;
+  padding: var(--space-md, 1rem);
+  background: var(--studio-panel-bg, #f5f3ef);
+  border-left: 1px solid var(--studio-border, #e5e2dc);
+  overflow-y: auto;
+}
+
+.container-workspace__linked-content h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--studio-text-secondary, #666);
+  margin: 0 0 0.75rem;
+}
+
+.container-workspace__linked-loading {
+  font-size: 0.75rem;
+  color: var(--studio-text-tertiary, #999);
+  padding: 0.5rem 0;
+}
+
+.container-workspace__linked-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.container-workspace__linked-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--studio-surface, #fff);
+  border: 1px solid var(--studio-border, #e5e2dc);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.container-workspace__linked-item:hover {
+  background: var(--studio-hover, rgba(0,0,0,0.03));
+  border-color: var(--studio-accent, #8b7355);
+}
+
+.container-workspace__linked-item:focus {
+  outline: 2px solid var(--studio-accent, #8b7355);
+  outline-offset: 1px;
+}
+
+.container-workspace__linked-type {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.container-workspace__linked-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.container-workspace__linked-title {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--studio-text, #333);
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.container-workspace__linked-meta {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--studio-text-tertiary, #999);
+}
+
+.container-workspace__linked-meta span {
+  white-space: nowrap;
+}
+
 /* Legacy linked-media (keep for backwards compat) */
 .container-workspace__linked-media {
   display: flex;
