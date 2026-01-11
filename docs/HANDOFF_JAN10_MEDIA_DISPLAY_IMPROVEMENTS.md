@@ -129,3 +129,24 @@ GET  /api/facebook/transcription/pending     # Untranscribed items
 1. **Videos in posts** - Not displaying in workspace (NEXT PRIORITY)
 2. **Transcription accuracy** - Using tiny model; base model (142MB) would be better
 3. **Batch transcription** - No queue-based batch processing yet
+
+---
+
+## ChromaDB Session Memory
+
+**Stored**: `97eb5fc7...` with tags: `session-summary, jan-10-2025, media-display, whisper, lightbox, handoff`
+
+To retrieve this session context in future:
+```
+mcp__chromadb-memory__search_by_tag(["session-summary", "jan-10-2025"])
+```
+
+---
+
+## End of Context Best Practices
+
+**ALWAYS at end of context:**
+1. Create handoff document in `docs/HANDOFF_<DATE>_<TOPIC>.md`
+2. Store summary in ChromaDB with tags: `session-summary, <date>, <topics>`
+3. Commit and push both
+4. Note the ChromaDB memory ID in the handoff for retrieval
