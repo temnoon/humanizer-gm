@@ -318,9 +318,9 @@ export class EmbeddingDatabase {
       CREATE INDEX IF NOT EXISTS idx_content_own ON content_items(is_own_content);
       CREATE INDEX IF NOT EXISTS idx_content_file_path ON content_items(file_path);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_content_uri ON content_items(uri);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_content_source_unique ON content_items(source, source_id);
       CREATE INDEX IF NOT EXISTS idx_content_hash ON content_items(content_hash);
       CREATE INDEX IF NOT EXISTS idx_content_imported ON content_items(imported_at DESC);
+      -- Note: idx_content_source_unique deferred until source_id backfill
 
       CREATE INDEX IF NOT EXISTS idx_media_content ON media_files(content_item_id);
       CREATE INDEX IF NOT EXISTS idx_media_type ON media_files(type);
@@ -2148,26 +2148,37 @@ export class EmbeddingDatabase {
 
     // Migration from version 14 to 15: Add universal archive columns for multi-platform support
     if (fromVersion < 15) {
-      this.db.exec(`
-        -- URI for unique content addressing: content://{source}/{type}/{id}
-        ALTER TABLE content_items ADD COLUMN uri TEXT;
+      // Check which columns already exist (for idempotent migration)
+      const existingColumns = this.db.prepare(`PRAGMA table_info(content_items)`).all() as Array<{ name: string }>;
+      const columnNames = new Set(existingColumns.map(c => c.name));
 
-        -- Content hash for deduplication (SHA-256 of source + sourceId + normalized_text)
-        ALTER TABLE content_items ADD COLUMN content_hash TEXT;
+      // Add columns one at a time (SQLite requires separate statements)
+      if (!columnNames.has('uri')) {
+        this.db.exec(`ALTER TABLE content_items ADD COLUMN uri TEXT`);
+        console.log('[migration] Added uri column');
+      }
+      if (!columnNames.has('content_hash')) {
+        this.db.exec(`ALTER TABLE content_items ADD COLUMN content_hash TEXT`);
+        console.log('[migration] Added content_hash column');
+      }
+      if (!columnNames.has('source_id')) {
+        this.db.exec(`ALTER TABLE content_items ADD COLUMN source_id TEXT`);
+        console.log('[migration] Added source_id column');
+      }
+      if (!columnNames.has('imported_at')) {
+        this.db.exec(`ALTER TABLE content_items ADD COLUMN imported_at REAL`);
+        console.log('[migration] Added imported_at column');
+      }
 
-        -- Original platform-specific ID (preserves provenance)
-        ALTER TABLE content_items ADD COLUMN source_id TEXT;
+      // Create indexes (IF NOT EXISTS handles idempotency)
+      // Note: idx_content_uri is UNIQUE but uri starts as NULL - that's OK, SQLite allows multiple NULLs
+      this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_content_uri ON content_items(uri)`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_content_hash ON content_items(content_hash)`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_content_imported ON content_items(imported_at DESC)`);
+      // Note: NOT creating idx_content_source_unique yet - requires source_id to be populated first
+      // This will be added in a future migration after backfill
 
-        -- Import timestamp (when content was imported, distinct from created_at)
-        ALTER TABLE content_items ADD COLUMN imported_at REAL;
-
-        -- Create unique indexes for universal addressing
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_content_uri ON content_items(uri);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_content_source_unique ON content_items(source, source_id);
-        CREATE INDEX IF NOT EXISTS idx_content_hash ON content_items(content_hash);
-        CREATE INDEX IF NOT EXISTS idx_content_imported ON content_items(imported_at DESC);
-      `);
-      console.log('[migration] Added universal archive columns (uri, content_hash, source_id, imported_at)');
+      console.log('[migration] v15 complete: universal archive columns added');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
