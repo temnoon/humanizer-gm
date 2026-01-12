@@ -5,10 +5,11 @@
  * Includes lightbox for viewing attached images.
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { SelectedFacebookContent } from '../archive';
 import { VideoPlayer } from '../media/VideoPlayer';
 import { MediaLightbox, type LightboxMedia } from './MediaLightbox';
+import { formatTextForDisplay } from '../../lib/utils/textCleaner';
 
 export interface ContentViewerProps {
   content: SelectedFacebookContent;
@@ -29,6 +30,12 @@ function formatContentDate(ts: number): string {
 export function ContentViewer({ content, onClose, getMediaUrl }: ContentViewerProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  // Clean text content (strip HTML, preserve paragraphs)
+  const cleanedText = useMemo(
+    () => formatTextForDisplay(content.text || ''),
+    [content.text]
+  );
 
   // Filter media by type
   const imageMedia = content.media?.filter(m => m.media_type === 'image') || [];
@@ -79,7 +86,7 @@ export function ContentViewer({ content, onClose, getMediaUrl }: ContentViewerPr
         {/* Main content */}
         <div className="content-viewer__body">
           <div className="content-viewer__text">
-            {content.text}
+            {cleanedText}
           </div>
         </div>
 

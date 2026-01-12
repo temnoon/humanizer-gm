@@ -8,10 +8,11 @@
  * - Two-way linking: click media to see related posts, click posts to see media
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from './types';
 import { getArchiveServerUrl, isElectron } from '../../lib/platform';
 import { ImageWithFallback, MediaThumbnail } from '../common';
+import { formatTextForDisplay } from '../../lib/utils/textCleaner';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -1108,36 +1109,40 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                   </div>
                 </div>
 
-                {expandedNoteId === note.id && expandedNoteText && (
-                  <div className="facebook-view__note-content">
-                    <div className="facebook-view__note-text">
-                      {expandedNoteText.split('\n').map((line, i) => (
-                        <p key={i}>{line || '\u00A0'}</p>
-                      ))}
+                {expandedNoteId === note.id && expandedNoteText && (() => {
+                  // Clean HTML/XML from note text
+                  const cleanedNoteText = formatTextForDisplay(expandedNoteText);
+                  return (
+                    <div className="facebook-view__note-content">
+                      <div className="facebook-view__note-text">
+                        {cleanedNoteText.split('\n').map((line, i) => (
+                          <p key={i}>{line || '\u00A0'}</p>
+                        ))}
+                      </div>
+                      <div className="facebook-view__note-actions">
+                        <button
+                          className="facebook-view__note-select"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onSelectContent) {
+                              onSelectContent({
+                                id: note.id,
+                                type: 'post', // Notes map to 'post' type for now
+                                source: 'facebook',
+                                text: cleanedNoteText,
+                                title: note.title,
+                                created_at: note.createdTimestamp,
+                                is_own_content: true,
+                              });
+                            }
+                          }}
+                        >
+                          Open in Workspace
+                        </button>
+                      </div>
                     </div>
-                    <div className="facebook-view__note-actions">
-                      <button
-                        className="facebook-view__note-select"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onSelectContent) {
-                            onSelectContent({
-                              id: note.id,
-                              type: 'post', // Notes map to 'post' type for now
-                              source: 'facebook',
-                              text: expandedNoteText,
-                              title: note.title,
-                              created_at: note.createdTimestamp,
-                              is_own_content: true,
-                            });
-                          }
-                        }}
-                      >
-                        Open in Workspace
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             ))}
 
