@@ -3,14 +3,14 @@
  */
 
 .transcript-panel {
-  position: absolute;
-  z-index: 100;
-  width: 280px;
+  position: fixed;
+  z-index: 10000;
+  width: 300px;
   max-width: calc(100vw - 40px);
   background: var(--studio-bg, #ffffff);
   border: 1px solid var(--studio-border, #e5e5e5);
   border-radius: var(--radius-md, 8px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   user-select: none;
 }
@@ -77,11 +77,13 @@
   color: white;
 }
 
-/* Content */
+/* Content - allow text selection within */
 .transcript-panel__content {
   padding: var(--space-sm, 8px);
   max-height: 300px;
   overflow-y: auto;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Transcribe button */
@@ -190,18 +192,19 @@
   border-color: var(--color-success, #28a745) !important;
 }
 
-/* Transcript text */
+/* Transcript text - allow text selection */
 .transcript-panel__text {
-  font-size: 0.75rem;
-  line-height: 1.5;
+  font-size: 0.8125rem;
+  line-height: 1.6;
   color: var(--studio-text, #1a1918);
   white-space: pre-wrap;
+  -webkit-user-select: text;
   user-select: text;
   cursor: text;
   padding: var(--space-sm, 8px);
   background: var(--studio-quote-bg, rgba(0, 0, 0, 0.03));
   border-radius: var(--radius-sm, 4px);
-  max-height: 200px;
+  max-height: 250px;
   overflow-y: auto;
 }
 

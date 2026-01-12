@@ -30,8 +30,9 @@ export function TranscriptPanel({ mediaId, filePath, onClose }: TranscriptPanelP
   const [copied, setCopied] = useState(false);
   const [minimized, setMinimized] = useState(false);
 
-  // Dragging state
-  const [position, setPosition] = useState({ x: 20, y: 20 });
+  // Dragging state - position is in viewport coordinates (for position: fixed)
+  // Start at a simple, visible position
+  const [position, setPosition] = useState({ x: 100, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
@@ -203,7 +204,7 @@ export function TranscriptPanel({ mediaId, filePath, onClose }: TranscriptPanelP
     <div
       ref={panelRef}
       className={`transcript-panel ${minimized ? 'transcript-panel--minimized' : ''} ${isDragging ? 'transcript-panel--dragging' : ''}`}
-      style={{ right: position.x, top: position.y }}
+      style={{ left: position.x, top: position.y }}
     >
       {/* Header - draggable */}
       <div

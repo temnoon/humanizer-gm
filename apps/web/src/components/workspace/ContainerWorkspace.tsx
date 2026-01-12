@@ -342,6 +342,25 @@ function MediaView({
   // Handle both relative paths and full URLs
   const mediaUrl = media.url || (media.filePath ? getMediaUrl(media.filePath) : '');
 
+  // Extract raw file path - strip any URL prefixes
+  // local-media://serve/path/to/file -> /path/to/file
+  // http://localhost:3002/media/path -> /path
+  const extractRawPath = (path: string): string => {
+    if (!path) return '';
+    if (path.startsWith('local-media://serve')) {
+      return path.replace('local-media://serve', '');
+    }
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      const match = path.match(/\/media\/(.+)/);
+      if (match) {
+        return '/' + decodeURIComponent(match[1]);
+      }
+    }
+    return path;
+  };
+
+  const extractedFilePath = extractRawPath(media.filePath || '') || extractRawPath(mediaUrl);
+
   return (
     <div className="container-workspace container-workspace--media">
       <header className="container-workspace__header">
@@ -381,9 +400,9 @@ function MediaView({
           {media.mediaType === 'video' && (
             <div className="container-workspace__video-wrapper">
               <VideoPlayer
-                key={media.id}
+                key={media.id || extractedFilePath}
                 src={mediaUrl}
-                filePath={media.filePath || ''}
+                filePath={extractedFilePath}
                 mediaId={media.id}
                 showTranscription={false}
                 className="container-workspace__video-player"
@@ -401,10 +420,10 @@ function MediaView({
                 </svg>
               </button>
               {/* Floating transcript panel */}
-              {showTranscript && media.id && (
+              {showTranscript && (
                 <TranscriptPanel
-                  mediaId={media.id}
-                  filePath={media.filePath || ''}
+                  mediaId={media.id || ''}
+                  filePath={extractedFilePath}
                   onClose={() => setShowTranscript(false)}
                 />
               )}

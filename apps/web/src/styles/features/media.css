@@ -514,18 +514,20 @@ button.media-viewer__related-thumb {
 
 .media-viewer__video-container {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
   max-width: 100%;
   max-height: 100%;
+  /* Minimum size ensures button is visible before video loads */
   min-width: 200px;
   min-height: 150px;
+  /* Ensure button/panel aren't clipped */
+  overflow: visible;
 }
 
-/* Video player inside container - size to content */
+/* Video player inside container - size to actual video content */
 .media-viewer__video-container .video-player {
   width: auto;
+  height: auto;
   max-width: 100%;
   max-height: calc(100vh - 200px);
   background: transparent;
@@ -533,35 +535,48 @@ button.media-viewer__related-thumb {
 
 .media-viewer__video-container .video-player__video {
   width: auto;
+  height: auto;
   max-width: 100%;
   max-height: calc(100vh - 200px);
   object-fit: contain;
 }
 
-/* Transcript toggle button */
+/* Transcript toggle button - overlays on video */
 .media-viewer__transcript-btn {
   position: absolute;
   top: 12px;
   right: 12px;
-  width: 40px;
-  height: 40px;
+  left: auto;
+  bottom: auto;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.5);
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.9);
+  color: white;
   cursor: pointer;
   transition: all 0.15s ease;
-  z-index: 100;
+  z-index: 1000;
   pointer-events: auto;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+.media-viewer__transcript-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
 }
 
 .media-viewer__transcript-btn:hover {
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.05);
 }
 
 .media-viewer__transcript-btn--active {

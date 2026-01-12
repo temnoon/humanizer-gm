@@ -344,8 +344,8 @@
   justify-content: center;
   padding: var(--space-md, 1rem);
   overflow: hidden;
-  /* Dark background for media viewing contrast - intentionally fixed */
-  background: var(--studio-quote-bg);
+  /* Subtle background - videos will have their own backgrounds */
+  background: var(--studio-bg-secondary, #f5f5f5);
 }
 
 .container-workspace__image {
@@ -574,17 +574,24 @@
   max-width: 100%;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--studio-quote-bg, #1a1a1a);
+  background: var(--studio-bg-secondary, #f5f5f5);
 }
 
 .container-workspace__video-item .video-player {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
+  background: transparent;
 }
 
 .container-workspace__video-item .video-player__video {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   max-height: 400px;
   object-fit: contain;
+}
+
+[data-theme='dark'] .container-workspace__video-item {
+  background: var(--studio-bg-secondary, #1f1f1f);
 }
 
 /* Media view main layout (media + linked content sidebar) */
@@ -594,9 +601,37 @@
   overflow: hidden;
 }
 
-/* Video player in gallery view */
+/* Video wrapper with transcript button - sized to video content */
+.container-workspace__video-wrapper {
+  position: relative;
+  display: inline-block;
+  /* Minimum size ensures button is visible before video loads */
+  min-width: 200px;
+  min-height: 150px;
+  /* Ensure button/panel aren't clipped */
+  overflow: visible;
+}
+
+/* Video player inside wrapper - size to content, no forced width */
+.container-workspace__video-wrapper .video-player {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  background: transparent;
+}
+
+.container-workspace__video-wrapper .video-player__video {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+/* Standalone video player in posts (ContentView) */
 .container-workspace__video-player {
-  width: 100%;
+  width: auto;
   max-width: 100%;
 }
 
@@ -604,36 +639,42 @@
   max-height: 70vh;
 }
 
-/* Video wrapper with transcript button */
-.container-workspace__video-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
+/* Transcript toggle button - overlays on video */
 .container-workspace__transcript-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 36px;
-  height: 36px;
+  top: 12px;
+  right: 12px;
+  left: auto;
+  bottom: auto;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.5);
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.8);
+  color: white;
   cursor: pointer;
   transition: all 0.15s ease;
-  z-index: 50;
+  z-index: 1000;
+  pointer-events: auto;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+.container-workspace__transcript-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
 }
 
 .container-workspace__transcript-btn:hover {
-  background: rgba(0, 0, 0, 0.8);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.05);
 }
 
 .container-workspace__transcript-btn--active {
@@ -741,5 +782,10 @@
   gap: 8px;
   margin-top: 16px;
   overflow-x: auto;
+}
+
+/* Dark theme overrides */
+[data-theme='dark'] .container-workspace__media-container {
+  background: var(--studio-bg-secondary, #1f1f1f);
 }
 
