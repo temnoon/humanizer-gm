@@ -6,6 +6,40 @@
  */
 
 /**
+ * Normalize whitespace in text:
+ * - Collapse multiple spaces/tabs to single space
+ * - Collapse multiple blank lines to single blank line (one \n\n max)
+ * - Trim lines
+ */
+function normalizeWhitespace(text: string): string {
+  if (!text) return '';
+
+  let result = text;
+
+  // Normalize line endings
+  result = result.replace(/\r\n/g, '\n');
+  result = result.replace(/\r/g, '\n');
+
+  // Replace tabs with spaces
+  result = result.replace(/\t/g, ' ');
+
+  // Collapse multiple spaces to single space (but not newlines)
+  result = result.replace(/ {2,}/g, ' ');
+
+  // Trim whitespace from start/end of each line
+  result = result.replace(/^ +/gm, '');  // Leading spaces on each line
+  result = result.replace(/ +$/gm, '');  // Trailing spaces on each line
+
+  // Collapse multiple blank lines to single blank line
+  // This handles: \n\n\n -> \n\n, \n \n \n -> \n\n, etc.
+  result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
+  // Run again to catch remaining cases
+  result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
+
+  return result.trim();
+}
+
+/**
  * Clean HTML/XML content and convert to readable plain text
  * - Converts <p>, <br>, </div> to newlines
  * - Strips all HTML/XML tags
@@ -44,15 +78,8 @@ export function cleanHtmlToText(html: string): string {
   text = text.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
   text = text.replace(/&#x([a-fA-F0-9]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
 
-  // Normalize whitespace:
-  // - Convert multiple spaces to single space
-  // - Preserve newlines but collapse multiple blank lines to max 2
-  text = text.replace(/[ \t]+/g, ' ');  // Multiple spaces/tabs to single space
-  text = text.replace(/\n[ \t]+/g, '\n');  // Remove leading whitespace on lines
-  text = text.replace(/[ \t]+\n/g, '\n');  // Remove trailing whitespace on lines
-  text = text.replace(/\n{3,}/g, '\n\n');  // Collapse 3+ newlines to 2
-
-  return text.trim();
+  // Normalize whitespace
+  return normalizeWhitespace(text);
 }
 
 /**
@@ -75,9 +102,6 @@ export function formatTextForDisplay(text: string): string {
     return cleanHtmlToText(text);
   }
 
-  // Otherwise just normalize whitespace
-  return text
-    .replace(/\r\n/g, '\n')  // Normalize line endings
-    .replace(/\r/g, '\n')
-    .trim();
+  // Otherwise normalize whitespace (collapse multiple blank lines, etc.)
+  return normalizeWhitespace(text);
 }
