@@ -8,7 +8,6 @@
 import { lazy, Suspense, useMemo, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
 
 // Lazy load math plugins only when needed
 const MathRenderer = lazy(() => import('./MathRenderer'));
@@ -29,12 +28,11 @@ function hasMathContent(content: string): boolean {
 
 /**
  * Simple markdown without math support (lightweight)
- * Uses remarkBreaks to convert single newlines to <br> for proper paragraph display
  */
 function SimpleMarkdown({ children, className }: MathMarkdownProps) {
   return (
     <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {children}
       </ReactMarkdown>
     </div>
@@ -47,7 +45,7 @@ function SimpleMarkdown({ children, className }: MathMarkdownProps) {
 function MathLoadingFallback({ children, className }: MathMarkdownProps) {
   return (
     <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {children}
       </ReactMarkdown>
       <span className="sr-only">Loading math rendering...</span>
