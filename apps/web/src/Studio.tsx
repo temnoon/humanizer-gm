@@ -439,6 +439,7 @@ function StudioContent() {
       <MainWorkspace
         selectedMedia={selectedMedia}
         selectedContent={selectedFacebookContent}
+        selectedContainer={selectedContainer}
         onClearMedia={() => { setSelectedMedia(null); setSelectedContainer(null); }}
         onClearContent={() => { setSelectedFacebookContent(null); setSelectedContainer(null); }}
         onUpdateMedia={handleSelectMedia}

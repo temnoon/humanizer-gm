@@ -20,6 +20,7 @@ import {
 import { useTheme } from '../../lib/theme/ThemeContext';
 import { useBookshelf, type DraftChapter } from '../../lib/bookshelf';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from '../archive';
+import type { ArchiveContainer } from '@humanizer/core';
 import { WelcomeScreen } from './WelcomeScreen';
 import { AnalyzableMarkdown } from './AnalyzableMarkdown';
 import { AddToBookDialog, type AddAction } from '../dialogs/AddToBookDialog';
@@ -43,6 +44,7 @@ function processLatex(content: string): string {
 export interface MainWorkspaceProps {
   selectedMedia?: SelectedFacebookMedia | null;
   selectedContent?: SelectedFacebookContent | null;
+  selectedContainer?: ArchiveContainer | null;
   onClearMedia?: () => void;
   onClearContent?: () => void;
   onUpdateMedia?: (media: SelectedFacebookMedia) => void;
@@ -78,7 +80,7 @@ function getMediaUrl(filePath: string): string {
   return `${archiveServer}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
 }
 
-export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, onClearContent, onUpdateMedia, onGoToBook }: MainWorkspaceProps) {
+export function MainWorkspace({ selectedMedia, selectedContent, selectedContainer, onClearMedia, onClearContent, onUpdateMedia, onGoToBook }: MainWorkspaceProps) {
   const { activeContent, activeNode, activeBuffer, getNodeHistory, importText, graph: _graph, buffers: _buffers } = useBuffers();
   const { setEditorWidth } = useTheme();
   const bookshelf = useBookshelf();
@@ -600,6 +602,41 @@ export function MainWorkspace({ selectedMedia, selectedContent, onClearMedia, on
               )}
             </div>
           ))}
+
+          {/* Media from Facebook/Archive content */}
+          {selectedContainer?.media && selectedContainer.media.length > 0 && (
+            <div className="workspace__media-section">
+              <h3 className="workspace__media-header">
+                Attached Media ({selectedContainer.media.length})
+              </h3>
+              <div className="workspace__media-grid">
+                {selectedContainer.media.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="workspace__media-item"
+                  >
+                    {item.mediaType === 'image' ? (
+                      <img
+                        src={getMediaUrl(item.filePath || '')}
+                        alt={item.description || `Media ${idx + 1}`}
+                        loading="lazy"
+                        className="workspace__media-image"
+                      />
+                    ) : item.mediaType === 'video' ? (
+                      <video
+                        src={getMediaUrl(item.filePath || '')}
+                        controls
+                        className="workspace__media-video"
+                      />
+                    ) : null}
+                    {item.description && (
+                      <p className="workspace__media-caption">{item.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </article>
       ) : (
         <div
