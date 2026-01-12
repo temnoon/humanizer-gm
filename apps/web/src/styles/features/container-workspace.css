@@ -604,6 +604,48 @@
   max-height: 70vh;
 }
 
+/* Video wrapper with transcript button */
+.container-workspace__video-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.container-workspace__transcript-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 50;
+}
+
+.container-workspace__transcript-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.container-workspace__transcript-btn--active {
+  background: var(--studio-accent, #4a90d9);
+  border-color: var(--studio-accent, #4a90d9);
+  color: white;
+}
+
+.container-workspace__transcript-btn--active:hover {
+  background: var(--studio-accent-hover, #3a80c9);
+}
+
 /* Linked content panel */
 .container-workspace__linked-content {
   width: 280px;

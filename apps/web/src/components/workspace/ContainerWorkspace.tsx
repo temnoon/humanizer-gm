@@ -9,12 +9,13 @@
  * - document → DocumentView
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 import type { ArchiveContainer } from '@humanizer/core';
 import { BookContentView, type BookContent } from './BookContentView';
 import { AnalyzableMarkdownWithMetrics } from './AnalyzableMarkdown';
 import { VideoPlayer } from '../media/VideoPlayer';
+import { TranscriptPanel } from '../media/TranscriptPanel';
 import type { BookProject } from '../archive/book-project/types';
 import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
 
@@ -298,6 +299,12 @@ function MediaView({
   const [showMetadata, setShowMetadata] = useState(false);
   const [linkedContent, setLinkedContent] = useState<LinkedContent[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  // Reset transcript panel when media changes
+  useEffect(() => {
+    setShowTranscript(false);
+  }, [media?.id]);
 
   // Fetch linked content (posts/comments that reference this media)
   React.useEffect(() => {
@@ -372,13 +379,36 @@ function MediaView({
             />
           )}
           {media.mediaType === 'video' && (
-            <VideoPlayer
-              src={mediaUrl}
-              filePath={media.filePath || ''}
-              mediaId={media.id}
-              showTranscription={true}
-              className="container-workspace__video-player"
-            />
+            <div className="container-workspace__video-wrapper">
+              <VideoPlayer
+                key={media.id}
+                src={mediaUrl}
+                filePath={media.filePath || ''}
+                mediaId={media.id}
+                showTranscription={false}
+                className="container-workspace__video-player"
+              />
+              {/* Transcript toggle button */}
+              <button
+                className={`container-workspace__transcript-btn ${showTranscript ? 'container-workspace__transcript-btn--active' : ''}`}
+                onClick={() => setShowTranscript(!showTranscript)}
+                title={showTranscript ? 'Hide transcript' : 'Show transcript'}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                </svg>
+              </button>
+              {/* Floating transcript panel */}
+              {showTranscript && media.id && (
+                <TranscriptPanel
+                  mediaId={media.id}
+                  filePath={media.filePath || ''}
+                  onClose={() => setShowTranscript(false)}
+                />
+              )}
+            </div>
           )}
           {media.mediaType === 'audio' && (
             <audio
@@ -569,13 +599,14 @@ function ContentView({
         {/* Show videos with VideoPlayer */}
         {videoMedia.length > 0 && (
           <div className="container-workspace__video-list">
-            {videoMedia.map((m, i) => (
-              <div key={i} className="container-workspace__video-item">
+            {videoMedia.map((m) => (
+              <div key={m.id || m.filePath} className="container-workspace__video-item">
                 <VideoPlayer
+                  key={m.id}
                   src={m.url || getMediaUrl(m.filePath || '')}
                   filePath={m.filePath || ''}
                   mediaId={m.id}
-                  showTranscription={true}
+                  showTranscription={false}
                 />
               </div>
             ))}
