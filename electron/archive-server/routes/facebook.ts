@@ -2344,19 +2344,21 @@ export function createFacebookRouter(): Router {
     }
   });
 
-  // Embed notes for semantic search
+  // Embed notes for semantic search (with chunking for long content)
   router.post('/notes/embed', async (req: Request, res: Response) => {
     try {
-      const { batchSize = 5 } = req.body;
+      const { batchSize = 5, forceReembed = false } = req.body;
       const db = getEmbeddingDatabase();
 
-      // Get all notes that don't have embeddings yet
-      const notes = db.getRawDb().prepare(`
-        SELECT n.id, n.title, n.text, n.word_count, n.created_timestamp
-        FROM fb_notes n
-        WHERE n.content_item_id IS NULL
-        ORDER BY n.word_count DESC
-      `).all() as Array<{
+      // Get notes: either all without embeddings, or all if force re-embed
+      const notes = db.getRawDb().prepare(
+        forceReembed
+          ? `SELECT id, title, text, word_count, created_timestamp FROM fb_notes ORDER BY word_count DESC`
+          : `SELECT n.id, n.title, n.text, n.word_count, n.created_timestamp
+             FROM fb_notes n
+             WHERE n.content_item_id IS NULL
+             ORDER BY n.word_count DESC`
+      ).all() as Array<{
         id: string;
         title: string;
         text: string;
@@ -2365,7 +2367,6 @@ export function createFacebookRouter(): Router {
       }>;
 
       if (notes.length === 0) {
-        // Check if already embedded
         const existingCount = (db.getRawDb().prepare(`
           SELECT COUNT(*) as count FROM content_items WHERE type = 'note' AND source = 'facebook'
         `).get() as { count: number }).count;
@@ -2381,12 +2382,24 @@ export function createFacebookRouter(): Router {
 
       console.log(`[facebook] Embedding ${notes.length} notes...`);
 
-      // Dynamically import embedding generator
+      // Dynamically import embedding generator and chunker
       const { embed } = await import('../services/embeddings/EmbeddingGenerator.js');
+      const { ContentChunker } = await import('../services/embeddings/ContentChunker.js');
+
+      const chunker = new ContentChunker({
+        targetProseWords: 400,  // ~1600 chars, well under 24K limit
+        maxChunkWords: 800,
+        idPrefix: 'note_chunk',
+      });
+
+      // Threshold for chunking: ~1000 words (about 4K chars, safe for 8K token context)
+      const CHUNK_THRESHOLD_WORDS = 1000;
 
       const now = Date.now() / 1000;
       let embedded = 0;
       let failed = 0;
+      let chunkedNotes = 0;
+      let totalChunks = 0;
 
       // Process in batches
       for (let i = 0; i < notes.length; i += batchSize) {
@@ -2395,15 +2408,54 @@ export function createFacebookRouter(): Router {
 
         for (const note of batch) {
           try {
-            // Create text for embedding: title + text (truncated if needed)
+            const contentItemId = `fb_note_content_${note.id}`;
             const embeddingText = `${note.title}\n\n${note.text}`;
 
-            // Generate embedding
-            const embedding = await embed(embeddingText);
+            // Decide chunking strategy based on length
+            const needsChunking = note.word_count > CHUNK_THRESHOLD_WORDS;
+            let embedding: number[];
 
-            // Create content_item entry
-            const contentItemId = `fb_note_content_${note.id}`;
+            if (needsChunking) {
+              // Chunk the note and embed each chunk
+              const chunks = chunker.chunk(embeddingText);
+              console.log(`   📄 ${note.title.substring(0, 30)}... (${note.word_count} words → ${chunks.length} chunks)`);
 
+              const chunkEmbeddings: number[][] = [];
+
+              for (let ci = 0; ci < chunks.length; ci++) {
+                const chunk = chunks[ci];
+                const chunkEmbedding = await embed(chunk.content);
+                chunkEmbeddings.push(chunkEmbedding);
+
+                // Store each chunk embedding
+                const chunkId = `${contentItemId}_chunk_${ci}`;
+                db.insertContentItemEmbedding(
+                  `emb_${chunkId}`,
+                  contentItemId,  // Link to parent
+                  'note_chunk',
+                  'facebook',
+                  chunkEmbedding
+                );
+              }
+
+              // Aggregate: mean pooling of chunk embeddings
+              const dim = chunkEmbeddings[0].length;
+              embedding = new Array(dim).fill(0);
+              for (const chunkEmb of chunkEmbeddings) {
+                for (let d = 0; d < dim; d++) {
+                  embedding[d] += chunkEmb[d] / chunkEmbeddings.length;
+                }
+              }
+
+              chunkedNotes++;
+              totalChunks += chunks.length;
+            } else {
+              // Direct embedding for shorter notes
+              embedding = await embed(embeddingText);
+              console.log(`   ✓ ${note.title.substring(0, 40)}... (${note.word_count} words)`);
+            }
+
+            // Create content_item entry (contentItemId already declared above)
             db.insertContentItem({
               id: contentItemId,
               type: 'note',
@@ -2412,10 +2464,15 @@ export function createFacebookRouter(): Router {
               title: note.title,
               created_at: note.created_timestamp,
               is_own_content: true,
-              context: JSON.stringify({ noteId: note.id, wordCount: note.word_count }),
+              context: JSON.stringify({
+                noteId: note.id,
+                wordCount: note.word_count,
+                chunked: needsChunking,
+                chunkCount: needsChunking ? totalChunks - (chunkedNotes - 1) * 0 : 0,  // Approximate
+              }),
             });
 
-            // Insert embedding
+            // Insert aggregate/direct embedding for the note itself
             db.insertContentItemEmbedding(
               `emb_${contentItemId}`,
               contentItemId,
@@ -2430,7 +2487,6 @@ export function createFacebookRouter(): Router {
             `).run(contentItemId, note.id);
 
             embedded++;
-            console.log(`   ✓ ${note.title.substring(0, 40)}... (${note.word_count} words)`);
           } catch (err) {
             failed++;
             console.error(`   ✗ Failed: ${note.title.substring(0, 40)}...`, err);
@@ -2439,12 +2495,17 @@ export function createFacebookRouter(): Router {
       }
 
       console.log(`[facebook] Notes embedding complete: ${embedded} embedded, ${failed} failed`);
+      if (chunkedNotes > 0) {
+        console.log(`   Chunked ${chunkedNotes} long notes into ${totalChunks} chunks`);
+      }
 
       res.json({
         success: true,
         embedded,
         failed,
         total: notes.length,
+        chunkedNotes,
+        totalChunks,
       });
     } catch (err) {
       console.error('[facebook] Error embedding notes:', err);
