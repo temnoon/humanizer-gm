@@ -8,6 +8,7 @@
 import { useState, useCallback } from 'react';
 import type { SelectedFacebookMedia } from '../archive';
 import { VideoPlayer } from '../media/VideoPlayer';
+import { TranscriptPanel } from '../media/TranscriptPanel';
 import { MediaLightbox, type LightboxMedia } from './MediaLightbox';
 
 export interface MediaViewerProps {
@@ -28,6 +29,7 @@ function formatMediaDate(ts: number): string {
 export function MediaViewer({ media, onClose, onUpdateMedia, getMediaUrl }: MediaViewerProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Get current index in related media
   const getCurrentRelatedIndex = useCallback(() => {
@@ -126,13 +128,36 @@ export function MediaViewer({ media, onClose, onUpdateMedia, getMediaUrl }: Medi
               title="Click to open lightbox"
             />
           ) : (
-            <VideoPlayer
-              src={getMediaUrl(media.file_path)}
-              filePath={media.file_path}
-              mediaId={media.id}
-              showTranscription={true}
-              className="media-viewer__video"
-            />
+            <div className="media-viewer__video-container">
+              <VideoPlayer
+                key={media.id} // Force remount on media change
+                src={getMediaUrl(media.file_path)}
+                filePath={media.file_path}
+                mediaId={media.id}
+                showTranscription={false}
+                className="media-viewer__video"
+              />
+              {/* Transcript toggle button */}
+              <button
+                className={`media-viewer__transcript-btn ${showTranscript ? 'media-viewer__transcript-btn--active' : ''}`}
+                onClick={() => setShowTranscript(!showTranscript)}
+                title={showTranscript ? 'Hide transcript' : 'Show transcript'}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                </svg>
+              </button>
+              {/* Floating transcript panel */}
+              {showTranscript && (
+                <TranscriptPanel
+                  mediaId={media.id}
+                  filePath={media.file_path}
+                  onClose={() => setShowTranscript(false)}
+                />
+              )}
+            </div>
           )}
 
           {/* Navigation arrows for main viewer */}

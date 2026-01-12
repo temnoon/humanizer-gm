@@ -132,16 +132,29 @@ export function ContentViewer({ content, onClose, getMediaUrl }: ContentViewerPr
               </div>
             )}
 
-            {/* Videos below images */}
+            {/* Videos in 2-column grid like images */}
             {videoMedia.length > 0 && (
-              <div className="content-viewer__video-list">
+              <div
+                className="content-viewer__media-grid"
+                style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginTop: imageMedia.length > 0 ? '16px' : '0' }}
+              >
                 {videoMedia.map(item => (
-                  <div key={item.id} className="content-viewer__video-item">
+                  <div
+                    key={item.id}
+                    className="content-viewer__video-item"
+                    style={{
+                      aspectRatio: '16/9',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      background: '#000'
+                    }}
+                  >
                     <VideoPlayer
+                      key={item.id}
                       src={getMediaUrl(item.file_path)}
                       filePath={item.file_path}
                       mediaId={item.id}
-                      showTranscription={true}
+                      showTranscription={false}
                     />
                   </div>
                 ))}

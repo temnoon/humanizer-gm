@@ -102,25 +102,35 @@ export function VideoPlayer({
 
   // Load existing transcript if mediaId provided
   useEffect(() => {
-    // Reset transcript state when video changes
+    // Reset transcript state immediately when video changes
     setTranscript(null);
     setTranscriptError(null);
+    setTranscriptStatus('idle');
+
+    // Abort controller for cancelling requests when video changes
+    const abortController = new AbortController();
 
     const loadTranscript = async () => {
       if (!mediaId) {
-        setTranscriptStatus('idle');
         return;
       }
 
       try {
         setTranscriptStatus('loading');
         const archiveServer = await getArchiveServerUrl();
-        if (!archiveServer) {
+        if (!archiveServer || abortController.signal.aborted) {
           setTranscriptStatus('idle');
           return;
         }
 
-        const res = await fetch(`${archiveServer}/api/facebook/transcription/${mediaId}`);
+        const res = await fetch(
+          `${archiveServer}/api/facebook/transcription/${mediaId}`,
+          { signal: abortController.signal }
+        );
+
+        // Check if aborted before processing response
+        if (abortController.signal.aborted) return;
+
         if (res.ok) {
           const data = await res.json();
           if (data.transcript) {
@@ -133,12 +143,19 @@ export function VideoPlayer({
           setTranscriptStatus('idle');
         }
       } catch (err) {
+        // Ignore abort errors
+        if (err instanceof Error && err.name === 'AbortError') return;
         console.warn('[VideoPlayer] Failed to load transcript:', err);
         setTranscriptStatus('idle');
       }
     };
 
     loadTranscript();
+
+    // Cleanup: abort pending request when mediaId changes or component unmounts
+    return () => {
+      abortController.abort();
+    };
   }, [mediaId]);
 
   // Transcribe video
