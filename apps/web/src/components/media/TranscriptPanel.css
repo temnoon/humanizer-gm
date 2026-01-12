@@ -208,6 +208,17 @@
   overflow-y: auto;
 }
 
+/* Text selection highlight - use system blue for visibility */
+.transcript-panel__text::selection {
+  background: #3390ff;
+  color: white;
+}
+
+.transcript-panel__text::-moz-selection {
+  background: #3390ff;
+  color: white;
+}
+
 /* Dark theme */
 [data-theme='dark'] .transcript-panel {
   background: var(--studio-bg, #1a1918);
