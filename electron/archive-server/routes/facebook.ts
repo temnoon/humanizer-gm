@@ -36,6 +36,8 @@
  * - GET /api/facebook/notes/:id - Get note with full text
  * - GET /api/facebook/notes/search - Search notes by content
  * - POST /api/facebook/notes/import - Import notes from export
+ * - POST /api/facebook/notes/embed - Generate embeddings for notes
+ * - GET /api/facebook/notes/semantic-search - Semantic search notes
  * - GET /api/messenger/threads - List messenger threads
  * - GET /api/messenger/thread/:id - Get thread messages
  */
@@ -2194,6 +2196,59 @@ export function createFacebookRouter(): Router {
     }
   });
 
+  // Semantic search notes (must come before :id route)
+  router.get('/notes/semantic-search', async (req: Request, res: Response) => {
+    try {
+      const { q, limit = '10' } = req.query;
+      if (!q) {
+        res.status(400).json({ error: 'Query parameter q required' });
+        return;
+      }
+
+      const db = getEmbeddingDatabase();
+      const { embed } = await import('../services/embeddings/EmbeddingGenerator.js');
+
+      // Generate query embedding
+      const queryEmbedding = await embed(q as string);
+
+      // Search for similar notes
+      const results = db.searchContentItems(
+        queryEmbedding,
+        parseInt(limit as string),
+        'note',
+        'facebook'
+      );
+
+      // Get full note data for results
+      const notes = results.map(result => {
+        const note = db.getRawDb().prepare(`
+          SELECT n.id, n.title, n.word_count, n.created_timestamp,
+                 substr(n.text, 1, 300) as excerpt
+          FROM fb_notes n
+          WHERE n.content_item_id = ?
+        `).get(result.content_item_id) as any;
+
+        return {
+          id: note?.id,
+          title: note?.title,
+          wordCount: note?.word_count,
+          date: note?.created_timestamp ? new Date(note.created_timestamp * 1000).toISOString() : null,
+          excerpt: note?.excerpt ? note.excerpt + '...' : null,
+          similarity: 1 - result.distance,  // Convert distance to similarity
+        };
+      }).filter(n => n.id);  // Filter out any null results
+
+      res.json({
+        query: q,
+        count: notes.length,
+        results: notes,
+      });
+    } catch (err) {
+      console.error('[facebook] Error in semantic search:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // Get a specific note with full text
   router.get('/notes/:id', async (req: Request, res: Response) => {
     try {
@@ -2285,6 +2340,114 @@ export function createFacebookRouter(): Router {
       });
     } catch (err) {
       console.error('[facebook] Error importing notes:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Embed notes for semantic search
+  router.post('/notes/embed', async (req: Request, res: Response) => {
+    try {
+      const { batchSize = 5 } = req.body;
+      const db = getEmbeddingDatabase();
+
+      // Get all notes that don't have embeddings yet
+      const notes = db.getRawDb().prepare(`
+        SELECT n.id, n.title, n.text, n.word_count, n.created_timestamp
+        FROM fb_notes n
+        WHERE n.content_item_id IS NULL
+        ORDER BY n.word_count DESC
+      `).all() as Array<{
+        id: string;
+        title: string;
+        text: string;
+        word_count: number;
+        created_timestamp: number;
+      }>;
+
+      if (notes.length === 0) {
+        // Check if already embedded
+        const existingCount = (db.getRawDb().prepare(`
+          SELECT COUNT(*) as count FROM content_items WHERE type = 'note' AND source = 'facebook'
+        `).get() as { count: number }).count;
+
+        res.json({
+          success: true,
+          message: existingCount > 0 ? 'Notes already embedded' : 'No notes to embed',
+          embedded: 0,
+          existingCount,
+        });
+        return;
+      }
+
+      console.log(`[facebook] Embedding ${notes.length} notes...`);
+
+      // Dynamically import embedding generator
+      const { embed } = await import('../services/embeddings/EmbeddingGenerator.js');
+
+      const now = Date.now() / 1000;
+      let embedded = 0;
+      let failed = 0;
+
+      // Process in batches
+      for (let i = 0; i < notes.length; i += batchSize) {
+        const batch = notes.slice(i, i + batchSize);
+        console.log(`[facebook] Processing notes ${i + 1}-${Math.min(i + batchSize, notes.length)} of ${notes.length}`);
+
+        for (const note of batch) {
+          try {
+            // Create text for embedding: title + text (truncated if needed)
+            const embeddingText = `${note.title}\n\n${note.text}`;
+
+            // Generate embedding
+            const embedding = await embed(embeddingText);
+
+            // Create content_item entry
+            const contentItemId = `fb_note_content_${note.id}`;
+
+            db.insertContentItem({
+              id: contentItemId,
+              type: 'note',
+              source: 'facebook',
+              text: note.text,
+              title: note.title,
+              created_at: note.created_timestamp,
+              is_own_content: true,
+              context: JSON.stringify({ noteId: note.id, wordCount: note.word_count }),
+            });
+
+            // Insert embedding
+            db.insertContentItemEmbedding(
+              `emb_${contentItemId}`,
+              contentItemId,
+              'note',
+              'facebook',
+              embedding
+            );
+
+            // Link note to content_item
+            db.getRawDb().prepare(`
+              UPDATE fb_notes SET content_item_id = ? WHERE id = ?
+            `).run(contentItemId, note.id);
+
+            embedded++;
+            console.log(`   ✓ ${note.title.substring(0, 40)}... (${note.word_count} words)`);
+          } catch (err) {
+            failed++;
+            console.error(`   ✗ Failed: ${note.title.substring(0, 40)}...`, err);
+          }
+        }
+      }
+
+      console.log(`[facebook] Notes embedding complete: ${embedded} embedded, ${failed} failed`);
+
+      res.json({
+        success: true,
+        embedded,
+        failed,
+        total: notes.length,
+      });
+    } catch (err) {
+      console.error('[facebook] Error embedding notes:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });
