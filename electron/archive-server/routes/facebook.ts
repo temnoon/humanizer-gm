@@ -550,25 +550,50 @@ export function createFacebookRouter(): Router {
     try {
       const db = getEmbeddingDatabase();
 
-      // Count distinct people from content
-      const peopleCount = db.getRawDb().prepare(`
-        SELECT COUNT(DISTINCT author_name) as count
+      // Get all content with context to extract target authors
+      const contentWithContext = db.getRawDb().prepare(`
+        SELECT context, title
         FROM content_items
-        WHERE source = 'facebook' AND author_name IS NOT NULL
-      `).get() as { count: number };
+        WHERE source = 'facebook'
+          AND (context IS NOT NULL OR title IS NOT NULL)
+      `).all() as Array<{ context: string | null; title: string | null }>;
 
-      // Count relationships (approximate from interactions)
-      const interactionCount = db.getRawDb().prepare(`
-        SELECT COUNT(*) as count
-        FROM content_items
-        WHERE source = 'facebook' AND is_own_content = 0
-      `).get() as { count: number };
+      // Extract unique people from context.targetAuthor and title patterns
+      const peopleSet = new Set<string>();
+      for (const item of contentWithContext) {
+        if (item.context) {
+          try {
+            const ctx = JSON.parse(item.context);
+            if (ctx.targetAuthor) {
+              peopleSet.add(ctx.targetAuthor);
+            }
+          } catch { /* ignore parse errors */ }
+        }
+        // Also extract from title patterns like "shared to X's timeline"
+        if (item.title) {
+          const match = item.title.match(/to ([^']+)'s timeline/);
+          if (match) {
+            peopleSet.add(match[1]);
+          }
+        }
+      }
+
+      // Count relationships (items with targetAuthor)
+      const interactionCount = contentWithContext.filter(item => {
+        if (item.context) {
+          try {
+            const ctx = JSON.parse(item.context);
+            return !!ctx.targetAuthor;
+          } catch { return false; }
+        }
+        return false;
+      }).length;
 
       res.json({
-        totalPeople: peopleCount?.count || 0,
-        totalPlaces: 0, // Would need location parsing
-        totalEvents: 0, // Would need event parsing
-        totalRelationships: interactionCount?.count || 0,
+        totalPeople: peopleSet.size,
+        totalPlaces: 0,
+        totalEvents: 0,
+        totalRelationships: interactionCount,
       });
     } catch (err) {
       console.error('[facebook] Error getting graph stats:', err);
@@ -576,30 +601,72 @@ export function createFacebookRouter(): Router {
     }
   });
 
-  // Top connections
+  // Top connections - returns format expected by SocialGraphView
   router.get('/graph/top-connections', async (req: Request, res: Response) => {
     try {
-      const { limit = '20' } = req.query;
+      const { limit = '100' } = req.query;
       const db = getEmbeddingDatabase();
 
-      // Get most frequent interaction partners
-      const connections = db.getRawDb().prepare(`
-        SELECT
-          author_name as name,
-          COUNT(*) as interaction_count,
-          MAX(created_at) as last_interaction
+      // Get all content with context to extract interactions
+      const contentWithContext = db.getRawDb().prepare(`
+        SELECT context, title, type, created_at
         FROM content_items
         WHERE source = 'facebook'
-          AND author_name IS NOT NULL
-          AND is_own_content = 0
-        GROUP BY author_name
-        ORDER BY interaction_count DESC
-        LIMIT ?
-      `).all(parseInt(limit as string));
+          AND (context IS NOT NULL OR title IS NOT NULL)
+      `).all() as Array<{ context: string | null; title: string | null; type: string; created_at: number }>;
+
+      // Build interaction map: person -> { count, lastInteraction, types }
+      const interactions = new Map<string, { count: number; lastInteraction: number; types: Set<string> }>();
+
+      for (const item of contentWithContext) {
+        let targetName: string | null = null;
+
+        // Extract from context.targetAuthor
+        if (item.context) {
+          try {
+            const ctx = JSON.parse(item.context);
+            if (ctx.targetAuthor) {
+              targetName = ctx.targetAuthor;
+            }
+          } catch { /* ignore parse errors */ }
+        }
+
+        // Also extract from title patterns
+        if (!targetName && item.title) {
+          const match = item.title.match(/to ([^']+)'s timeline/);
+          if (match) {
+            targetName = match[1];
+          }
+        }
+
+        if (targetName) {
+          const existing = interactions.get(targetName) || { count: 0, lastInteraction: 0, types: new Set() };
+          existing.count++;
+          existing.lastInteraction = Math.max(existing.lastInteraction, item.created_at);
+          existing.types.add(item.type);
+          interactions.set(targetName, existing);
+        }
+      }
+
+      // Convert to array and sort by count
+      const sorted = Array.from(interactions.entries())
+        .map(([name, data]) => ({
+          person: {
+            id: `fb_person_${name.toLowerCase().replace(/\s+/g, '_')}`,
+            name,
+            is_friend: true, // Assume friends for now
+          },
+          total_weight: data.count,
+          relationship_count: data.count,
+          last_interaction: data.lastInteraction,
+          interaction_types: Array.from(data.types),
+        }))
+        .sort((a, b) => b.total_weight - a.total_weight)
+        .slice(0, parseInt(limit as string));
 
       res.json({
-        connections,
-        total: connections.length,
+        connections: sorted,
+        total: interactions.size,
       });
     } catch (err) {
       console.error('[facebook] Error getting top connections:', err);
@@ -630,46 +697,179 @@ export function createFacebookRouter(): Router {
     }
   });
 
-  // List people
+  // List people - extracts from context.targetAuthor
   router.get('/graph/people', async (req: Request, res: Response) => {
     try {
       const { search, limit = '50', offset = '0' } = req.query;
       const db = getEmbeddingDatabase();
+      const limitNum = parseInt(limit as string);
+      const offsetNum = parseInt(offset as string);
 
-      let query = `
-        SELECT
-          author_name as name,
-          author_id as id,
-          COUNT(*) as interaction_count,
-          MAX(created_at) as last_seen
+      // Get all content with context to extract people
+      const contentWithContext = db.getRawDb().prepare(`
+        SELECT context, title, type, created_at
         FROM content_items
         WHERE source = 'facebook'
-          AND author_name IS NOT NULL
-          AND is_own_content = 0
-      `;
+          AND (context IS NOT NULL OR title IS NOT NULL)
+      `).all() as Array<{ context: string | null; title: string | null; type: string; created_at: number }>;
 
-      const params: any[] = [];
+      // Build people map
+      const peopleMap = new Map<string, { count: number; lastSeen: number; types: Set<string> }>();
 
-      if (search) {
-        query += ` AND author_name LIKE ?`;
-        params.push(`%${search}%`);
+      for (const item of contentWithContext) {
+        let targetName: string | null = null;
+
+        if (item.context) {
+          try {
+            const ctx = JSON.parse(item.context);
+            if (ctx.targetAuthor) {
+              targetName = ctx.targetAuthor;
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (!targetName && item.title) {
+          const match = item.title.match(/to ([^']+)'s timeline/);
+          if (match) {
+            targetName = match[1];
+          }
+        }
+
+        if (targetName) {
+          const existing = peopleMap.get(targetName) || { count: 0, lastSeen: 0, types: new Set() };
+          existing.count++;
+          existing.lastSeen = Math.max(existing.lastSeen, item.created_at);
+          existing.types.add(item.type);
+          peopleMap.set(targetName, existing);
+        }
       }
 
-      query += `
-        GROUP BY author_name, author_id
-        ORDER BY interaction_count DESC
-        LIMIT ? OFFSET ?
-      `;
-      params.push(parseInt(limit as string), parseInt(offset as string));
+      // Convert to array
+      let people = Array.from(peopleMap.entries())
+        .map(([name, data]) => ({
+          id: `fb_person_${name.toLowerCase().replace(/\s+/g, '_')}`,
+          name,
+          interaction_count: data.count,
+          last_seen: data.lastSeen,
+        }))
+        .sort((a, b) => b.interaction_count - a.interaction_count);
 
-      const people = db.getRawDb().prepare(query).all(...params);
+      // Apply search filter
+      if (search) {
+        const searchLower = (search as string).toLowerCase();
+        people = people.filter(p => p.name.toLowerCase().includes(searchLower));
+      }
+
+      // Apply pagination
+      const total = people.length;
+      people = people.slice(offsetNum, offsetNum + limitNum);
 
       res.json({
-        total: people.length,
+        total,
         people,
       });
     } catch (err) {
       console.error('[facebook] Error listing people:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get detailed context for a specific person
+  router.get('/graph/person/:name/context', async (req: Request, res: Response) => {
+    try {
+      const { name } = req.params;
+      const { limit = '50' } = req.query;
+      const db = getEmbeddingDatabase();
+      const decodedName = decodeURIComponent(name);
+
+      // Get all interactions with this person from context.targetAuthor
+      const contentWithContext = db.getRawDb().prepare(`
+        SELECT id, type, text, title, context, created_at, media_refs
+        FROM content_items
+        WHERE source = 'facebook'
+          AND (context IS NOT NULL OR title IS NOT NULL)
+        ORDER BY created_at DESC
+      `).all() as Array<{
+        id: string;
+        type: string;
+        text: string | null;
+        title: string | null;
+        context: string | null;
+        created_at: number;
+        media_refs: string | null;
+      }>;
+
+      // Filter for items involving this person
+      const interactions: Array<{
+        id: string;
+        type: string;
+        text: string | null;
+        title: string | null;
+        interactionType: string;
+        date: number;
+        hasMedia: boolean;
+      }> = [];
+
+      for (const item of contentWithContext) {
+        let matchesName = false;
+        let interactionType = item.type;
+
+        // Check context.targetAuthor
+        if (item.context) {
+          try {
+            const ctx = JSON.parse(item.context);
+            if (ctx.targetAuthor && ctx.targetAuthor.toLowerCase() === decodedName.toLowerCase()) {
+              matchesName = true;
+              interactionType = ctx.action || item.type;
+            }
+          } catch { /* ignore */ }
+        }
+
+        // Check title for "to X's timeline" pattern
+        if (!matchesName && item.title) {
+          const match = item.title.match(/to ([^']+)'s timeline/i);
+          if (match && match[1].toLowerCase() === decodedName.toLowerCase()) {
+            matchesName = true;
+            interactionType = 'shared to timeline';
+          }
+        }
+
+        if (matchesName) {
+          interactions.push({
+            id: item.id,
+            type: item.type,
+            text: item.text,
+            title: item.title,
+            interactionType,
+            date: item.created_at,
+            hasMedia: !!(item.media_refs && item.media_refs !== '[]'),
+          });
+        }
+
+        if (interactions.length >= parseInt(limit as string)) break;
+      }
+
+      // Get date range
+      const dates = interactions.map(i => i.date).filter(d => d > 0);
+      const firstInteraction = dates.length ? Math.min(...dates) : null;
+      const lastInteraction = dates.length ? Math.max(...dates) : null;
+
+      // Group by type
+      const byType: Record<string, number> = {};
+      for (const i of interactions) {
+        byType[i.interactionType] = (byType[i.interactionType] || 0) + 1;
+      }
+
+      res.json({
+        person: decodedName,
+        totalInteractions: interactions.length,
+        firstInteraction,
+        lastInteraction,
+        byType,
+        interactions: interactions.slice(0, 20), // Return top 20 for preview
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting person context:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });

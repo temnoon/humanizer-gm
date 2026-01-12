@@ -60,6 +60,23 @@ interface RelationshipStats {
   byType: Array<{ relationship_type: string; count: number; avg_weight: number }>;
 }
 
+interface PersonContext {
+  person: string;
+  totalInteractions: number;
+  firstInteraction: number | null;
+  lastInteraction: number | null;
+  byType: Record<string, number>;
+  interactions: Array<{
+    id: string;
+    type: string;
+    text: string | null;
+    title: string | null;
+    interactionType: string;
+    date: number;
+    hasMedia: boolean;
+  }>;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════
@@ -80,6 +97,9 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
   const [maxNodes, setMaxNodes] = useState(100);
   const [showLabels, setShowLabels] = useState(true);
   const [linkOpacity, setLinkOpacity] = useState(0.4);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [personContext, setPersonContext] = useState<PersonContext | null>(null);
+  const [loadingContext, setLoadingContext] = useState(false);
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -94,6 +114,34 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
   useEffect(() => {
     fetchGraphData();
   }, [maxNodes]);
+
+  // Fetch person context when a node is selected
+  useEffect(() => {
+    if (!selectedNode || selectedNode.id === 'fb_person_self') {
+      setPersonContext(null);
+      return;
+    }
+
+    const fetchContext = async () => {
+      setLoadingContext(true);
+      try {
+        const archiveServer = await getArchiveServerUrl();
+        const res = await fetch(
+          `${archiveServer}/api/facebook/graph/person/${encodeURIComponent(selectedNode.name)}/context`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setPersonContext(data);
+        }
+      } catch (err) {
+        console.warn('[SocialGraphView] Failed to fetch person context:', err);
+      } finally {
+        setLoadingContext(false);
+      }
+    };
+
+    fetchContext();
+  }, [selectedNode]);
 
   const fetchGraphData = async () => {
     setLoading(true);
@@ -268,24 +316,33 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
     setIsDragging(false);
   }, []);
 
-  // Wheel handler for zoom - extended range for large/small graphs
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    // Extended range: 0.02 (see entire large graph) to 10 (zoom into details)
-    const newK = Math.max(0.02, Math.min(10, transform.k * scaleFactor));
+  // Wheel handler for zoom - uses native event for passive: false
+  const svgRef = useRef<SVGSVGElement>(null);
 
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) {
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
 
-      setTransform(prev => ({
-        x: mouseX - (mouseX - prev.x) * (newK / prev.k),
-        y: mouseY - (mouseY - prev.y) * (newK / prev.k),
-        k: newK,
-      }));
-    }
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newK = Math.max(0.02, Math.min(10, transform.k * scaleFactor));
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        setTransform(prev => ({
+          x: mouseX - (mouseX - prev.x) * (newK / prev.k),
+          y: mouseY - (mouseY - prev.y) * (newK / prev.k),
+          k: newK,
+        }));
+      }
+    };
+
+    svg.addEventListener('wheel', handleWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', handleWheel);
   }, [transform]);
 
   // Zoom controls
@@ -361,6 +418,14 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
     setTransform({ x: 0, y: 0, k: 1 });
   }, []);
 
+  // Filter nodes by search
+  const filteredNodes = searchFilter
+    ? nodes.filter(n => n.name.toLowerCase().includes(searchFilter.toLowerCase()))
+    : nodes;
+
+  // Get highlighted node IDs for search
+  const highlightedNodeIds = new Set(filteredNodes.map(n => n.id));
+
   // Loading state
   if (loading) {
     return (
@@ -397,13 +462,29 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
             <strong>{nodes.length}</strong> people
           </span>
           <span className="social-graph__stat">
-            <strong>{stats?.totalRelationships.toLocaleString()}</strong> relationships
+            <strong>{(stats?.totalRelationships ?? 0).toLocaleString()}</strong> relationships
           </span>
         </div>
       </header>
 
       {/* Controls */}
       <div className="social-graph__controls">
+        {/* Search */}
+        <div className="social-graph__search">
+          <input
+            type="text"
+            placeholder="Search people..."
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            className="social-graph__search-input"
+          />
+          {searchFilter && (
+            <span className="social-graph__search-count">
+              {filteredNodes.length} found
+            </span>
+          )}
+        </div>
+
         {/* Zoom controls */}
         <div className="social-graph__zoom-controls">
           <button onClick={zoomOut} className="social-graph__zoom-btn" title="Zoom out">
@@ -459,12 +540,12 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
 
       {/* SVG Canvas */}
       <svg
+        ref={svgRef}
         className="social-graph__canvas"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
       >
         <g style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})` }}>
           {/* Links */}
@@ -493,6 +574,16 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
             })}
           </g>
 
+          {/* Background click area to deselect */}
+          <rect
+            x={-10000}
+            y={-10000}
+            width={20000}
+            height={20000}
+            fill="transparent"
+            onClick={() => setSelectedNode(null)}
+          />
+
           {/* Nodes */}
           <g className="social-graph__nodes">
             {nodes.map(node => {
@@ -502,6 +593,8 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
               const isHovered = hoveredNode?.id === node.id;
               const isSelected = selectedNode?.id === node.id;
               const isSelf = node.id === 'fb_person_self';
+              const isSearchMatch = searchFilter && highlightedNodeIds.has(node.id);
+              const isDimmed = searchFilter && !isSearchMatch;
 
               const nodeClasses = [
                 'social-graph__node',
@@ -509,6 +602,8 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
                 node.isDiscovered && 'social-graph__node--discovered',
                 isHovered && 'social-graph__node--hovered',
                 isSelected && 'social-graph__node--selected',
+                isSearchMatch && 'social-graph__node--search-match',
+                isDimmed && 'social-graph__node--dimmed',
               ].filter(Boolean).join(' ');
 
               return (
@@ -517,15 +612,18 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
                   transform={`translate(${node.x}, ${node.y})`}
                   onMouseEnter={() => setHoveredNode(node)}
                   onMouseLeave={() => setHoveredNode(null)}
-                  onClick={() => setSelectedNode(node === selectedNode ? null : node)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedNode(node === selectedNode ? null : node);
+                  }}
                   className="social-graph__node-group"
                 >
                   <circle r={radius} className={nodeClasses} />
-                  {(showLabels || isHovered || isSelected || isSelf) && (
+                  {(showLabels || isHovered || isSelected || isSelf || isSearchMatch) && (
                     <text
                       y={radius + 12}
                       textAnchor="middle"
-                      className={`social-graph__node-label ${isSelf ? 'social-graph__node-label--self' : ''}`}
+                      className={`social-graph__node-label ${isSelf ? 'social-graph__node-label--self' : ''} ${isSearchMatch ? 'social-graph__node-label--match' : ''}`}
                     >
                       {node.name}
                     </text>
@@ -537,23 +635,87 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
         </g>
       </svg>
 
-      {/* Detail Panel */}
-      {(hoveredNode || selectedNode) && (
+      {/* Detail Panel - only shows for selected node */}
+      {selectedNode && (
         <aside className="social-graph__detail">
-          <h3 className="social-graph__detail-name">
-            {(selectedNode || hoveredNode)!.name}
-          </h3>
+          <div className="social-graph__detail-header">
+            <h3 className="social-graph__detail-name">
+              {selectedNode.name}
+            </h3>
+            <button
+              className="social-graph__detail-close"
+              onClick={() => setSelectedNode(null)}
+              title="Close"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Basic stats */}
           <dl className="social-graph__detail-stats">
-            <dt>Weight</dt>
-            <dd>{(selectedNode || hoveredNode)!.weight.toLocaleString()}</dd>
-            <dt>Relationships</dt>
-            <dd>{(selectedNode || hoveredNode)!.relationshipCount}</dd>
+            <dt>Total Interactions</dt>
+            <dd>{selectedNode.weight.toLocaleString()}</dd>
             <dt>Status</dt>
             <dd>
-              {(selectedNode || hoveredNode)!.id === 'fb_person_self' ? 'You' :
-               (selectedNode || hoveredNode)!.isFriend ? 'Friend' : 'Discovered'}
+              {selectedNode.id === 'fb_person_self' ? 'You' :
+               selectedNode.isFriend ? 'Friend' : 'Discovered'}
             </dd>
           </dl>
+
+          {/* Loading state */}
+          {loadingContext && (
+            <div className="social-graph__detail-loading">Loading history...</div>
+          )}
+
+          {/* Rich context */}
+          {personContext && !loadingContext && (
+            <div className="social-graph__detail-context">
+              {/* Date range */}
+              {personContext.firstInteraction && personContext.lastInteraction && (
+                <div className="social-graph__detail-dates">
+                  <span>First: {new Date(personContext.firstInteraction * 1000).toLocaleDateString()}</span>
+                  <span>Last: {new Date(personContext.lastInteraction * 1000).toLocaleDateString()}</span>
+                </div>
+              )}
+
+              {/* Interaction breakdown */}
+              {Object.keys(personContext.byType).length > 0 && (
+                <div className="social-graph__detail-types">
+                  <h4>Interaction Types</h4>
+                  <ul>
+                    {Object.entries(personContext.byType).map(([type, count]) => (
+                      <li key={type}>
+                        <span className="social-graph__detail-type">{type}</span>
+                        <span className="social-graph__detail-count">{count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Recent interactions preview */}
+              {personContext.interactions.length > 0 && (
+                <div className="social-graph__detail-recent">
+                  <h4>Recent ({personContext.interactions.length})</h4>
+                  <ul className="social-graph__detail-interactions">
+                    {personContext.interactions.slice(0, 5).map((i) => (
+                      <li key={i.id} className="social-graph__detail-interaction">
+                        <span className="social-graph__detail-interaction-type">{i.interactionType}</span>
+                        <span className="social-graph__detail-interaction-date">
+                          {new Date(i.date * 1000).toLocaleDateString()}
+                        </span>
+                        {i.text && (
+                          <p className="social-graph__detail-interaction-text">
+                            {i.text.slice(0, 100)}{i.text.length > 100 ? '...' : ''}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </aside>
       )}
 
