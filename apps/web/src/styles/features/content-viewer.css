@@ -109,7 +109,14 @@
   font-size: 1.0625rem;
   line-height: 1.7;
   color: var(--studio-text);
-  white-space: pre-wrap;
+}
+
+.content-viewer__paragraph {
+  margin: 0 0 1em 0;
+}
+
+.content-viewer__paragraph:last-child {
+  margin-bottom: 0;
 }
 
 .content-viewer__media {

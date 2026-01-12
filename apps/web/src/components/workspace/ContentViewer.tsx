@@ -86,7 +86,11 @@ export function ContentViewer({ content, onClose, getMediaUrl }: ContentViewerPr
         {/* Main content */}
         <div className="content-viewer__body">
           <div className="content-viewer__text">
-            {cleanedText}
+            {cleanedText.split('\n').map((paragraph, i) => (
+              <p key={i} className="content-viewer__paragraph">
+                {paragraph || '\u00A0'}
+              </p>
+            ))}
           </div>
         </div>
 
