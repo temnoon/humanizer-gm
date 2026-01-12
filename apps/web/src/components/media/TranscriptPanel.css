@@ -234,3 +234,26 @@
 [data-theme='dark'] .transcript-panel__text {
   background: var(--studio-quote-bg, rgba(255, 255, 255, 0.05));
 }
+
+/* Dark theme action buttons */
+[data-theme='dark'] .transcript-panel__actions button {
+  background: var(--studio-bg-tertiary, #333);
+  color: var(--studio-text-secondary, #aaa);
+  border-color: var(--studio-border, #444);
+}
+
+[data-theme='dark'] .transcript-panel__actions button:hover {
+  background: var(--studio-bg-hover, #444);
+  color: var(--studio-text, #eee);
+}
+
+/* Dark theme text selection - slightly lighter blue for contrast */
+[data-theme='dark'] .transcript-panel__text::selection {
+  background: #2563eb;
+  color: white;
+}
+
+[data-theme='dark'] .transcript-panel__text::-moz-selection {
+  background: #2563eb;
+  color: white;
+}

@@ -560,10 +560,27 @@ function ContentView({
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  // Track which video has transcript open (by index)
+  const [transcriptVideoIndex, setTranscriptVideoIndex] = useState<number | null>(null);
 
   // Filter media by type
   const imageMedia = container.media?.filter(m => m.mediaType === 'image') || [];
   const videoMedia = container.media?.filter(m => m.mediaType === 'video') || [];
+
+  // Extract raw file path helper (same as in MediaView)
+  const extractRawPath = (path: string): string => {
+    if (!path) return '';
+    if (path.startsWith('local-media://serve')) {
+      return path.replace('local-media://serve', '');
+    }
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      const match = path.match(/\/media\/(.+)/);
+      if (match) {
+        return '/' + decodeURIComponent(match[1]);
+      }
+    }
+    return path;
+  };
 
   return (
     <div className="container-workspace container-workspace--content">
@@ -615,20 +632,48 @@ function ContentView({
           </div>
         )}
 
-        {/* Show videos with VideoPlayer */}
+        {/* Show videos with VideoPlayer and transcript button */}
         {videoMedia.length > 0 && (
           <div className="container-workspace__video-list">
-            {videoMedia.map((m) => (
-              <div key={m.id || m.filePath} className="container-workspace__video-item">
-                <VideoPlayer
-                  key={m.id}
-                  src={m.url || getMediaUrl(m.filePath || '')}
-                  filePath={m.filePath || ''}
-                  mediaId={m.id}
-                  showTranscription={false}
-                />
-              </div>
-            ))}
+            {videoMedia.map((m, index) => {
+              const mediaUrl = m.url || getMediaUrl(m.filePath || '');
+              const rawFilePath = extractRawPath(m.filePath || '') || extractRawPath(mediaUrl);
+              const isTranscriptOpen = transcriptVideoIndex === index;
+
+              return (
+                <div key={m.id || m.filePath || index} className="container-workspace__video-item">
+                  <div className="container-workspace__video-wrapper">
+                    <VideoPlayer
+                      key={m.id || rawFilePath}
+                      src={mediaUrl}
+                      filePath={rawFilePath}
+                      mediaId={m.id}
+                      showTranscription={false}
+                    />
+                    {/* Transcript toggle button */}
+                    <button
+                      className={`container-workspace__transcript-btn ${isTranscriptOpen ? 'container-workspace__transcript-btn--active' : ''}`}
+                      onClick={() => setTranscriptVideoIndex(isTranscriptOpen ? null : index)}
+                      title={isTranscriptOpen ? 'Hide transcript' : 'Show transcript'}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                      </svg>
+                    </button>
+                    {/* Floating transcript panel */}
+                    {isTranscriptOpen && (
+                      <TranscriptPanel
+                        mediaId={m.id || ''}
+                        filePath={rawFilePath}
+                        onClose={() => setTranscriptVideoIndex(null)}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
