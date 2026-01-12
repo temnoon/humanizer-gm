@@ -129,19 +129,21 @@ function StudioContent() {
   }, [workspaceState, setWorkspace]);
 
   // Handle Facebook content selection from archive panel
+  // Uses main workspace (AnalyzableMarkdown) instead of ContentViewer for proper paragraph rendering
   const handleSelectFacebookContent = useCallback((content: SelectedFacebookContent) => {
-    setSelectedFacebookContent(content);
-    // Clear other modes when viewing Facebook content
+    // Clear other modes
+    setSelectedFacebookContent(null); // Don't use ContentViewer - use main workspace
     setSelectedMedia(null);
     setShowSocialGraph(false);
     setBookContentMode(null);
-
-    // Also set unified container
-    const container = facebookContentToContainer(content);
-    setSelectedContainer(container);
     setBookProject(null);
 
-    // Also load into buffer so tools panel can work with it
+    // Set unified container for media support
+    const container = facebookContentToContainer(content);
+    setSelectedContainer(container);
+
+    // Import text to buffer - this renders via main workspace with AnalyzableMarkdown
+    // which handles paragraph breaks correctly
     importText(content.text, content.title || `Facebook ${content.type}`, {
       type: 'facebook',
       path: ['facebook', content.type, content.id],
