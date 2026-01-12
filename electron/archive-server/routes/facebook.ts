@@ -14,7 +14,13 @@
  * - GET /api/facebook/graph/people - List people
  * - GET /api/facebook/graph/top-connections - Top connections
  * - GET /api/facebook/graph/relationships/stats - Relationship stats
+ * - GET /api/facebook/graph/person/:name/context - Get person context
  * - POST /api/facebook/graph/import - Import graph data
+ * - GET /api/facebook/friends - List all friends
+ * - GET /api/facebook/friends/stats - Friends statistics
+ * - GET /api/facebook/friends/:name - Get friend details
+ * - GET /api/facebook/friends/:name/friendship-date - Get friendship date
+ * - POST /api/facebook/friends/import - Import friends from export
  * - GET /api/messenger/threads - List messenger threads
  * - GET /api/messenger/thread/:id - Get thread messages
  */
@@ -1207,6 +1213,286 @@ export function createFacebookRouter(): Router {
       });
     } catch (err) {
       console.error('[facebook] Error getting pending transcriptions:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FRIENDS ROUTES
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Get friends statistics
+  router.get('/friends/stats', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDatabase();
+
+      const friendsCount = (db.getRawDb().prepare(`
+        SELECT COUNT(*) as count FROM fb_people WHERE is_friend = 1
+      `).get() as { count: number }).count;
+
+      const earliestFriendship = db.getRawDb().prepare(`
+        SELECT MIN(friend_since) as earliest FROM fb_people WHERE is_friend = 1 AND friend_since > 0
+      `).get() as { earliest: number | null };
+
+      const latestFriendship = db.getRawDb().prepare(`
+        SELECT MAX(friend_since) as latest FROM fb_people WHERE is_friend = 1 AND friend_since > 0
+      `).get() as { latest: number | null };
+
+      // Get friend count by year
+      const byYear = db.getRawDb().prepare(`
+        SELECT
+          strftime('%Y', datetime(friend_since, 'unixepoch')) as year,
+          COUNT(*) as count
+        FROM fb_people
+        WHERE is_friend = 1 AND friend_since > 0
+        GROUP BY year
+        ORDER BY year DESC
+      `).all() as Array<{ year: string; count: number }>;
+
+      res.json({
+        totalFriends: friendsCount,
+        earliestFriendship: earliestFriendship?.earliest,
+        latestFriendship: latestFriendship?.latest,
+        byYear,
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting friends stats:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // List all friends
+  router.get('/friends', async (req: Request, res: Response) => {
+    try {
+      const { limit = '100', offset = '0', search, sortBy = 'friend_since', order = 'desc' } = req.query;
+      const db = getEmbeddingDatabase();
+
+      let sql = `SELECT * FROM fb_people WHERE is_friend = 1`;
+      const params: unknown[] = [];
+
+      if (search) {
+        sql += ` AND name LIKE ?`;
+        params.push(`%${search}%`);
+      }
+
+      // Validate sortBy
+      const validSortFields = ['friend_since', 'name', 'interaction_count', 'last_interaction'];
+      const sortField = validSortFields.includes(sortBy as string) ? sortBy : 'friend_since';
+      const sortOrder = order === 'asc' ? 'ASC' : 'DESC';
+
+      sql += ` ORDER BY ${sortField} ${sortOrder}`;
+      sql += ` LIMIT ? OFFSET ?`;
+      params.push(parseInt(limit as string), parseInt(offset as string));
+
+      const friends = db.getRawDb().prepare(sql).all(...params);
+
+      const totalResult = db.getRawDb().prepare(`
+        SELECT COUNT(*) as count FROM fb_people WHERE is_friend = 1
+        ${search ? 'AND name LIKE ?' : ''}
+      `).get(...(search ? [`%${search}%`] : [])) as { count: number };
+
+      res.json({
+        total: totalResult.count,
+        friends: friends.map((f: any) => ({
+          id: f.id,
+          name: f.name,
+          friendSince: f.friend_since,
+          friendSinceDate: f.friend_since ? new Date(f.friend_since * 1000).toISOString() : null,
+          isFollower: !!f.is_follower,
+          isFollowing: !!f.is_following,
+          interactionCount: f.interaction_count || 0,
+          lastInteraction: f.last_interaction,
+        })),
+        hasMore: parseInt(offset as string) + friends.length < totalResult.count,
+      });
+    } catch (err) {
+      console.error('[facebook] Error listing friends:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get friendship details for a specific person
+  router.get('/friends/:name', async (req: Request, res: Response) => {
+    try {
+      const { name } = req.params;
+      const decodedName = decodeURIComponent(name);
+      const db = getEmbeddingDatabase();
+
+      // Find the person by name (case-insensitive)
+      const person = db.getRawDb().prepare(`
+        SELECT * FROM fb_people WHERE LOWER(name) = LOWER(?)
+      `).get(decodedName) as any;
+
+      if (!person) {
+        res.status(404).json({ error: 'Person not found' });
+        return;
+      }
+
+      // Get interaction history
+      const interactions = db.getRawDb().prepare(`
+        SELECT id, type, text, title, context, created_at, media_refs
+        FROM content_items
+        WHERE source = 'facebook'
+          AND (
+            context LIKE ? OR
+            title LIKE ?
+          )
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).all(`%"targetAuthor":"${decodedName}"%`, `%${decodedName}%`) as any[];
+
+      res.json({
+        person: {
+          id: person.id,
+          name: person.name,
+          friendSince: person.friend_since,
+          friendSinceDate: person.friend_since ? new Date(person.friend_since * 1000).toISOString() : null,
+          isFriend: !!person.is_friend,
+          isFollower: !!person.is_follower,
+          isFollowing: !!person.is_following,
+          interactionCount: person.interaction_count || 0,
+          tagCount: person.tag_count || 0,
+          firstInteraction: person.first_interaction,
+          lastInteraction: person.last_interaction,
+          relationshipStrength: person.relationship_strength,
+        },
+        interactions: interactions.map(i => ({
+          id: i.id,
+          type: i.type,
+          text: i.text?.slice(0, 200),
+          title: i.title,
+          date: i.created_at,
+          hasMedia: !!(i.media_refs && i.media_refs !== '[]'),
+        })),
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting friend details:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Import friends from Facebook export
+  router.post('/friends/import', async (req: Request, res: Response) => {
+    try {
+      const { exportPath } = req.body;
+
+      if (!exportPath) {
+        res.status(400).json({ error: 'exportPath required (path to Facebook export folder)' });
+        return;
+      }
+
+      // Import the FriendsParser
+      const { FriendsParser } = await import('../services/facebook/FriendsParser.js');
+      const parser = new FriendsParser();
+
+      console.log(`[facebook] Importing friends from: ${exportPath}`);
+
+      // Parse friends data
+      const result = await parser.parseAll(path.join(exportPath, 'connections'));
+
+      // Insert into database
+      const db = getEmbeddingDatabase();
+      const now = Date.now() / 1000;
+
+      let inserted = 0;
+      let updated = 0;
+
+      // Insert current friends
+      for (const friend of result.friends) {
+        const existing = db.getRawDb().prepare(`
+          SELECT id FROM fb_people WHERE LOWER(name) = LOWER(?)
+        `).get(friend.name) as { id: string } | undefined;
+
+        if (existing) {
+          // Update existing record
+          db.getRawDb().prepare(`
+            UPDATE fb_people
+            SET is_friend = 1, friend_since = ?, updated_at = ?
+            WHERE id = ?
+          `).run(friend.friendshipDate, now, existing.id);
+          updated++;
+        } else {
+          // Insert new record
+          db.getRawDb().prepare(`
+            INSERT INTO fb_people (id, name, is_friend, friend_since, is_follower, is_following,
+                                   interaction_count, tag_count, created_at)
+            VALUES (?, ?, 1, ?, 0, 0, 0, 0, ?)
+          `).run(friend.id, friend.name, friend.friendshipDate, now);
+          inserted++;
+        }
+      }
+
+      console.log(`[facebook] Friends import complete: ${inserted} inserted, ${updated} updated`);
+
+      res.json({
+        success: true,
+        stats: result.stats,
+        imported: {
+          inserted,
+          updated,
+          total: inserted + updated,
+        },
+      });
+    } catch (err) {
+      console.error('[facebook] Error importing friends:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // "When did we become friends?" endpoint
+  router.get('/friends/:name/friendship-date', async (req: Request, res: Response) => {
+    try {
+      const { name } = req.params;
+      const decodedName = decodeURIComponent(name);
+      const db = getEmbeddingDatabase();
+
+      const person = db.getRawDb().prepare(`
+        SELECT name, friend_since, is_friend FROM fb_people WHERE LOWER(name) = LOWER(?)
+      `).get(decodedName) as any;
+
+      if (!person) {
+        res.status(404).json({ error: 'Person not found' });
+        return;
+      }
+
+      if (!person.is_friend) {
+        res.json({
+          name: person.name,
+          isFriend: false,
+          message: `${person.name} is not currently a friend`,
+        });
+        return;
+      }
+
+      if (!person.friend_since) {
+        res.json({
+          name: person.name,
+          isFriend: true,
+          friendshipDate: null,
+          message: `Friendship date not available for ${person.name}`,
+        });
+        return;
+      }
+
+      const date = new Date(person.friend_since * 1000);
+      const yearsAgo = Math.floor((Date.now() - date.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+
+      res.json({
+        name: person.name,
+        isFriend: true,
+        friendshipDate: person.friend_since,
+        friendshipDateISO: date.toISOString(),
+        friendshipDateFormatted: date.toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        }),
+        yearsAgo,
+        message: `You became friends with ${person.name} on ${date.toLocaleDateString()} (${yearsAgo} years ago)`,
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting friendship date:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });

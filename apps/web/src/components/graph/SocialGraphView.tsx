@@ -77,6 +77,16 @@ interface PersonContext {
   }>;
 }
 
+interface FriendshipData {
+  name: string;
+  isFriend: boolean;
+  friendshipDate?: number | null;
+  friendshipDateISO?: string | null;
+  friendshipDateFormatted?: string;
+  yearsAgo?: number;
+  message?: string;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════
@@ -99,6 +109,7 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
   const [linkOpacity, setLinkOpacity] = useState(0.4);
   const [searchFilter, setSearchFilter] = useState('');
   const [personContext, setPersonContext] = useState<PersonContext | null>(null);
+  const [friendshipData, setFriendshipData] = useState<FriendshipData | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
 
   // Refs
@@ -115,10 +126,11 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
     fetchGraphData();
   }, [maxNodes]);
 
-  // Fetch person context when a node is selected
+  // Fetch person context and friendship data when a node is selected
   useEffect(() => {
     if (!selectedNode || selectedNode.id === 'fb_person_self') {
       setPersonContext(null);
+      setFriendshipData(null);
       return;
     }
 
@@ -126,12 +138,23 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
       setLoadingContext(true);
       try {
         const archiveServer = await getArchiveServerUrl();
-        const res = await fetch(
-          `${archiveServer}/api/facebook/graph/person/${encodeURIComponent(selectedNode.name)}/context`
-        );
-        if (res.ok) {
-          const data = await res.json();
+
+        // Fetch both context and friendship data in parallel
+        const [contextRes, friendshipRes] = await Promise.all([
+          fetch(`${archiveServer}/api/facebook/graph/person/${encodeURIComponent(selectedNode.name)}/context`),
+          fetch(`${archiveServer}/api/facebook/friends/${encodeURIComponent(selectedNode.name)}/friendship-date`),
+        ]);
+
+        if (contextRes.ok) {
+          const data = await contextRes.json();
           setPersonContext(data);
+        }
+
+        if (friendshipRes.ok) {
+          const data = await friendshipRes.json();
+          setFriendshipData(data);
+        } else {
+          setFriendshipData(null);
         }
       } catch (err) {
         console.warn('[SocialGraphView] Failed to fetch person context:', err);
@@ -660,6 +683,20 @@ export function SocialGraphView({ onClose }: SocialGraphViewProps) {
               {selectedNode.id === 'fb_person_self' ? 'You' :
                selectedNode.isFriend ? 'Friend' : 'Discovered'}
             </dd>
+            {/* Friendship date */}
+            {friendshipData?.isFriend && friendshipData.friendshipDateFormatted && (
+              <>
+                <dt>Friends Since</dt>
+                <dd className="social-graph__detail-friendship">
+                  {friendshipData.friendshipDateFormatted}
+                  {friendshipData.yearsAgo !== undefined && (
+                    <span className="social-graph__detail-years">
+                      ({friendshipData.yearsAgo} year{friendshipData.yearsAgo !== 1 ? 's' : ''})
+                    </span>
+                  )}
+                </dd>
+              </>
+            )}
           </dl>
 
           {/* Loading state */}

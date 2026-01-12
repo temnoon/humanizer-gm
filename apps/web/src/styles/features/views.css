@@ -2221,6 +2221,19 @@
   font-weight: var(--font-weight-medium);
 }
 
+/* Friendship date styling */
+.social-graph__detail-friendship {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tiny);
+}
+
+.social-graph__detail-years {
+  font-size: var(--text-size-micro);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-normal);
+}
+
 /* Detail panel loading and context */
 .social-graph__detail-loading {
   font-size: var(--text-size-small);
