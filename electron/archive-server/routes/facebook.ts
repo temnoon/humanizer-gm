@@ -31,6 +31,11 @@
  * - GET /api/facebook/reactions/stats - Reactions statistics
  * - GET /api/facebook/reactions/to/:name - Reactions to person's content
  * - POST /api/facebook/reactions/import - Import reactions
+ * - GET /api/facebook/notes - List notes (long-form writing)
+ * - GET /api/facebook/notes/stats - Notes statistics
+ * - GET /api/facebook/notes/:id - Get note with full text
+ * - GET /api/facebook/notes/search - Search notes by content
+ * - POST /api/facebook/notes/import - Import notes from export
  * - GET /api/messenger/threads - List messenger threads
  * - GET /api/messenger/thread/:id - Get thread messages
  */
@@ -2024,6 +2029,262 @@ export function createFacebookRouter(): Router {
       });
     } catch (err) {
       console.error('[facebook] Error importing reactions:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ===========================================================================
+  // NOTES ENDPOINTS
+  // ===========================================================================
+
+  // Get notes statistics
+  router.get('/notes/stats', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDatabase();
+
+      const total = (db.getRawDb().prepare(`
+        SELECT COUNT(*) as count FROM fb_notes
+      `).get() as { count: number }).count;
+
+      const wordStats = db.getRawDb().prepare(`
+        SELECT
+          SUM(word_count) as total_words,
+          AVG(word_count) as avg_words,
+          MAX(word_count) as max_words,
+          MIN(word_count) as min_words
+        FROM fb_notes
+      `).get() as { total_words: number; avg_words: number; max_words: number; min_words: number };
+
+      const longest = db.getRawDb().prepare(`
+        SELECT id, title, word_count, created_timestamp
+        FROM fb_notes
+        ORDER BY word_count DESC
+        LIMIT 5
+      `).all() as any[];
+
+      const dateRange = db.getRawDb().prepare(`
+        SELECT MIN(created_timestamp) as earliest, MAX(created_timestamp) as latest
+        FROM fb_notes
+        WHERE created_timestamp > 1000
+      `).get() as { earliest: number | null; latest: number | null };
+
+      const withMedia = (db.getRawDb().prepare(`
+        SELECT COUNT(*) as count FROM fb_notes WHERE has_media = 1
+      `).get() as { count: number }).count;
+
+      res.json({
+        total,
+        totalWords: wordStats?.total_words || 0,
+        averageWords: Math.round(wordStats?.avg_words || 0),
+        maxWords: wordStats?.max_words || 0,
+        minWords: wordStats?.min_words || 0,
+        withMedia,
+        longestNotes: longest.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          wordCount: n.word_count,
+          date: n.created_timestamp ? new Date(n.created_timestamp * 1000).toISOString() : null,
+        })),
+        dateRange: {
+          earliest: dateRange?.earliest,
+          latest: dateRange?.latest,
+          earliestDate: dateRange?.earliest ? new Date(dateRange.earliest * 1000).toISOString() : null,
+          latestDate: dateRange?.latest ? new Date(dateRange.latest * 1000).toISOString() : null,
+        },
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting notes stats:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // List notes
+  router.get('/notes', async (req: Request, res: Response) => {
+    try {
+      const {
+        limit = '50',
+        offset = '0',
+        sortBy = 'created_timestamp',
+        search,
+        minWords,
+        maxWords,
+      } = req.query;
+      const db = getEmbeddingDatabase();
+
+      let sql = `SELECT id, title, word_count, char_count, created_timestamp, updated_timestamp, has_media, media_count, tags FROM fb_notes WHERE 1=1`;
+      const params: unknown[] = [];
+
+      if (search) {
+        sql += ` AND (title LIKE ? OR text LIKE ?)`;
+        params.push(`%${search}%`, `%${search}%`);
+      }
+
+      if (minWords) {
+        sql += ` AND word_count >= ?`;
+        params.push(parseInt(minWords as string));
+      }
+
+      if (maxWords) {
+        sql += ` AND word_count <= ?`;
+        params.push(parseInt(maxWords as string));
+      }
+
+      const validSortFields = ['created_timestamp', 'word_count', 'title'];
+      const sortField = validSortFields.includes(sortBy as string) ? sortBy : 'created_timestamp';
+      sql += ` ORDER BY ${sortField} DESC`;
+      sql += ` LIMIT ? OFFSET ?`;
+      params.push(parseInt(limit as string), parseInt(offset as string));
+
+      const notes = db.getRawDb().prepare(sql).all(...params);
+
+      res.json({
+        notes: notes.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          wordCount: n.word_count,
+          charCount: n.char_count,
+          createdTimestamp: n.created_timestamp,
+          updatedTimestamp: n.updated_timestamp,
+          hasMedia: n.has_media === 1,
+          mediaCount: n.media_count,
+          tags: n.tags ? JSON.parse(n.tags) : [],
+          date: n.created_timestamp ? new Date(n.created_timestamp * 1000).toISOString() : null,
+        })),
+      });
+    } catch (err) {
+      console.error('[facebook] Error listing notes:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Search notes by text content (must come before :id route)
+  router.get('/notes/search', async (req: Request, res: Response) => {
+    try {
+      const { q, limit = '20' } = req.query;
+      if (!q) {
+        res.status(400).json({ error: 'Query parameter q required' });
+        return;
+      }
+
+      const db = getEmbeddingDatabase();
+
+      const notes = db.getRawDb().prepare(`
+        SELECT id, title, word_count, created_timestamp,
+               substr(text, max(1, instr(lower(text), lower(?)) - 50), 200) as excerpt
+        FROM fb_notes
+        WHERE title LIKE ? OR text LIKE ?
+        ORDER BY word_count DESC
+        LIMIT ?
+      `).all(q, `%${q}%`, `%${q}%`, parseInt(limit as string)) as any[];
+
+      res.json({
+        query: q,
+        count: notes.length,
+        results: notes.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          wordCount: n.word_count,
+          date: n.created_timestamp ? new Date(n.created_timestamp * 1000).toISOString() : null,
+          excerpt: n.excerpt ? `...${n.excerpt}...` : null,
+        })),
+      });
+    } catch (err) {
+      console.error('[facebook] Error searching notes:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get a specific note with full text
+  router.get('/notes/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const db = getEmbeddingDatabase();
+
+      const note = db.getRawDb().prepare(`
+        SELECT * FROM fb_notes WHERE id = ?
+      `).get(id) as any;
+
+      if (!note) {
+        res.status(404).json({ error: 'Note not found' });
+        return;
+      }
+
+      res.json({
+        id: note.id,
+        title: note.title,
+        text: note.text,
+        wordCount: note.word_count,
+        charCount: note.char_count,
+        createdTimestamp: note.created_timestamp,
+        updatedTimestamp: note.updated_timestamp,
+        hasMedia: note.has_media === 1,
+        mediaCount: note.media_count,
+        mediaPaths: note.media_paths ? JSON.parse(note.media_paths) : [],
+        tags: note.tags ? JSON.parse(note.tags) : [],
+        date: note.created_timestamp ? new Date(note.created_timestamp * 1000).toISOString() : null,
+        updatedDate: note.updated_timestamp ? new Date(note.updated_timestamp * 1000).toISOString() : null,
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting note:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Import notes from Facebook export
+  router.post('/notes/import', async (req: Request, res: Response) => {
+    try {
+      const { exportPath } = req.body;
+
+      if (!exportPath) {
+        res.status(400).json({ error: 'exportPath required' });
+        return;
+      }
+
+      const { NotesParser } = await import('../services/facebook/NotesParser.js');
+      const parser = new NotesParser();
+
+      console.log(`[facebook] Importing notes from: ${exportPath}`);
+
+      const result = await parser.parse(exportPath);
+      const db = getEmbeddingDatabase();
+      const now = Date.now() / 1000;
+
+      let inserted = 0;
+
+      const insertStmt = db.getRawDb().prepare(`
+        INSERT OR REPLACE INTO fb_notes
+        (id, title, text, word_count, char_count, created_timestamp, updated_timestamp,
+         has_media, media_count, media_paths, tags, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const note of result.notes) {
+        insertStmt.run(
+          note.id,
+          note.title,
+          note.text,
+          note.wordCount,
+          note.charCount,
+          note.createdTimestamp,
+          note.updatedTimestamp,
+          note.hasMedia ? 1 : 0,
+          note.mediaCount,
+          JSON.stringify(note.mediaPaths),
+          JSON.stringify(note.tags),
+          now
+        );
+        inserted++;
+      }
+
+      console.log(`[facebook] Notes import complete: ${inserted} notes`);
+
+      res.json({
+        success: true,
+        imported: inserted,
+        stats: result.stats,
+      });
+    } catch (err) {
+      console.error('[facebook] Error importing notes:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });

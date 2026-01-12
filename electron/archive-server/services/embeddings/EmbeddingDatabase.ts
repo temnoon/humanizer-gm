@@ -28,7 +28,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 13;  // Added fb_outbound_reactions table
+const SCHEMA_VERSION = 14;  // Added fb_notes table
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 /**
@@ -2103,6 +2103,37 @@ export class EmbeddingDatabase {
         CREATE INDEX IF NOT EXISTS idx_fb_outbound_reactions_person ON fb_outbound_reactions(target_person_id);
       `);
       console.log('[migration] Created fb_outbound_reactions table');
+    }
+
+    // Migration from version 13 to 14: add fb_notes table
+    if (fromVersion < 14) {
+      this.db.exec(`
+        -- Notes: Long-form writing from Facebook Notes feature
+        CREATE TABLE IF NOT EXISTS fb_notes (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          text TEXT NOT NULL,
+          word_count INTEGER NOT NULL,
+          char_count INTEGER NOT NULL,
+          created_timestamp REAL NOT NULL,
+          updated_timestamp REAL,
+          has_media INTEGER DEFAULT 0,
+          media_count INTEGER DEFAULT 0,
+          media_paths TEXT,           -- JSON array of media file paths
+          tags TEXT,                  -- JSON array of tagged people names
+          content_item_id TEXT,       -- Link to content_items if embedded
+          metadata TEXT,
+          created_at REAL NOT NULL,
+
+          FOREIGN KEY (content_item_id) REFERENCES content_items(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fb_notes_title ON fb_notes(title);
+        CREATE INDEX IF NOT EXISTS idx_fb_notes_created ON fb_notes(created_timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_fb_notes_word_count ON fb_notes(word_count DESC);
+        CREATE INDEX IF NOT EXISTS idx_fb_notes_content_item ON fb_notes(content_item_id);
+      `);
+      console.log('[migration] Created fb_notes table');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
