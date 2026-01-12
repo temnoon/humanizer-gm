@@ -111,15 +111,28 @@ export function TranscriptPanel({ mediaId, filePath, onClose }: TranscriptPanelP
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Transcription failed');
+        const errorMsg = data.error || 'Transcription failed';
+        // Check for no-audio error cases
+        if (errorMsg.includes('convert audio') || errorMsg.includes('no audio') || errorMsg.includes('No audio')) {
+          throw new Error('NO_AUDIO');
+        }
+        throw new Error(errorMsg);
       }
 
       setTranscript(data.transcript || '');
       setStatus('done');
     } catch (err) {
-      console.error('[TranscriptPanel] Transcription error:', err);
-      setError((err as Error).message);
-      setStatus('error');
+      const errorMsg = (err as Error).message;
+      // Special handling for no-audio case
+      if (errorMsg === 'NO_AUDIO') {
+        setError('No audio track in this video');
+        setStatus('done'); // Use 'done' to hide retry button
+        setTranscript(null);
+      } else {
+        console.error('[TranscriptPanel] Transcription error:', err);
+        setError(errorMsg);
+        setStatus('error');
+      }
     }
   };
 
@@ -260,6 +273,13 @@ export function TranscriptPanel({ mediaId, filePath, onClose }: TranscriptPanelP
             <div className="transcript-panel__error">
               <span>{error}</span>
               <button onClick={handleTranscribe}>Retry</button>
+            </div>
+          )}
+
+          {/* No audio track message */}
+          {status === 'done' && !transcript && error && (
+            <div className="transcript-panel__status transcript-panel__status--no-audio">
+              {error}
             </div>
           )}
 

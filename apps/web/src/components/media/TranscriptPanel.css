@@ -120,6 +120,13 @@
   color: var(--studio-accent, #4a90d9);
 }
 
+.transcript-panel__status--no-audio {
+  color: var(--studio-text-secondary, #888);
+  font-style: italic;
+  text-align: center;
+  padding: var(--space-md, 16px) 0;
+}
+
 .transcript-panel__spinner {
   display: inline-block;
   width: 12px;

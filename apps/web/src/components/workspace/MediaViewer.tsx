@@ -5,7 +5,7 @@
  * navigation arrows, and lightbox support.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { SelectedFacebookMedia } from '../archive';
 import { VideoPlayer } from '../media/VideoPlayer';
 import { TranscriptPanel } from '../media/TranscriptPanel';
@@ -30,6 +30,11 @@ export function MediaViewer({ media, onClose, onUpdateMedia, getMediaUrl }: Medi
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
+
+  // Reset transcript panel when media changes
+  useEffect(() => {
+    setShowTranscript(false);
+  }, [media.id]);
 
   // Get current index in related media
   const getCurrentRelatedIndex = useCallback(() => {

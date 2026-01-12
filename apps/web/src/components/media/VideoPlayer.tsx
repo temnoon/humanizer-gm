@@ -71,8 +71,16 @@ export function VideoPlayer({
   // Extract raw file path (strip URL prefixes if present)
   const rawFilePath = extractFilePath(filePath);
 
-  // Load thumbnail poster
+  // Check if this is an audio-only file (no video track)
+  const isAudioFile = rawFilePath.includes('/audio/') || rawFilePath.includes('\\audio\\');
+
+  // Load thumbnail poster (skip for audio files - they have no video track)
   useEffect(() => {
+    if (isAudioFile) {
+      setPosterLoading(false);
+      return;
+    }
+
     const loadThumbnail = async () => {
       try {
         setPosterLoading(true);
@@ -89,16 +97,16 @@ export function VideoPlayer({
         if (res.ok) {
           setPosterUrl(url);
         }
-      } catch (err) {
+        // Don't log 404s - just silently use first frame
+      } catch {
         // Thumbnail not available, video will show first frame
-        console.warn('[VideoPlayer] Failed to load thumbnail:', err);
       } finally {
         setPosterLoading(false);
       }
     };
 
     loadThumbnail();
-  }, [rawFilePath]);
+  }, [rawFilePath, isAudioFile]);
 
   // Load existing transcript if mediaId provided
   useEffect(() => {
@@ -182,15 +190,28 @@ export function VideoPlayer({
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Transcription failed');
+        const errorMsg = data.error || 'Transcription failed';
+        // Check for no-audio error cases
+        if (errorMsg.includes('convert audio') || errorMsg.includes('no audio') || errorMsg.includes('No audio')) {
+          throw new Error('NO_AUDIO');
+        }
+        throw new Error(errorMsg);
       }
 
       setTranscript(data.transcript || '');
       setTranscriptStatus('done');
     } catch (err) {
-      console.error('[VideoPlayer] Transcription error:', err);
-      setTranscriptError((err as Error).message);
-      setTranscriptStatus('error');
+      const errorMsg = (err as Error).message;
+      // Special handling for no-audio case
+      if (errorMsg === 'NO_AUDIO') {
+        setTranscriptError('No audio track in this video');
+        setTranscriptStatus('done'); // Use 'done' to hide retry button
+        setTranscript(null);
+      } else {
+        console.error('[VideoPlayer] Transcription error:', err);
+        setTranscriptError(errorMsg);
+        setTranscriptStatus('error');
+      }
     }
   };
 
@@ -318,6 +339,13 @@ export function VideoPlayer({
               >
                 Retry
               </button>
+            </div>
+          )}
+
+          {/* No audio track message */}
+          {transcriptStatus === 'done' && !transcript && transcriptError && (
+            <div className="video-player__transcribe-status video-player__transcribe-status--no-audio">
+              {transcriptError}
             </div>
           )}
 

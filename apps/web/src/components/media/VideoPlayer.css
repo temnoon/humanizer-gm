@@ -105,6 +105,11 @@
   color: var(--studio-accent, #4a90d9);
 }
 
+.video-player__transcribe-status--no-audio {
+  color: var(--studio-text-secondary, #888);
+  font-style: italic;
+}
+
 .video-player__spinner {
   display: inline-block;
   width: 12px;
