@@ -28,7 +28,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 12;  // Added book_type column to books table
+const SCHEMA_VERSION = 13;  // Added fb_outbound_reactions table
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 /**
@@ -2074,6 +2074,35 @@ export class EmbeddingDatabase {
       } else {
         console.log('[migration] book_type column already exists');
       }
+    }
+
+    // Migration from version 12 to 13: add fb_outbound_reactions table
+    if (fromVersion < 13) {
+      this.db.exec(`
+        -- Outbound reactions: reactions BY the user TO others' content
+        CREATE TABLE IF NOT EXISTS fb_outbound_reactions (
+          id TEXT PRIMARY KEY,
+          reaction_type TEXT NOT NULL,        -- like, love, haha, wow, sad, angry
+          target_type TEXT,                   -- post, photo, comment, link, video
+          target_author TEXT,                 -- Person whose content was reacted to
+          timestamp REAL NOT NULL,
+          title TEXT,                         -- Original reaction title for reference
+
+          -- Link to fb_people if the target author is a known person
+          target_person_id TEXT,
+
+          created_at REAL NOT NULL,
+
+          FOREIGN KEY (target_person_id) REFERENCES fb_people(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fb_outbound_reactions_type ON fb_outbound_reactions(reaction_type);
+        CREATE INDEX IF NOT EXISTS idx_fb_outbound_reactions_target_type ON fb_outbound_reactions(target_type);
+        CREATE INDEX IF NOT EXISTS idx_fb_outbound_reactions_target_author ON fb_outbound_reactions(target_author);
+        CREATE INDEX IF NOT EXISTS idx_fb_outbound_reactions_timestamp ON fb_outbound_reactions(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_fb_outbound_reactions_person ON fb_outbound_reactions(target_person_id);
+      `);
+      console.log('[migration] Created fb_outbound_reactions table');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);

@@ -27,6 +27,10 @@
  * - GET /api/facebook/pages - List pages liked/followed
  * - GET /api/facebook/pages/stats - Pages statistics
  * - POST /api/facebook/pages/import - Import pages
+ * - GET /api/facebook/reactions - List outbound reactions
+ * - GET /api/facebook/reactions/stats - Reactions statistics
+ * - GET /api/facebook/reactions/to/:name - Reactions to person's content
+ * - POST /api/facebook/reactions/import - Import reactions
  * - GET /api/messenger/threads - List messenger threads
  * - GET /api/messenger/thread/:id - Get thread messages
  */
@@ -1780,6 +1784,246 @@ export function createFacebookRouter(): Router {
       });
     } catch (err) {
       console.error('[facebook] Error importing pages:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // REACTIONS ROUTES (Outbound reactions - user's reactions to others' content)
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Get reactions statistics
+  router.get('/reactions/stats', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDatabase();
+
+      const total = (db.getRawDb().prepare(`
+        SELECT COUNT(*) as count FROM fb_outbound_reactions
+      `).get() as { count: number }).count;
+
+      const byType = db.getRawDb().prepare(`
+        SELECT reaction_type, COUNT(*) as count
+        FROM fb_outbound_reactions
+        GROUP BY reaction_type
+        ORDER BY count DESC
+      `).all() as Array<{ reaction_type: string; count: number }>;
+
+      const byTargetType = db.getRawDb().prepare(`
+        SELECT target_type, COUNT(*) as count
+        FROM fb_outbound_reactions
+        WHERE target_type IS NOT NULL
+        GROUP BY target_type
+        ORDER BY count DESC
+      `).all() as Array<{ target_type: string; count: number }>;
+
+      const topAuthors = db.getRawDb().prepare(`
+        SELECT target_author, COUNT(*) as count
+        FROM fb_outbound_reactions
+        WHERE target_author IS NOT NULL
+        GROUP BY target_author
+        ORDER BY count DESC
+        LIMIT 20
+      `).all() as Array<{ target_author: string; count: number }>;
+
+      const dateRange = db.getRawDb().prepare(`
+        SELECT MIN(timestamp) as earliest, MAX(timestamp) as latest
+        FROM fb_outbound_reactions
+        WHERE timestamp > 1000
+      `).get() as { earliest: number | null; latest: number | null };
+
+      res.json({
+        total,
+        byType,
+        byTargetType,
+        topAuthors,
+        dateRange: {
+          earliest: dateRange?.earliest,
+          latest: dateRange?.latest,
+          earliestDate: dateRange?.earliest ? new Date(dateRange.earliest * 1000).toISOString() : null,
+          latestDate: dateRange?.latest ? new Date(dateRange.latest * 1000).toISOString() : null,
+        },
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting reactions stats:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // List reactions
+  router.get('/reactions', async (req: Request, res: Response) => {
+    try {
+      const { limit = '100', offset = '0', type, targetType, targetAuthor, sortBy = 'timestamp' } = req.query;
+      const db = getEmbeddingDatabase();
+
+      let sql = `SELECT * FROM fb_outbound_reactions WHERE 1=1`;
+      const params: unknown[] = [];
+
+      if (type) {
+        sql += ` AND reaction_type = ?`;
+        params.push(type);
+      }
+
+      if (targetType) {
+        sql += ` AND target_type = ?`;
+        params.push(targetType);
+      }
+
+      if (targetAuthor) {
+        sql += ` AND target_author LIKE ?`;
+        params.push(`%${targetAuthor}%`);
+      }
+
+      const validSortFields = ['timestamp', 'reaction_type', 'target_author'];
+      const sortField = validSortFields.includes(sortBy as string) ? sortBy : 'timestamp';
+      sql += ` ORDER BY ${sortField} DESC`;
+      sql += ` LIMIT ? OFFSET ?`;
+      params.push(parseInt(limit as string), parseInt(offset as string));
+
+      const reactions = db.getRawDb().prepare(sql).all(...params);
+
+      res.json({
+        reactions: reactions.map((r: any) => ({
+          id: r.id,
+          reactionType: r.reaction_type,
+          targetType: r.target_type,
+          targetAuthor: r.target_author,
+          timestamp: r.timestamp,
+          date: r.timestamp ? new Date(r.timestamp * 1000).toISOString() : null,
+          title: r.title,
+        })),
+      });
+    } catch (err) {
+      console.error('[facebook] Error listing reactions:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Get reactions to a specific person's content
+  router.get('/reactions/to/:name', async (req: Request, res: Response) => {
+    try {
+      const { name } = req.params;
+      const { limit = '50' } = req.query;
+      const decodedName = decodeURIComponent(name);
+      const db = getEmbeddingDatabase();
+
+      const reactions = db.getRawDb().prepare(`
+        SELECT reaction_type, target_type, timestamp, title
+        FROM fb_outbound_reactions
+        WHERE target_author = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `).all(decodedName, parseInt(limit as string)) as any[];
+
+      const summary = db.getRawDb().prepare(`
+        SELECT reaction_type, COUNT(*) as count
+        FROM fb_outbound_reactions
+        WHERE target_author = ?
+        GROUP BY reaction_type
+      `).all(decodedName) as Array<{ reaction_type: string; count: number }>;
+
+      const total = reactions.length;
+      const dateRange = db.getRawDb().prepare(`
+        SELECT MIN(timestamp) as first, MAX(timestamp) as last
+        FROM fb_outbound_reactions
+        WHERE target_author = ? AND timestamp > 1000
+      `).get(decodedName) as { first: number | null; last: number | null };
+
+      res.json({
+        targetAuthor: decodedName,
+        total,
+        summary,
+        dateRange: {
+          first: dateRange?.first,
+          last: dateRange?.last,
+          firstDate: dateRange?.first ? new Date(dateRange.first * 1000).toISOString() : null,
+          lastDate: dateRange?.last ? new Date(dateRange.last * 1000).toISOString() : null,
+        },
+        reactions: reactions.map((r) => ({
+          reactionType: r.reaction_type,
+          targetType: r.target_type,
+          timestamp: r.timestamp,
+          date: r.timestamp ? new Date(r.timestamp * 1000).toISOString() : null,
+          title: r.title,
+        })),
+      });
+    } catch (err) {
+      console.error('[facebook] Error getting reactions to person:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Import reactions from Facebook export
+  router.post('/reactions/import', async (req: Request, res: Response) => {
+    try {
+      const { exportPath } = req.body;
+
+      if (!exportPath) {
+        res.status(400).json({ error: 'exportPath required' });
+        return;
+      }
+
+      const { ReactionsParser } = await import('../services/facebook/ReactionsParser.js');
+      const parser = new ReactionsParser();
+
+      const reactionsDir = path.join(exportPath, 'your_facebook_activity/comments_and_reactions');
+      console.log(`[facebook] Importing reactions from: ${reactionsDir}`);
+
+      const reactions = await parser.parseAll(reactionsDir);
+      const db = getEmbeddingDatabase();
+      const now = Date.now() / 1000;
+
+      // Get all people for linking
+      const peopleMap = new Map<string, string>();
+      const people = db.getRawDb().prepare('SELECT id, name FROM fb_people').all() as Array<{ id: string; name: string }>;
+      for (const p of people) {
+        peopleMap.set(p.name.toLowerCase(), p.id);
+      }
+
+      let inserted = 0;
+      const byType: Record<string, number> = {};
+      const byTargetType: Record<string, number> = {};
+
+      const insertStmt = db.getRawDb().prepare(`
+        INSERT OR REPLACE INTO fb_outbound_reactions
+        (id, reaction_type, target_type, target_author, timestamp, title, target_person_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const reaction of reactions) {
+        const context = (reaction as any).context || {};
+        const title = (reaction as any).title;
+        const targetAuthor = context.targetAuthor || null;
+        const targetType = context.targetType || 'unknown';
+
+        // Try to link to known person
+        const targetPersonId = targetAuthor ? (peopleMap.get(targetAuthor.toLowerCase()) || null) : null;
+
+        insertStmt.run(
+          reaction.id,
+          reaction.reaction_type,
+          targetType,
+          targetAuthor,
+          reaction.created_at,
+          title,
+          targetPersonId,
+          now
+        );
+
+        inserted++;
+        byType[reaction.reaction_type] = (byType[reaction.reaction_type] || 0) + 1;
+        byTargetType[targetType] = (byTargetType[targetType] || 0) + 1;
+      }
+
+      console.log(`[facebook] Reactions import complete: ${inserted} records`);
+
+      res.json({
+        success: true,
+        imported: inserted,
+        byType,
+        byTargetType,
+      });
+    } catch (err) {
+      console.error('[facebook] Error importing reactions:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });
