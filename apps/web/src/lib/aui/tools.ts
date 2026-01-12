@@ -182,6 +182,9 @@ export async function executeTool(
     case 'search_facebook':
       return executeSearchFacebook(params);
 
+    case 'search_content':
+      return executeSearchContent(params);
+
     case 'check_archive_health':
       return executeCheckArchiveHealth();
 
@@ -383,6 +386,7 @@ import {
   executeCheckArchiveHealth,
   executeBuildEmbeddings,
   executeSearchFacebook,
+  executeSearchContent,
 } from './tools/archive';
 
 // ═══════════════════════════════════════════════════════════════════

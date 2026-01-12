@@ -1292,6 +1292,120 @@
   background: var(--color-status-warning);
 }
 
+/* Notes View */
+.facebook-view__notes {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.facebook-view__notes-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-small);
+}
+
+.facebook-view__note {
+  background: var(--studio-bg-secondary);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-medium);
+  margin-bottom: var(--space-small);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.facebook-view__note:hover {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__note--expanded {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__note-header {
+  padding: var(--space-medium);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xsmall);
+}
+
+.facebook-view__note-title {
+  font-weight: 600;
+  color: var(--studio-text);
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.facebook-view__note-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-small);
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+.facebook-view__note-words {
+  font-weight: 500;
+  color: var(--studio-accent);
+}
+
+.facebook-view__note-media {
+  color: var(--color-status-info);
+}
+
+.facebook-view__note-content {
+  border-top: 1px solid var(--studio-border);
+  padding: var(--space-medium);
+  background: var(--studio-bg);
+}
+
+.facebook-view__note-text {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--studio-text);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.facebook-view__note-text p {
+  margin: 0 0 var(--space-small) 0;
+}
+
+.facebook-view__note-text p:last-child {
+  margin-bottom: 0;
+}
+
+.facebook-view__note-actions {
+  margin-top: var(--space-medium);
+  padding-top: var(--space-small);
+  border-top: 1px solid var(--studio-border);
+}
+
+.facebook-view__note-select {
+  padding: var(--space-small) var(--space-medium);
+  background: var(--studio-accent);
+  color: var(--studio-text);
+  border: none;
+  border-radius: var(--radius-medium);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 44px;
+  transition: background 0.15s ease;
+}
+
+.facebook-view__note-select:hover {
+  background: var(--studio-accent-hover);
+}
+
+.facebook-view__note-select:focus-visible {
+  outline: var(--border-width-medium) solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
 /* Lightbox */
 .facebook-lightbox {
   position: fixed;

@@ -415,7 +415,7 @@ export function createEmbeddingsRouter(): Router {
       // Collect results from both sources
       const allResults: Array<{
         id: string;
-        type: 'message' | 'post' | 'comment' | 'document';
+        type: 'message' | 'post' | 'comment' | 'document' | 'note';
         source: string;
         content: string;
         title?: string;
@@ -475,7 +475,7 @@ export function createEmbeddingsRouter(): Router {
 
           allResults.push({
             id: r.content_item_id,
-            type: contentItem.type as 'post' | 'comment' | 'document',
+            type: contentItem.type as 'post' | 'comment' | 'document' | 'note',
             source: r.source,
             content: contentItem.text || '',
             title: contentItem.title,
@@ -498,6 +498,7 @@ export function createEmbeddingsRouter(): Router {
         posts: limitedResults.filter(r => r.type === 'post').length,
         comments: limitedResults.filter(r => r.type === 'comment').length,
         documents: limitedResults.filter(r => r.type === 'document').length,
+        notes: limitedResults.filter(r => r.type === 'note').length,
       };
 
       res.json({

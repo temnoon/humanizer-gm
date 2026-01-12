@@ -28,7 +28,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 14;  // Added fb_notes table
+const SCHEMA_VERSION = 15;  // Added universal archive columns (uri, content_hash, source_id)
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 /**
@@ -207,15 +207,21 @@ export class EmbeddingDatabase {
       -- ========================================================================
       CREATE TABLE IF NOT EXISTS content_items (
         id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,              -- 'post', 'comment', 'photo', 'video', 'message', 'document'
-        source TEXT NOT NULL,             -- 'facebook', 'openai', 'claude', 'instagram', 'local'
+        type TEXT NOT NULL,              -- 'post', 'comment', 'photo', 'video', 'message', 'document', 'note'
+        source TEXT NOT NULL,             -- 'facebook', 'openai', 'claude', 'instagram', 'reddit', 'local'
+
+        -- Universal Archive Fields (v15)
+        uri TEXT UNIQUE,                  -- content://{source}/{type}/{id}
+        content_hash TEXT,                -- SHA-256 for deduplication
+        source_id TEXT,                   -- Original platform-specific ID
+        imported_at REAL,                 -- When content was imported
 
         -- Content
         text TEXT,                        -- Post text, comment text, message content
         title TEXT,                       -- Optional title
 
         -- Timestamps
-        created_at REAL NOT NULL,         -- Unix timestamp
+        created_at REAL NOT NULL,         -- Unix timestamp (original creation)
         updated_at REAL,
 
         -- Author/Actor
@@ -311,6 +317,10 @@ export class EmbeddingDatabase {
       CREATE INDEX IF NOT EXISTS idx_content_thread ON content_items(thread_id);
       CREATE INDEX IF NOT EXISTS idx_content_own ON content_items(is_own_content);
       CREATE INDEX IF NOT EXISTS idx_content_file_path ON content_items(file_path);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_content_uri ON content_items(uri);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_content_source_unique ON content_items(source, source_id);
+      CREATE INDEX IF NOT EXISTS idx_content_hash ON content_items(content_hash);
+      CREATE INDEX IF NOT EXISTS idx_content_imported ON content_items(imported_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_media_content ON media_files(content_item_id);
       CREATE INDEX IF NOT EXISTS idx_media_type ON media_files(type);
@@ -2134,6 +2144,30 @@ export class EmbeddingDatabase {
         CREATE INDEX IF NOT EXISTS idx_fb_notes_content_item ON fb_notes(content_item_id);
       `);
       console.log('[migration] Created fb_notes table');
+    }
+
+    // Migration from version 14 to 15: Add universal archive columns for multi-platform support
+    if (fromVersion < 15) {
+      this.db.exec(`
+        -- URI for unique content addressing: content://{source}/{type}/{id}
+        ALTER TABLE content_items ADD COLUMN uri TEXT;
+
+        -- Content hash for deduplication (SHA-256 of source + sourceId + normalized_text)
+        ALTER TABLE content_items ADD COLUMN content_hash TEXT;
+
+        -- Original platform-specific ID (preserves provenance)
+        ALTER TABLE content_items ADD COLUMN source_id TEXT;
+
+        -- Import timestamp (when content was imported, distinct from created_at)
+        ALTER TABLE content_items ADD COLUMN imported_at REAL;
+
+        -- Create unique indexes for universal addressing
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_content_uri ON content_items(uri);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_content_source_unique ON content_items(source, source_id);
+        CREATE INDEX IF NOT EXISTS idx_content_hash ON content_items(content_hash);
+        CREATE INDEX IF NOT EXISTS idx_content_imported ON content_items(imported_at DESC);
+      `);
+      console.log('[migration] Added universal archive columns (uri, content_hash, source_id, imported_at)');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);

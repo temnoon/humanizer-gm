@@ -174,6 +174,7 @@ export async function executeSearchArchive(
     if (stats.messages) sourceParts.push(`${stats.messages} AI messages`);
     if (stats.posts) sourceParts.push(`${stats.posts} Facebook posts`);
     if (stats.comments) sourceParts.push(`${stats.comments} Facebook comments`);
+    if (stats.notes) sourceParts.push(`${stats.notes} notes`);
     if (stats.documents) sourceParts.push(`${stats.documents} documents`);
     const sourceBreakdown = sourceParts.length > 0 ? ` (${sourceParts.join(', ')})` : '';
 
@@ -402,6 +403,162 @@ export async function executeSearchFacebook(
     return {
       success: false,
       error: e instanceof Error ? e.message : 'Facebook search failed',
+    };
+  }
+}
+
+/**
+ * Search content items (unified: notes, posts, comments, documents across all sources)
+ * This is the universal content search tool - works across all imported archives.
+ */
+export async function executeSearchContent(
+  params: Record<string, unknown>
+): Promise<AUIToolResult> {
+  const {
+    query,
+    contentType,  // Optional: 'note' | 'post' | 'comment' | 'essay' | 'document'
+    source,       // Optional: 'facebook' | 'reddit' | 'substack' | etc.
+    ownContentOnly = false,
+    limit = 20,
+  } = params as {
+    query?: string;
+    contentType?: string;
+    source?: string;
+    ownContentOnly?: boolean;
+    limit?: number;
+  };
+
+  if (!query) {
+    return { success: false, error: 'Missing query parameter' };
+  }
+
+  try {
+    const archiveServer = await getArchiveServerUrl();
+
+    // Build query params
+    const searchParams = new URLSearchParams({
+      limit: String(limit),
+    });
+
+    if (source) {
+      searchParams.append('source', source);
+    }
+    if (contentType) {
+      searchParams.append('type', contentType);
+    }
+
+    // Fetch content items
+    const response = await fetch(
+      `${archiveServer}/api/content/items?${searchParams}`
+    );
+
+    if (!response.ok) {
+      return { success: false, error: `Content search failed (HTTP ${response.status})` };
+    }
+
+    const data = await response.json();
+
+    // Validate API response
+    if (!data.items) {
+      console.warn('[search_content] API response missing items field');
+    }
+
+    // Client-side filter by query (text search)
+    const q = query.toLowerCase();
+    let filtered = (data.items || []).filter((item: { text?: string; title?: string }) =>
+      item.text?.toLowerCase().includes(q) || item.title?.toLowerCase().includes(q)
+    );
+
+    // Apply own content filter if requested
+    if (ownContentOnly) {
+      filtered = filtered.filter((item: { is_own_content: boolean }) => item.is_own_content);
+    }
+
+    // Map results
+    const mappedResults = filtered.slice(0, limit).map((item: {
+      id: string;
+      type: string;
+      source: string;
+      text?: string;
+      title?: string;
+      created_at: number;
+      is_own_content: boolean;
+      author_name?: string;
+    }) => ({
+      id: item.id,
+      type: item.type,
+      source: item.source,
+      title: item.title,
+      textPreview: item.text?.slice(0, 200),
+      created: item.created_at,
+      isOwnContent: item.is_own_content,
+      authorName: item.author_name,
+    }));
+
+    // Group by type for stats
+    const typeCounts: Record<string, number> = {};
+    for (const item of mappedResults) {
+      typeCounts[item.type] = (typeCounts[item.type] || 0) + 1;
+    }
+
+    const statsParts = Object.entries(typeCounts).map(
+      ([type, count]) => `${count} ${type}${count > 1 ? 's' : ''}`
+    );
+
+    // Dispatch results to GUI
+    dispatchSearchResults({
+      results: mappedResults.map((r: {
+        id: string;
+        type: string;
+        source: string;
+        title?: string;
+        textPreview?: string;
+        created: number;
+        isOwnContent: boolean;
+        authorName?: string;
+      }) => ({
+        id: r.id,
+        messageId: r.id,
+        content: r.textPreview || '',
+        similarity: 1,
+        role: r.isOwnContent ? 'user' : 'assistant',
+        title: r.title,
+        type: r.type,
+        source: r.source,
+        authorName: r.authorName,
+        createdAt: r.created,
+      })),
+      query: query,
+      searchType: 'text',
+      total: mappedResults.length,
+    }, 'search_content');
+
+    // Open Archive panel
+    dispatchOpenPanel('archives', 'explore');
+
+    return {
+      success: true,
+      message: `Found ${mappedResults.length} items matching "${query}"${statsParts.length > 0 ? ` (${statsParts.join(', ')})` : ''}`,
+      data: {
+        results: mappedResults,
+        total: mappedResults.length,
+        typeCounts,
+      },
+      teaching: {
+        whatHappened: `Searched content for "${query}" across ${source ? source : 'all sources'}`,
+        guiPath: [
+          'Open Archive panel (left side)',
+          `Go to ${source === 'facebook' ? 'Facebook' : 'Explore'} tab`,
+          'Use the search box to filter content',
+          'Click an item to view full text',
+        ],
+        why: 'Content search finds matches by keyword across all your imported archives - posts, notes, comments, and documents.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Content search failed',
     };
   }
 }
