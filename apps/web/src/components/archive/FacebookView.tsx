@@ -1638,9 +1638,9 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                       </div>
                     )}
 
-                    {!groupContentLoading && groupContent.map((content) => (
+                    {!groupContentLoading && groupContent.map((content, idx) => (
                       <div
-                        key={content.id}
+                        key={`${content.id}-${idx}`}
                         className={`facebook-view__group-item facebook-view__group-item--${content.type}`}
                         onClick={() => {
                           if (onSelectContent) {
@@ -1747,9 +1747,9 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
                       </div>
                     )}
 
-                    {!threadMessagesLoading && threadMessages.map((msg) => (
+                    {!threadMessagesLoading && threadMessages.map((msg, idx) => (
                       <div
-                        key={msg.id}
+                        key={`${msg.id}-${idx}`}
                         className={`facebook-view__message ${msg.is_own_content ? 'facebook-view__message--own' : 'facebook-view__message--other'}`}
                       >
                         <div className="facebook-view__message-header">
