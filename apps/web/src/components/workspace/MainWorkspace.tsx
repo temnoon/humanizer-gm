@@ -95,6 +95,11 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const splitViewRef = useRef<HTMLDivElement>(null);
 
+  // Lightbox state for media viewing
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const imageMedia = selectedContainer?.media?.filter(m => m.mediaType === 'image') || [];
+
   // Sync editContent when activeContent changes
   useEffect(() => {
     if (activeContent) {
@@ -610,30 +615,38 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
                 Attached Media ({selectedContainer.media.length})
               </h3>
               <div className="workspace__media-grid">
-                {selectedContainer.media.map((item, idx) => (
-                  <div
-                    key={item.id || idx}
-                    className="workspace__media-item"
-                  >
-                    {item.mediaType === 'image' ? (
-                      <img
-                        src={getMediaUrl(item.filePath || '')}
-                        alt={item.description || `Media ${idx + 1}`}
-                        loading="lazy"
-                        className="workspace__media-image"
-                      />
-                    ) : item.mediaType === 'video' ? (
-                      <video
-                        src={getMediaUrl(item.filePath || '')}
-                        controls
-                        className="workspace__media-video"
-                      />
-                    ) : null}
-                    {item.description && (
-                      <p className="workspace__media-caption">{item.description}</p>
-                    )}
-                  </div>
-                ))}
+                {selectedContainer.media.map((item, idx) => {
+                  // Track index within image-only array for lightbox navigation
+                  const imageIdx = imageMedia.findIndex(m => m.id === item.id || m.filePath === item.filePath);
+                  return (
+                    <div
+                      key={item.id || idx}
+                      className="workspace__media-item"
+                    >
+                      {item.mediaType === 'image' ? (
+                        <img
+                          src={getMediaUrl(item.filePath || '')}
+                          alt={item.description || `Media ${idx + 1}`}
+                          loading="lazy"
+                          className="workspace__media-image workspace__media-image--clickable"
+                          onClick={() => {
+                            setLightboxIndex(imageIdx >= 0 ? imageIdx : 0);
+                            setLightboxOpen(true);
+                          }}
+                        />
+                      ) : item.mediaType === 'video' ? (
+                        <video
+                          src={getMediaUrl(item.filePath || '')}
+                          controls
+                          className="workspace__media-video"
+                        />
+                      ) : null}
+                      {item.description && (
+                        <p className="workspace__media-caption">{item.description}</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -716,6 +729,53 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
         title={activeNode?.metadata?.title || 'Untitled'}
         onConfirm={handleAddToBook}
       />
+
+      {/* Lightbox for media images */}
+      {lightboxOpen && imageMedia[lightboxIndex] && (
+        <div
+          className="workspace__lightbox"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            className="workspace__lightbox-close"
+            onClick={() => setLightboxOpen(false)}
+            aria-label="Close lightbox"
+          >
+            ×
+          </button>
+
+          {lightboxIndex > 0 && (
+            <button
+              className="workspace__lightbox-nav workspace__lightbox-nav--prev"
+              onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i - 1); }}
+              aria-label="Previous image"
+            >
+              ‹
+            </button>
+          )}
+
+          {lightboxIndex < imageMedia.length - 1 && (
+            <button
+              className="workspace__lightbox-nav workspace__lightbox-nav--next"
+              onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i + 1); }}
+              aria-label="Next image"
+            >
+              ›
+            </button>
+          )}
+
+          <img
+            src={getMediaUrl(imageMedia[lightboxIndex].filePath || '')}
+            alt={imageMedia[lightboxIndex].description || 'Full size'}
+            className="workspace__lightbox-image"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          <div className="workspace__lightbox-counter">
+            {lightboxIndex + 1} / {imageMedia.length}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

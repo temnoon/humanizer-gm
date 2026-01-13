@@ -36,7 +36,7 @@ interface BookContentMode {
 
 // Inner component that has access to BufferContext
 function StudioContent() {
-  const { importText, activeContent, activeBuffer } = useBuffers();
+  const { importText, activeContent, activeBuffer, activeNode } = useBuffers();
 
   // Unified container selection (new)
   const [selectedContainer, setSelectedContainer] = useState<ArchiveContainer | null>(null);
@@ -72,6 +72,16 @@ function StudioContent() {
 
   // Structure inspector state (peek behind the curtain)
   const [inspectorOpen, setInspectorOpen] = useState(false);
+
+  // Clear selectedContainer when switching away from Facebook content
+  // This prevents Facebook media from persisting when viewing ChatGPT conversations
+  // Note: source info is on activeNode.metadata.source, not activeBuffer
+  useEffect(() => {
+    const sourceType = activeNode?.metadata?.source?.type;
+    if (sourceType && sourceType !== 'facebook') {
+      setSelectedContainer(null);
+    }
+  }, [activeNode?.metadata?.source?.type]);
 
   // Handle transformation completion - load into regular workspace
   // User can use "Read | Edit" toggle to compare/modify
@@ -419,6 +429,8 @@ function StudioContent() {
         </div>
       );
     }
+    // Only use ContainerWorkspace for media - it has special gallery/video player views
+    // Posts, comments, and notes now go through MainWorkspace for proper paragraph rendering
     if (selectedContainer && selectedContainer.type === 'media') {
       return (
         <ContainerWorkspace
@@ -427,14 +439,8 @@ function StudioContent() {
         />
       );
     }
-    if (selectedContainer && (selectedContainer.type === 'post' || selectedContainer.type === 'comment')) {
-      return (
-        <ContainerWorkspace
-          container={selectedContainer}
-          onClose={handleClearContainer}
-        />
-      );
-    }
+    // NOTE: Removed post/comment routing to ContainerWorkspace.
+    // Text content now renders via MainWorkspace → AnalyzableMarkdown for proper paragraph breaks.
     return (
       <MainWorkspace
         selectedMedia={selectedMedia}
