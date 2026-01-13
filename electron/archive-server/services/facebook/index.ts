@@ -14,6 +14,8 @@ export { DatabaseImporter } from './DatabaseImporter.js';
 export { PeriodCalculator, DEFAULT_SETTINGS } from './PeriodCalculator.js';
 export { EntityParser } from './EntityParser.js';
 export { RelationshipBuilder } from './RelationshipBuilder.js';
+export { GroupsParser } from './GroupsParser.js';
+export { NotesParser } from './NotesParser.js';
 
 export type {
   ArchiveOrganizationSettings,
@@ -69,3 +71,16 @@ export type {
 export type {
   LinkResult,
 } from './AssociationGraph.js';
+
+export type {
+  ParsedGroup,
+  ParsedGroupPost,
+  ParsedGroupComment,
+  ParsedGroupMembership,
+  GroupsParseResult,
+} from './GroupsParser.js';
+
+export type {
+  ParsedNote,
+  NotesParseResult,
+} from './NotesParser.js';

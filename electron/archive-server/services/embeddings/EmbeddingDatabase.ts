@@ -28,7 +28,7 @@ import type {
   SearchResult,
 } from './types.js';
 
-const SCHEMA_VERSION = 15;  // Added universal archive columns (uri, content_hash, source_id)
+const SCHEMA_VERSION = 16;  // Added fb_groups tables for group data
 const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 /**
@@ -2179,6 +2179,43 @@ export class EmbeddingDatabase {
       // This will be added in a future migration after backfill
 
       console.log('[migration] v15 complete: universal archive columns added');
+    }
+
+    // Migration from version 15 to 16: Add fb_groups tables for group data
+    if (fromVersion < 16) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS fb_groups (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          joined_at REAL,
+          post_count INTEGER DEFAULT 0,
+          comment_count INTEGER DEFAULT 0,
+          last_activity REAL,
+          metadata TEXT,
+          created_at REAL NOT NULL DEFAULT (strftime('%s', 'now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS fb_group_content (
+          id TEXT PRIMARY KEY,
+          group_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          text TEXT,
+          timestamp REAL NOT NULL,
+          original_author TEXT,
+          external_urls TEXT,
+          title TEXT,
+          metadata TEXT,
+          created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+          FOREIGN KEY (group_id) REFERENCES fb_groups(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fb_groups_name ON fb_groups(name);
+        CREATE INDEX IF NOT EXISTS idx_fb_groups_activity ON fb_groups(last_activity DESC);
+        CREATE INDEX IF NOT EXISTS idx_fb_group_content_group ON fb_group_content(group_id);
+        CREATE INDEX IF NOT EXISTS idx_fb_group_content_time ON fb_group_content(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_fb_group_content_type ON fb_group_content(type);
+      `);
+      console.log('[migration] v16 complete: fb_groups tables created');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
