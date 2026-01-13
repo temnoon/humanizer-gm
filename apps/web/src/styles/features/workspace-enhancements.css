@@ -207,7 +207,7 @@
 
 .archive-browser__similar-btn:hover {
   background: var(--color-primary, #4a7c59);
-  color: white;
+  color: var(--studio-text);
 }
 
 /* Virtual scroll: Load more indicator */

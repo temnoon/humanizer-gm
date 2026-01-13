@@ -190,7 +190,7 @@
   font-family: inherit;
   font-size: 0.9375rem;
   font-weight: 600;
-  color: white;
+  color: var(--studio-text);
   background: linear-gradient(135deg, var(--studio-accent), #8b6914);
   border: none;
   border-radius: 6px;
