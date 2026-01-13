@@ -115,7 +115,7 @@ interface MediaContext {
   }>;
 }
 
-type ViewMode = 'feed' | 'gallery' | 'notes';
+type ViewMode = 'feed' | 'gallery' | 'notes' | 'groups' | 'messenger' | 'advertisers';
 type FilterType = 'all' | 'post' | 'comment' | 'media';
 
 interface NoteItem {
@@ -128,6 +128,59 @@ interface NoteItem {
   hasMedia: boolean;
   mediaCount: number;
   tags?: string[];
+}
+
+interface GroupItem {
+  id: string;
+  name: string;
+  joined_at: number | null;
+  post_count: number;
+  comment_count: number;
+  last_activity: number;
+}
+
+interface GroupContentItem {
+  id: string;
+  group_id: string;
+  type: 'post' | 'comment';
+  text: string;
+  timestamp: number;
+  original_author?: string;
+  external_urls?: string;
+  title?: string;
+}
+
+interface MessengerThread {
+  thread_id: string;
+  title: string;
+  message_count: number;
+  last_message: number;
+  first_message: number;
+}
+
+interface MessengerMessage {
+  id: string;
+  text: string;
+  author_name: string;
+  is_own_content: boolean;
+  created_at: number;
+  thread_id: string;
+}
+
+interface AdvertiserItem {
+  id: string;
+  name: string;
+  targetingType: 'uploaded_list' | 'interacted';
+  interactionCount: number;
+  isDataBroker: boolean;
+  firstSeen: number;
+  lastSeen: number;
+}
+
+interface AdvertiserStats {
+  total: number;
+  dataBrokers: number;
+  byTargetingType: Array<{ targeting_type: string; count: number }>;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -196,6 +249,35 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   const [expandedNoteText, setExpandedNoteText] = useState<string | null>(null);
 
+  // Groups state
+  const [groups, setGroups] = useState<GroupItem[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [groupsOffset, setGroupsOffset] = useState(0);
+  const [groupsHasMore, setGroupsHasMore] = useState(true);
+  const [groupsSearch, setGroupsSearch] = useState('');
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [groupContent, setGroupContent] = useState<GroupContentItem[]>([]);
+  const [groupContentLoading, setGroupContentLoading] = useState(false);
+
+  // Messenger state
+  const [messengerThreads, setMessengerThreads] = useState<MessengerThread[]>([]);
+  const [messengerLoading, setMessengerLoading] = useState(false);
+  const [messengerOffset, setMessengerOffset] = useState(0);
+  const [messengerHasMore, setMessengerHasMore] = useState(true);
+  const [messengerSearch, setMessengerSearch] = useState('');
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<MessengerMessage[]>([]);
+  const [threadMessagesLoading, setThreadMessagesLoading] = useState(false);
+
+  // Advertisers state
+  const [advertisers, setAdvertisers] = useState<AdvertiserItem[]>([]);
+  const [advertisersLoading, setAdvertisersLoading] = useState(false);
+  const [advertisersOffset, setAdvertisersOffset] = useState(0);
+  const [advertisersHasMore, setAdvertisersHasMore] = useState(true);
+  const [advertisersSearch, setAdvertisersSearch] = useState('');
+  const [advertiserStats, setAdvertiserStats] = useState<AdvertiserStats | null>(null);
+  const [showDataBrokersOnly, setShowDataBrokersOnly] = useState(false);
+
   // Selected item for main display (kept for legacy/internal use)
   const [_selectedItem, _setSelectedItem] = useState<FacebookContentItem | MediaItem | null>(null);
 
@@ -209,6 +291,9 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
   const feedObserverRef = useRef<HTMLDivElement>(null);
   const mediaObserverRef = useRef<HTMLDivElement>(null);
   const notesObserverRef = useRef<HTMLDivElement>(null);
+  const groupsObserverRef = useRef<HTMLDivElement>(null);
+  const messengerObserverRef = useRef<HTMLDivElement>(null);
+  const advertisersObserverRef = useRef<HTMLDivElement>(null);
 
   // ═══════════════════════════════════════════════════════════════════
   // DATA LOADING
@@ -497,6 +582,203 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
     }
   };
 
+  // Load groups
+  const loadGroups = useCallback(async (reset = false) => {
+    if (groupsLoading) return;
+    setGroupsLoading(true);
+
+    try {
+      const currentOffset = reset ? 0 : groupsOffset;
+      const params = new URLSearchParams({
+        limit: '50',
+        offset: currentOffset.toString(),
+        sortBy: 'activity',
+      });
+
+      if (groupsSearch.trim()) {
+        params.append('search', groupsSearch.trim());
+      }
+
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/groups?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      const loadedGroups: GroupItem[] = data.groups || [];
+
+      if (reset) {
+        setGroups(loadedGroups);
+        setGroupsOffset(50);
+      } else {
+        setGroups(prev => [...prev, ...loadedGroups]);
+        setGroupsOffset(prev => prev + 50);
+      }
+
+      setGroupsHasMore(loadedGroups.length === 50);
+    } catch (err) {
+      console.error('Failed to load groups:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load groups');
+    } finally {
+      setGroupsLoading(false);
+    }
+  }, [groupsOffset, groupsLoading, groupsSearch]);
+
+  // Load group content (posts and comments for a specific group)
+  const loadGroupContent = async (groupId: string) => {
+    if (selectedGroupId === groupId) {
+      // Collapse if already expanded
+      setSelectedGroupId(null);
+      setGroupContent([]);
+      return;
+    }
+
+    setGroupContentLoading(true);
+    setSelectedGroupId(groupId);
+    setGroupContent([]);
+
+    try {
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/groups/${groupId}/content?limit=100`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      setGroupContent(data.content || []);
+    } catch (err) {
+      console.error('Failed to load group content:', err);
+    } finally {
+      setGroupContentLoading(false);
+    }
+  };
+
+  // Load messenger threads
+  const loadMessengerThreads = useCallback(async (reset = false) => {
+    if (messengerLoading) return;
+    setMessengerLoading(true);
+
+    try {
+      const currentOffset = reset ? 0 : messengerOffset;
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/messenger/threads?limit=50&offset=${currentOffset}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      let threads: MessengerThread[] = data.threads || [];
+
+      // Client-side search filter
+      if (messengerSearch.trim()) {
+        const q = messengerSearch.toLowerCase();
+        threads = threads.filter((t: MessengerThread) =>
+          t.title?.toLowerCase().includes(q)
+        );
+      }
+
+      if (reset) {
+        setMessengerThreads(threads);
+        setMessengerOffset(50);
+      } else {
+        setMessengerThreads(prev => [...prev, ...threads]);
+        setMessengerOffset(prev => prev + 50);
+      }
+
+      setMessengerHasMore(data.threads?.length === 50);
+    } catch (err) {
+      console.error('Failed to load messenger threads:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load threads');
+    } finally {
+      setMessengerLoading(false);
+    }
+  }, [messengerOffset, messengerLoading, messengerSearch]);
+
+  // Load thread messages
+  const loadThreadMessages = async (threadId: string) => {
+    if (selectedThreadId === threadId) {
+      // Collapse if already expanded
+      setSelectedThreadId(null);
+      setThreadMessages([]);
+      return;
+    }
+
+    setThreadMessagesLoading(true);
+    setSelectedThreadId(threadId);
+    setThreadMessages([]);
+
+    try {
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/messenger/thread/${encodeURIComponent(threadId)}?limit=200`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      setThreadMessages(data.messages || []);
+    } catch (err) {
+      console.error('Failed to load thread messages:', err);
+    } finally {
+      setThreadMessagesLoading(false);
+    }
+  };
+
+  // Load advertisers stats
+  const loadAdvertiserStats = async () => {
+    try {
+      const archiveServer = await getArchiveServerUrl();
+      const res = await fetch(`${archiveServer}/api/facebook/advertisers/stats`);
+      if (res.ok) {
+        const data = await res.json();
+        setAdvertiserStats(data);
+      }
+    } catch (err) {
+      console.error('Failed to load advertiser stats:', err);
+    }
+  };
+
+  // Load advertisers
+  const loadAdvertisers = useCallback(async (reset = false) => {
+    if (advertisersLoading) return;
+    setAdvertisersLoading(true);
+
+    try {
+      const currentOffset = reset ? 0 : advertisersOffset;
+      const archiveServer = await getArchiveServerUrl();
+
+      const params = new URLSearchParams({
+        limit: '50',
+        offset: currentOffset.toString(),
+      });
+
+      if (showDataBrokersOnly) {
+        params.append('dataBrokersOnly', 'true');
+      }
+
+      const res = await fetch(`${archiveServer}/api/facebook/advertisers?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      let loadedAdvertisers: AdvertiserItem[] = data.advertisers || [];
+
+      // Client-side search filter
+      if (advertisersSearch.trim()) {
+        const q = advertisersSearch.toLowerCase();
+        loadedAdvertisers = loadedAdvertisers.filter((a: AdvertiserItem) =>
+          a.name?.toLowerCase().includes(q)
+        );
+      }
+
+      if (reset) {
+        setAdvertisers(loadedAdvertisers);
+        setAdvertisersOffset(50);
+      } else {
+        setAdvertisers(prev => [...prev, ...loadedAdvertisers]);
+        setAdvertisersOffset(prev => prev + 50);
+      }
+
+      setAdvertisersHasMore(data.advertisers?.length === 50);
+    } catch (err) {
+      console.error('Failed to load advertisers:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load advertisers');
+    } finally {
+      setAdvertisersLoading(false);
+    }
+  }, [advertisersOffset, advertisersLoading, advertisersSearch, showDataBrokersOnly]);
+
   // Reload feed when filters change
   useEffect(() => {
     if (viewMode === 'feed') {
@@ -587,6 +869,122 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
     if (target) observer.observe(target);
     return () => { if (target) observer.unobserve(target); };
   }, [notesHasMore, notesLoading, viewMode, loadNotes]);
+
+  // Load groups when switching to groups view
+  useEffect(() => {
+    if (viewMode === 'groups' && groups.length === 0) {
+      loadGroups(true);
+    }
+  }, [viewMode]);
+
+  // Reload groups when search changes
+  useEffect(() => {
+    if (viewMode === 'groups') {
+      const debounce = setTimeout(() => {
+        setGroups([]);
+        setGroupsOffset(0);
+        setGroupsHasMore(true);
+        loadGroups(true);
+      }, 300);
+      return () => clearTimeout(debounce);
+    }
+  }, [groupsSearch]);
+
+  // Infinite scroll for groups
+  useEffect(() => {
+    if (viewMode !== 'groups') return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && groupsHasMore && !groupsLoading) {
+          loadGroups();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const target = groupsObserverRef.current;
+    if (target) observer.observe(target);
+    return () => { if (target) observer.unobserve(target); };
+  }, [groupsHasMore, groupsLoading, viewMode, loadGroups]);
+
+  // Load messenger threads when switching to messenger view
+  useEffect(() => {
+    if (viewMode === 'messenger' && messengerThreads.length === 0) {
+      loadMessengerThreads(true);
+    }
+  }, [viewMode]);
+
+  // Reload messenger when search changes
+  useEffect(() => {
+    if (viewMode === 'messenger') {
+      const debounce = setTimeout(() => {
+        setMessengerThreads([]);
+        setMessengerOffset(0);
+        setMessengerHasMore(true);
+        loadMessengerThreads(true);
+      }, 300);
+      return () => clearTimeout(debounce);
+    }
+  }, [messengerSearch]);
+
+  // Infinite scroll for messenger
+  useEffect(() => {
+    if (viewMode !== 'messenger') return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && messengerHasMore && !messengerLoading) {
+          loadMessengerThreads();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const target = messengerObserverRef.current;
+    if (target) observer.observe(target);
+    return () => { if (target) observer.unobserve(target); };
+  }, [messengerHasMore, messengerLoading, viewMode, loadMessengerThreads]);
+
+  // Load advertisers when switching to advertisers view
+  useEffect(() => {
+    if (viewMode === 'advertisers') {
+      if (advertisers.length === 0) {
+        loadAdvertisers(true);
+      }
+      if (!advertiserStats) {
+        loadAdvertiserStats();
+      }
+    }
+  }, [viewMode]);
+
+  // Reload advertisers when search or filter changes
+  useEffect(() => {
+    if (viewMode === 'advertisers') {
+      const debounce = setTimeout(() => {
+        setAdvertisers([]);
+        setAdvertisersOffset(0);
+        setAdvertisersHasMore(true);
+        loadAdvertisers(true);
+      }, 300);
+      return () => clearTimeout(debounce);
+    }
+  }, [advertisersSearch, showDataBrokersOnly]);
+
+  // Infinite scroll for advertisers
+  useEffect(() => {
+    if (viewMode !== 'advertisers') return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && advertisersHasMore && !advertisersLoading) {
+          loadAdvertisers();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const target = advertisersObserverRef.current;
+    if (target) observer.observe(target);
+    return () => { if (target) observer.unobserve(target); };
+  }, [advertisersHasMore, advertisersLoading, viewMode, loadAdvertisers]);
 
   // Keyboard navigation for lightbox
   useEffect(() => {
@@ -801,6 +1199,24 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             onClick={() => setViewMode('notes')}
           >
             Notes
+          </button>
+          <button
+            className={`facebook-view__tab ${viewMode === 'groups' ? 'facebook-view__tab--active' : ''}`}
+            onClick={() => setViewMode('groups')}
+          >
+            Groups
+          </button>
+          <button
+            className={`facebook-view__tab ${viewMode === 'messenger' ? 'facebook-view__tab--active' : ''}`}
+            onClick={() => setViewMode('messenger')}
+          >
+            Messenger
+          </button>
+          <button
+            className={`facebook-view__tab ${viewMode === 'advertisers' ? 'facebook-view__tab--active' : ''}`}
+            onClick={() => setViewMode('advertisers')}
+          >
+            Advertisers
           </button>
           {onOpenGraph && (
             <button
@@ -1148,6 +1564,300 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
 
             {notesLoading && <div className="facebook-view__loading">Loading notes...</div>}
             <div ref={notesObserverRef} style={{ height: 20 }} />
+          </div>
+        </div>
+      )}
+
+      {/* Groups View */}
+      {viewMode === 'groups' && (
+        <div className="facebook-view__groups">
+          {/* Groups search */}
+          <div className="facebook-view__filters">
+            <input
+              type="text"
+              className="facebook-view__search"
+              placeholder="Search groups..."
+              value={groupsSearch}
+              onChange={(e) => setGroupsSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Groups list */}
+          <div className="facebook-view__groups-list">
+            {error && <div className="facebook-view__error">{error}</div>}
+
+            {groups.length === 0 && !groupsLoading && (
+              <div className="facebook-view__empty">
+                <p>No groups found</p>
+                <span>Import your Facebook archive to see your Groups activity</span>
+              </div>
+            )}
+
+            {groups.map((group) => (
+              <div
+                key={group.id}
+                className={`facebook-view__group ${selectedGroupId === group.id ? 'facebook-view__group--expanded' : ''}`}
+              >
+                <div
+                  className="facebook-view__group-header"
+                  onClick={() => loadGroupContent(group.id)}
+                >
+                  <div className="facebook-view__group-name">
+                    {group.name || '[Unnamed Group]'}
+                  </div>
+                  <div className="facebook-view__group-stats">
+                    {group.post_count > 0 && (
+                      <span className="facebook-view__group-posts">{group.post_count} posts</span>
+                    )}
+                    {group.comment_count > 0 && (
+                      <span className="facebook-view__group-comments">{group.comment_count} comments</span>
+                    )}
+                    {group.joined_at && (
+                      <span className="facebook-view__group-joined">
+                        Joined {formatDate(group.joined_at)}
+                      </span>
+                    )}
+                    {group.last_activity > 0 && (
+                      <span className="facebook-view__group-activity">
+                        Last: {formatDate(group.last_activity)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Expanded group content */}
+                {selectedGroupId === group.id && (
+                  <div className="facebook-view__group-content">
+                    {groupContentLoading && (
+                      <div className="facebook-view__loading">Loading content...</div>
+                    )}
+
+                    {!groupContentLoading && groupContent.length === 0 && (
+                      <div className="facebook-view__empty">
+                        <p>No posts or comments found in this group</p>
+                      </div>
+                    )}
+
+                    {!groupContentLoading && groupContent.map((content) => (
+                      <div
+                        key={content.id}
+                        className={`facebook-view__group-item facebook-view__group-item--${content.type}`}
+                        onClick={() => {
+                          if (onSelectContent) {
+                            onSelectContent({
+                              id: content.id,
+                              type: content.type,
+                              source: 'facebook',
+                              text: content.text,
+                              title: content.title,
+                              created_at: content.timestamp,
+                              author_name: content.original_author,
+                              is_own_content: true,
+                            });
+                          }
+                        }}
+                      >
+                        <div className="facebook-view__group-item-header">
+                          <span className={`facebook-view__item-type facebook-view__item-type--${content.type}`}>
+                            {content.type === 'post' ? 'Post' : 'Comment'}
+                          </span>
+                          <span className="facebook-view__item-date">
+                            {formatDate(content.timestamp)}
+                          </span>
+                          {content.original_author && (
+                            <span className="facebook-view__group-item-author">
+                              re: {content.original_author}
+                            </span>
+                          )}
+                        </div>
+                        <div className="facebook-view__group-item-text">
+                          {content.text?.substring(0, 200) || '[No text]'}
+                          {content.text && content.text.length > 200 && '...'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {groupsLoading && <div className="facebook-view__loading">Loading groups...</div>}
+            <div ref={groupsObserverRef} style={{ height: 20 }} />
+          </div>
+        </div>
+      )}
+
+      {/* Messenger View */}
+      {viewMode === 'messenger' && (
+        <div className="facebook-view__messenger">
+          {/* Messenger search */}
+          <div className="facebook-view__filters">
+            <input
+              type="text"
+              className="facebook-view__search"
+              placeholder="Search conversations..."
+              value={messengerSearch}
+              onChange={(e) => setMessengerSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Threads list */}
+          <div className="facebook-view__threads-list">
+            {error && <div className="facebook-view__error">{error}</div>}
+
+            {messengerThreads.length === 0 && !messengerLoading && (
+              <div className="facebook-view__empty">
+                <p>No messenger threads found</p>
+                <span>Import your Facebook archive to see your Messenger conversations</span>
+              </div>
+            )}
+
+            {messengerThreads.map((thread) => (
+              <div
+                key={thread.thread_id}
+                className={`facebook-view__thread ${selectedThreadId === thread.thread_id ? 'facebook-view__thread--expanded' : ''}`}
+              >
+                <div
+                  className="facebook-view__thread-header"
+                  onClick={() => loadThreadMessages(thread.thread_id)}
+                >
+                  <div className="facebook-view__thread-title">
+                    {thread.title || '[Unknown Thread]'}
+                  </div>
+                  <div className="facebook-view__thread-stats">
+                    <span className="facebook-view__thread-count">
+                      {thread.message_count.toLocaleString()} messages
+                    </span>
+                    <span className="facebook-view__thread-date">
+                      Last: {formatDate(thread.last_message)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expanded thread messages */}
+                {selectedThreadId === thread.thread_id && (
+                  <div className="facebook-view__thread-messages">
+                    {threadMessagesLoading && (
+                      <div className="facebook-view__loading">Loading messages...</div>
+                    )}
+
+                    {!threadMessagesLoading && threadMessages.length === 0 && (
+                      <div className="facebook-view__empty">
+                        <p>No messages in this thread</p>
+                      </div>
+                    )}
+
+                    {!threadMessagesLoading && threadMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`facebook-view__message ${msg.is_own_content ? 'facebook-view__message--own' : 'facebook-view__message--other'}`}
+                      >
+                        <div className="facebook-view__message-header">
+                          <span className="facebook-view__message-author">
+                            {msg.author_name}
+                          </span>
+                          <span className="facebook-view__message-time">
+                            {formatDate(msg.created_at)}
+                          </span>
+                        </div>
+                        <div className="facebook-view__message-text">
+                          {msg.text || '[Media/Call]'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {messengerLoading && <div className="facebook-view__loading">Loading threads...</div>}
+            <div ref={messengerObserverRef} style={{ height: 20 }} />
+          </div>
+        </div>
+      )}
+
+      {/* Advertisers View */}
+      {viewMode === 'advertisers' && (
+        <div className="facebook-view__advertisers">
+          {/* Stats bar */}
+          {advertiserStats && (
+            <div className="facebook-view__advertiser-stats">
+              <div className="facebook-view__advertiser-stat">
+                <span className="facebook-view__advertiser-stat-value">{advertiserStats.total.toLocaleString()}</span>
+                <span className="facebook-view__advertiser-stat-label">Total</span>
+              </div>
+              <div className="facebook-view__advertiser-stat facebook-view__advertiser-stat--broker">
+                <span className="facebook-view__advertiser-stat-value">{advertiserStats.dataBrokers}</span>
+                <span className="facebook-view__advertiser-stat-label">Data Brokers</span>
+              </div>
+              <div className="facebook-view__advertiser-stat">
+                <span className="facebook-view__advertiser-stat-value">
+                  {((advertiserStats.dataBrokers / advertiserStats.total) * 100).toFixed(1)}%
+                </span>
+                <span className="facebook-view__advertiser-stat-label">Broker %</span>
+              </div>
+            </div>
+          )}
+
+          {/* Filters */}
+          <div className="facebook-view__filters">
+            <input
+              type="text"
+              className="facebook-view__search"
+              placeholder="Search advertisers..."
+              value={advertisersSearch}
+              onChange={(e) => setAdvertisersSearch(e.target.value)}
+            />
+            <label className="facebook-view__checkbox facebook-view__checkbox--broker">
+              <input
+                type="checkbox"
+                checked={showDataBrokersOnly}
+                onChange={(e) => setShowDataBrokersOnly(e.target.checked)}
+              />
+              Data Brokers Only
+            </label>
+          </div>
+
+          {/* Advertisers list */}
+          <div className="facebook-view__advertisers-list">
+            {error && <div className="facebook-view__error">{error}</div>}
+
+            {advertisers.length === 0 && !advertisersLoading && (
+              <div className="facebook-view__empty">
+                <p>No advertisers found</p>
+                <span>{showDataBrokersOnly ? 'No data brokers in your archive' : 'Import your Facebook archive to see who tracks you'}</span>
+              </div>
+            )}
+
+            {advertisers.map((advertiser) => (
+              <div
+                key={advertiser.id}
+                className={`facebook-view__advertiser ${advertiser.isDataBroker ? 'facebook-view__advertiser--broker' : ''}`}
+              >
+                <div className="facebook-view__advertiser-header">
+                  <div className="facebook-view__advertiser-name">
+                    {advertiser.name}
+                    {advertiser.isDataBroker && (
+                      <span className="facebook-view__advertiser-broker-badge">Data Broker</span>
+                    )}
+                  </div>
+                  <div className="facebook-view__advertiser-type">
+                    {advertiser.targetingType === 'uploaded_list' ? 'Has Your Data' : 'You Interacted'}
+                  </div>
+                </div>
+                <div className="facebook-view__advertiser-meta">
+                  <span className="facebook-view__advertiser-interactions">
+                    {advertiser.interactionCount} interaction{advertiser.interactionCount !== 1 ? 's' : ''}
+                  </span>
+                  <span className="facebook-view__advertiser-timeline">
+                    {formatDate(advertiser.firstSeen)} — {formatDate(advertiser.lastSeen)}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {advertisersLoading && <div className="facebook-view__loading">Loading advertisers...</div>}
+            <div ref={advertisersObserverRef} style={{ height: 20 }} />
           </div>
         </div>
       )}

@@ -3170,3 +3170,355 @@
   display: none;
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════
+ * FACEBOOK VIEW - GROUPS
+ * ═══════════════════════════════════════════════════════════════════ */
+
+.facebook-view__groups {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.facebook-view__groups-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-small);
+}
+
+.facebook-view__group {
+  background: var(--studio-bg-secondary);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-medium);
+  margin-bottom: var(--space-small);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.facebook-view__group:hover {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__group--expanded {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__group-header {
+  padding: var(--space-medium);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.facebook-view__group-name {
+  font-weight: 600;
+  color: var(--studio-text);
+  font-size: 0.875rem;
+}
+
+.facebook-view__group-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-small);
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+.facebook-view__group-posts {
+  font-weight: 500;
+  color: var(--studio-accent);
+}
+
+.facebook-view__group-comments {
+  color: var(--color-status-info);
+}
+
+.facebook-view__group-joined,
+.facebook-view__group-activity {
+  color: var(--studio-text-tertiary, var(--studio-text-secondary));
+}
+
+.facebook-view__group-content {
+  border-top: 1px solid var(--studio-border);
+  padding: var(--space-small);
+  background: var(--studio-bg);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.facebook-view__group-item {
+  padding: var(--space-small);
+  background: var(--studio-bg-secondary);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-small);
+  margin-bottom: var(--space-small);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.facebook-view__group-item:hover {
+  background: var(--studio-bg-hover);
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__group-item:last-child {
+  margin-bottom: 0;
+}
+
+.facebook-view__group-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  margin-bottom: var(--space-xs);
+}
+
+.facebook-view__group-item-author {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  font-style: italic;
+}
+
+.facebook-view__group-item-text {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--studio-text);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * FACEBOOK VIEW - MESSENGER
+ * ═══════════════════════════════════════════════════════════════════ */
+
+.facebook-view__messenger {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.facebook-view__threads-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-small);
+}
+
+.facebook-view__thread {
+  background: var(--studio-bg-secondary);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-medium);
+  margin-bottom: var(--space-small);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.facebook-view__thread:hover {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__thread--expanded {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__thread-header {
+  padding: var(--space-medium);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.facebook-view__thread-title {
+  font-weight: 600;
+  color: var(--studio-text);
+  font-size: 0.875rem;
+}
+
+.facebook-view__thread-stats {
+  display: flex;
+  gap: var(--space-small);
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+.facebook-view__thread-count {
+  font-weight: 500;
+  color: var(--studio-accent);
+}
+
+.facebook-view__thread-messages {
+  border-top: 1px solid var(--studio-border);
+  padding: var(--space-small);
+  background: var(--studio-bg);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.facebook-view__message {
+  padding: var(--space-small);
+  border-radius: var(--radius-small);
+  margin-bottom: var(--space-xs);
+  max-width: 85%;
+}
+
+.facebook-view__message--own {
+  background: var(--studio-accent);
+  background: color-mix(in srgb, var(--studio-accent) 20%, transparent);
+  margin-left: auto;
+  border: 1px solid var(--studio-accent);
+}
+
+.facebook-view__message--other {
+  background: var(--studio-bg-secondary);
+  border: 1px solid var(--studio-border);
+  margin-right: auto;
+}
+
+.facebook-view__message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-xs);
+  font-size: 0.75rem;
+}
+
+.facebook-view__message-author {
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.facebook-view__message-time {
+  color: var(--studio-text-secondary);
+}
+
+.facebook-view__message-text {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--studio-text);
+  word-break: break-word;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * FACEBOOK VIEW - ADVERTISERS
+ * ═══════════════════════════════════════════════════════════════════ */
+
+.facebook-view__advertisers {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.facebook-view__advertiser-stats {
+  display: flex;
+  gap: var(--space-medium);
+  padding: var(--space-medium);
+  background: var(--studio-bg-secondary);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.facebook-view__advertiser-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.facebook-view__advertiser-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--studio-text);
+}
+
+.facebook-view__advertiser-stat-label {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+.facebook-view__advertiser-stat--broker .facebook-view__advertiser-stat-value {
+  color: var(--color-status-error, #dc3545);
+}
+
+.facebook-view__checkbox--broker {
+  font-weight: 500;
+  color: var(--color-status-error, #dc3545);
+}
+
+.facebook-view__advertisers-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-small);
+}
+
+.facebook-view__advertiser {
+  background: var(--studio-bg-secondary);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-medium);
+  margin-bottom: var(--space-small);
+  padding: var(--space-medium);
+  transition: border-color var(--transition-fast);
+}
+
+.facebook-view__advertiser:hover {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__advertiser--broker {
+  border-color: var(--color-status-error, #dc3545);
+  background: color-mix(in srgb, var(--color-status-error, #dc3545) 5%, var(--studio-bg-secondary));
+}
+
+.facebook-view__advertiser--broker:hover {
+  border-color: var(--color-status-error, #dc3545);
+}
+
+.facebook-view__advertiser-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-small);
+  margin-bottom: var(--space-xs);
+}
+
+.facebook-view__advertiser-name {
+  font-weight: 600;
+  color: var(--studio-text);
+  font-size: 0.875rem;
+  word-break: break-word;
+}
+
+.facebook-view__advertiser-broker-badge {
+  display: inline-block;
+  margin-left: var(--space-small);
+  padding: 2px 6px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: white;
+  background: var(--color-status-error, #dc3545);
+  border-radius: var(--radius-small);
+}
+
+.facebook-view__advertiser-type {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.facebook-view__advertiser-meta {
+  display: flex;
+  gap: var(--space-medium);
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+.facebook-view__advertiser-interactions {
+  font-weight: 500;
+  color: var(--studio-accent);
+}
+
+.facebook-view__advertiser-timeline {
+  color: var(--studio-text-tertiary, var(--studio-text-secondary));
+}
