@@ -10,178 +10,30 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { SelectedFacebookMedia, SelectedFacebookContent } from './types';
-import { getArchiveServerUrl, isElectron } from '../../lib/platform';
+import { getArchiveServerUrl } from '../../lib/platform';
 import { ImageWithFallback, MediaThumbnail } from '../common';
 import { formatTextForDisplay } from '../../lib/utils/textCleaner';
 
+// Import shared types and utilities
+import type {
+  FacebookPeriod,
+  FacebookContentItem,
+  MediaItem,
+  MediaStats,
+  MediaContext,
+  ViewMode,
+  FilterType,
+  NoteItem,
+  GroupItem,
+  GroupContentItem,
+  MessengerThread,
+  MessengerMessage,
+  AdvertiserItem,
+  AdvertiserStats,
+} from './facebook/shared';
+import { normalizeMediaPath, getVideoThumbnailUrl, formatDate, formatFileSize } from './facebook/shared';
+
 const ITEMS_PER_PAGE = 50;
-
-/**
- * Normalize file path to a URL for media serving
- * - In Electron: Uses local-media:// protocol for direct file access
- * - In browser: Uses HTTP archive server with URL encoding (dynamic port)
- * @param filePath The raw file path
- * @param archiveServerUrl The archive server base URL (required for browser mode)
- */
-function normalizeMediaPath(filePath: string, archiveServerUrl: string | null): string {
-  if (!filePath) return filePath;
-  // Already a URL, return as-is
-  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('local-media://')) {
-    return filePath;
-  }
-  // In Electron, use the local-media:// protocol for direct file serving
-  if (isElectron) {
-    return `local-media://serve${filePath}`;
-  }
-  // In browser, use archive server with URL encoding (dynamic port)
-  if (!archiveServerUrl) {
-    console.warn('Archive server URL not available');
-    return filePath;
-  }
-  return `${archiveServerUrl}/api/facebook/serve-media?path=${encodeURIComponent(filePath)}`;
-}
-
-/**
- * Get video thumbnail URL
- * Uses the video-thumbnail endpoint which generates thumbnails on first access
- */
-function getVideoThumbnailUrl(filePath: string, archiveServerUrl: string | null): string {
-  if (!filePath || !archiveServerUrl) return '';
-  return `${archiveServerUrl}/api/facebook/video-thumbnail?path=${encodeURIComponent(filePath)}`;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════
-
-interface FacebookPeriod {
-  period: string;
-  count: number;
-  start_date: number;
-  end_date: number;
-  quarter: number;
-  year: number;
-}
-
-interface FacebookContentItem {
-  id: string;
-  type: 'post' | 'comment';
-  source: 'facebook';
-  text: string;
-  title?: string;
-  created_at: number;
-  author_name?: string;
-  is_own_content: boolean;
-  file_path?: string;
-  media_refs?: string;
-  context?: string;
-  metadata?: string;
-}
-
-interface MediaItem {
-  id: string;
-  source_type: string;
-  media_type: string;
-  file_path: string;
-  filename: string;
-  file_size: number;
-  width?: number;
-  height?: number;
-  created_at: number;
-  description?: string;
-  context?: string;
-  related_post_id?: string;
-  album_name?: string;
-  has_video_track?: boolean; // false = audio-only MP4
-}
-
-interface MediaStats {
-  total: number;
-  totalSizeBytes: number;
-  bySourceType?: Record<string, number>;
-  byMediaType?: Record<string, number>;
-}
-
-interface MediaContext {
-  posts: Array<{
-    id: string;
-    text: string;
-    created_at: number;
-    type: string;
-  }>;
-  albums: Array<{
-    name: string;
-    photo_count: number;
-  }>;
-}
-
-type ViewMode = 'feed' | 'gallery' | 'notes' | 'groups' | 'messenger' | 'advertisers';
-type FilterType = 'all' | 'post' | 'comment' | 'media';
-
-interface NoteItem {
-  id: string;
-  title: string;
-  wordCount: number;
-  charCount: number;
-  createdTimestamp: number;
-  updatedTimestamp?: number;
-  hasMedia: boolean;
-  mediaCount: number;
-  tags?: string[];
-}
-
-interface GroupItem {
-  id: string;
-  name: string;
-  joined_at: number | null;
-  post_count: number;
-  comment_count: number;
-  last_activity: number;
-}
-
-interface GroupContentItem {
-  id: string;
-  group_id: string;
-  type: 'post' | 'comment';
-  text: string;
-  timestamp: number;
-  original_author?: string;
-  external_urls?: string;
-  title?: string;
-}
-
-interface MessengerThread {
-  thread_id: string;
-  title: string;
-  message_count: number;
-  last_message: number;
-  first_message: number;
-}
-
-interface MessengerMessage {
-  id: string;
-  text: string;
-  author_name: string;
-  is_own_content: boolean;
-  created_at: number;
-  thread_id: string;
-}
-
-interface AdvertiserItem {
-  id: string;
-  name: string;
-  targetingType: 'uploaded_list' | 'interacted';
-  interactionCount: number;
-  isDataBroker: boolean;
-  firstSeen: number;
-  lastSeen: number;
-}
-
-interface AdvertiserStats {
-  total: number;
-  dataBrokers: number;
-  byTargetingType: Array<{ targeting_type: string; count: number }>;
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -1028,19 +880,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
     return normalizeMediaPath(item.file_path, archiveServerUrl);
   };
 
-  const formatDate = (ts: number) => {
-    return new Date(ts * 1000).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
+  // Note: formatDate and formatFileSize are imported from './facebook/shared'
 
   // Handle media selection for main workspace
   const handleSelectMedia = async (item: MediaItem, index: number) => {
