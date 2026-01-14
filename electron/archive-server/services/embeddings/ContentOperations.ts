@@ -82,8 +82,9 @@ export class ContentOperations extends DatabaseOperations {
     tags?: string;
     search_text?: string;
   }>): void {
-    const insertMany = this.db.transaction((items: typeof items) => {
-      for (const item of items) {
+    const batchItems = items;
+    const insertMany = this.db.transaction((itemsToInsert: typeof batchItems) => {
+      for (const item of itemsToInsert) {
         this.insertContentItem(item);
       }
     });
@@ -184,8 +185,9 @@ export class ContentOperations extends DatabaseOperations {
     reactor_id?: string;
     created_at: number;
   }>): void {
-    const insertMany = this.db.transaction((reactions: typeof reactions) => {
-      for (const reaction of reactions) {
+    const batchReactions = reactions;
+    const insertMany = this.db.transaction((reactionsToInsert: typeof batchReactions) => {
+      for (const reaction of reactionsToInsert) {
         this.insertReaction(reaction);
       }
     });
