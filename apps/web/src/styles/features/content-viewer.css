@@ -169,8 +169,18 @@
 
 .content-viewer__video-item {
   width: 100%;
+  aspect-ratio: 16/9;
   border-radius: var(--radius-md);
   overflow: hidden;
+  background: #000;
+}
+
+/* Video grid uses same 2-column layout as images */
+.content-viewer__video-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-md);
+  margin-top: var(--space-md);
 }
 
 /* Legacy list layout */

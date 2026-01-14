@@ -868,3 +868,8 @@
 .facebook-view__advertiser-timeline {
   color: var(--studio-text-tertiary, var(--studio-text-secondary));
 }
+
+/* Intersection observer spacer */
+.facebook-view__observer-spacer {
+  height: 20px;
+}

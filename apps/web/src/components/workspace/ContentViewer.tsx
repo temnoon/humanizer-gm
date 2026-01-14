@@ -103,21 +103,11 @@ export function ContentViewer({ content, onClose, getMediaUrl }: ContentViewerPr
 
             {/* Images in 2-column grid */}
             {imageMedia.length > 0 && (
-              <div
-                className="content-viewer__media-grid"
-                style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}
-              >
+              <div className="content-viewer__media-grid">
                 {imageMedia.map((item, idx) => (
                   <div
                     key={item.id}
                     className="content-viewer__media-thumb"
-                    style={{
-                      aspectRatio: '4/3',
-                      cursor: 'pointer',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      background: 'var(--color-bg-tertiary, #f0f0f0)'
-                    }}
                     onClick={() => {
                       setLightboxIndex(idx);
                       setLightboxOpen(true);
@@ -136,7 +126,6 @@ export function ContentViewer({ content, onClose, getMediaUrl }: ContentViewerPr
                       src={getMediaUrl(item.file_path)}
                       alt={`Attached media ${idx + 1}`}
                       loading="lazy"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   </div>
                 ))}
@@ -145,20 +134,11 @@ export function ContentViewer({ content, onClose, getMediaUrl }: ContentViewerPr
 
             {/* Videos in 2-column grid like images */}
             {videoMedia.length > 0 && (
-              <div
-                className="content-viewer__media-grid"
-                style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginTop: imageMedia.length > 0 ? '16px' : '0' }}
-              >
+              <div className={`content-viewer__media-grid ${imageMedia.length > 0 ? 'content-viewer__video-grid' : ''}`}>
                 {videoMedia.map(item => (
                   <div
                     key={item.id}
                     className="content-viewer__video-item"
-                    style={{
-                      aspectRatio: '16/9',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      background: '#000'
-                    }}
                   >
                     <VideoPlayer
                       key={item.id}

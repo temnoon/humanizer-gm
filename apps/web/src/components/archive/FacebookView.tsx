@@ -1211,7 +1211,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             ))}
 
             {feedLoading && <div className="facebook-view__loading">Loading...</div>}
-            <div ref={feedObserverRef} style={{ height: 20 }} />
+            <div ref={feedObserverRef} className="facebook-view__observer-spacer" />
           </div>
         </div>
       )}
@@ -1317,7 +1317,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
           </div>
 
           {mediaLoading && <div className="facebook-view__loading">Loading...</div>}
-          <div ref={mediaObserverRef} style={{ height: 20 }} />
+          <div ref={mediaObserverRef} className="facebook-view__observer-spacer" />
         </div>
       )}
 
@@ -1403,7 +1403,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             ))}
 
             {notesLoading && <div className="facebook-view__loading">Loading notes...</div>}
-            <div ref={notesObserverRef} style={{ height: 20 }} />
+            <div ref={notesObserverRef} className="facebook-view__observer-spacer" />
           </div>
         </div>
       )}
@@ -1522,7 +1522,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             ))}
 
             {groupsLoading && <div className="facebook-view__loading">Loading groups...</div>}
-            <div ref={groupsObserverRef} style={{ height: 20 }} />
+            <div ref={groupsObserverRef} className="facebook-view__observer-spacer" />
           </div>
         </div>
       )}
@@ -1611,7 +1611,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             ))}
 
             {messengerLoading && <div className="facebook-view__loading">Loading threads...</div>}
-            <div ref={messengerObserverRef} style={{ height: 20 }} />
+            <div ref={messengerObserverRef} className="facebook-view__observer-spacer" />
           </div>
         </div>
       )}
@@ -1697,7 +1697,7 @@ export function FacebookView({ onSelectMedia, onSelectContent, onOpenGraph }: Fa
             ))}
 
             {advertisersLoading && <div className="facebook-view__loading">Loading advertisers...</div>}
-            <div ref={advertisersObserverRef} style={{ height: 20 }} />
+            <div ref={advertisersObserverRef} className="facebook-view__observer-spacer" />
           </div>
         </div>
       )}
