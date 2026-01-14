@@ -1,8 +1,8 @@
-# Handoff: Modularization Session - Jan 14, 2026
+# Handoff: EmbeddingDatabase Modularization Complete - Jan 14, 2026
 
 ## Session Summary
 
-Continued large file modularization from previous session. Both target files significantly improved.
+**Completed the full EmbeddingDatabase modularization** - all 6 operation modules extracted and delegation wiring complete. File reduced from 4,725 to 2,209 lines (53% reduction).
 
 ---
 
@@ -10,128 +10,134 @@ Continued large file modularization from previous session. Both target files sig
 
 | Commit | Description |
 |--------|-------------|
-| `682b26b` | Modularize facebook.ts routes into 8 modules |
-| `f7f6bd9` | Extract FacebookView.tsx shared types and utilities |
+| `750c0bb` | refactor(embeddings): complete delegation wiring for EmbeddingDatabase |
 
-**All pushed to origin/main**
+**Pushed to origin/main**
 
 ---
 
 ## Completed Work
 
-### 1. facebook.ts Routes Modularization ✅
+### Delegation Wiring Complete
 
-**Before:** `electron/archive-server/routes/facebook.ts` - 2,932 lines, 55 routes
+All methods in EmbeddingDatabase.ts now delegate to operation modules:
 
-**After:** `electron/archive-server/routes/facebook/` - 8 modules:
+| Module | Lines | Methods | Domain |
+|--------|-------|---------|--------|
+| DatabaseOperations.ts | 60 | Base class | Common utilities (embeddingToJson, etc.) |
+| ConversationOperations.ts | 450 | ~25 | Conversations, messages, chunks, marks, clusters, anchors |
+| VectorOperations.ts | 450 | ~15 | Embeddings, vector search, stats |
+| ContentOperations.ts | 280 | ~15 | Content items, reactions, imports |
+| FacebookOperations.ts | 1,171 | ~35 | Entity graph, relationships, image analysis, clustering |
+| BookOperations.ts | 1,302 | ~40 | Links, media, books, personas, styles, passages, chapters |
 
-| File | Lines | Routes |
-|------|-------|--------|
-| `index.ts` | 57 | Router combiner |
-| `shared.ts` | 83 | Common utilities |
-| `feed.routes.ts` | 525 | /periods, /notes/* |
-| `media.routes.ts` | 712 | /media*, /video*, /transcription/* |
-| `social.routes.ts` | 682 | /graph/*, /friends/* |
-| `groups.routes.ts` | 284 | /groups/* |
-| `messenger.routes.ts` | 204 | /messenger/* |
-| `meta.routes.ts` | 535 | /advertisers/*, /pages/*, /reactions/* |
+### Type Fixes Applied
 
-Total: 3,082 lines (slight increase due to module structure, but maintainable)
+- `embeddings.ts`: Added type assertions for `Record<string, unknown>` returns
+- `media.routes.ts`: Fixed `media_refs` type handling
+- Added `getRawDb()` method for routes needing direct database access
 
----
-
-### 2. FacebookView.tsx Shared Module ✅
-
-**Before:** `apps/web/src/components/archive/FacebookView.tsx` - 1,991 lines
-
-**After:** 1,831 lines (160 lines extracted)
-
-**Created:** `apps/web/src/components/archive/facebook/shared/`
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| `types.ts` | 148 | All interface definitions |
-| `mediaUtils.ts` | 36 | URL normalization functions |
-| `formatters.ts` | 26 | Date/size formatters |
-| `index.ts` | 7 | Module exports |
-
----
-
-## Remaining Work (Lower Priority)
-
-### FacebookView.tsx Further Extraction
-
-The file is still 1,831 lines. Further extraction is possible but more complex due to tightly coupled state:
-
-**Potential extractions (medium-high risk):**
-1. Tab-specific hooks (useFeedData, useGalleryData, etc.)
-2. Tab components (Feed, Gallery, Notes, Groups, Messenger, Advertisers)
-3. Lightbox component
-
-**Recommendation:** The shared types and utilities extraction provides most of the benefit. Tab extraction would require careful state management refactoring and should be done when specific tabs need modification.
-
----
-
-## File Structure After Modularization
+### Final File Structure
 
 ```
-electron/archive-server/routes/
-├── facebook/                    # NEW - Modular routes
-│   ├── index.ts
-│   ├── shared.ts
-│   ├── feed.routes.ts
-│   ├── media.routes.ts
-│   ├── social.routes.ts
-│   ├── groups.routes.ts
-│   ├── messenger.routes.ts
-│   └── meta.routes.ts
-├── archive.ts
-├── auth.ts
-└── ...
-
-apps/web/src/components/archive/
-├── FacebookView.tsx             # Reduced to 1,831 lines
-├── facebook/                    # NEW - Shared utilities
-│   ├── shared/
-│   │   ├── types.ts
-│   │   ├── mediaUtils.ts
-│   │   ├── formatters.ts
-│   │   └── index.ts
-│   ├── tabs/                    # Empty - for future tab extraction
-│   └── hooks/                   # Empty - for future hook extraction
-└── ...
+electron/archive-server/services/embeddings/
+├── EmbeddingDatabase.ts      # 2,209 lines (core + delegation)
+├── EmbeddingMigrations.ts    # Schema migrations
+├── DatabaseOperations.ts     # 60 lines (base class)
+├── ConversationOperations.ts # 450 lines
+├── VectorOperations.ts       # 450 lines
+├── ContentOperations.ts      # 280 lines
+├── FacebookOperations.ts     # 1,171 lines
+├── BookOperations.ts         # 1,302 lines
+├── types.ts                  # Type definitions
+└── index.ts                  # Exports
 ```
+
+---
+
+## Next Session: House Agent Audit
+
+Run a fresh House Council audit to identify next priorities:
+
+```
+/audit all
+```
+
+### Known Priorities from Previous Audit
+
+The House Council audit (before modularization) identified:
+
+| Priority | File | Lines | Status |
+|----------|------|-------|--------|
+| CRITICAL | EmbeddingDatabase.ts | 4,725 | ✅ RESOLVED (now 2,209) |
+| HIGH | views.css | 3,524 | Pending |
+| HIGH | panels.css | 2,438 | Pending |
+| HIGH | books-tab.css | 2,422 | Pending |
+| MEDIUM | Various components | ~500 each | Pending |
+
+### CSS Modularization Likely Next
+
+The Stylist house will likely flag CSS files for modularization:
+- `views.css` - Main view styles
+- `panels.css` - Panel components
+- `books-tab.css` - Books UI
+
+Consider extracting into:
+- Component-specific CSS modules
+- Shared utility classes
+- Theme variable consolidation
 
 ---
 
 ## Build Status
 
-All builds passing:
-- `npm run build:electron` ✅
-- `npm run build` ✅
+```bash
+npm run build        # ✅ Passes
+npm run build:electron  # ✅ Passes
+```
 
 ---
 
-## Next Session Priorities
+## Key Patterns Established
 
-1. **Continue with other tech debt items** from original audit:
-   - `views.css` (3,524 lines)
-   - `panels.css` (2,438 lines)
-   - `books-tab.css` (2,422 lines)
+### Delegation Pattern
 
-2. Or proceed with new features as needed
+```typescript
+// In EmbeddingDatabase.ts
+insertConversation(conv: ConversationParams): void {
+  return this.conversationOps.insertConversation(conv);
+}
+```
+
+### Module Initialization
+
+```typescript
+// In constructor after schema setup
+this.conversationOps = new ConversationOperations(this.db, this.vecLoaded);
+this.vectorOps = new VectorOperations(this.db, this.vecLoaded);
+// ... etc
+```
+
+### Type Handling
+
+For `Record<string, unknown>` returns in routes:
+```typescript
+const item = db.getContentItem(id) as Record<string, unknown> | null;
+const text = item.text as string || '';
+```
 
 ---
 
-## Key Files
+## Session Statistics
 
-| File | Purpose |
-|------|---------|
-| `electron/archive-server/routes/facebook/index.ts` | New route entry point |
-| `apps/web/src/components/archive/facebook/shared/` | New shared utilities |
-| `docs/HANDOFF_JAN14_MODULARIZATION.md` | Previous session handoff |
+- **Lines removed**: 2,765
+- **Lines added**: 250
+- **Net reduction**: 2,515 lines
+- **Percentage reduction**: 53%
+- **Build status**: All green
+- **Tests**: Not run (no test suite present)
 
 ---
 
 **Session End:** Jan 14, 2026
-**Status:** facebook.ts fully modularized, FacebookView.tsx foundation laid
+**Status:** Modularization COMPLETE, ready for CSS audit
