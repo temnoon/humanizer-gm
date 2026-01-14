@@ -97,19 +97,19 @@
 .book-content-view__action--primary {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
 }
 
 .book-content-view__action--primary:hover {
   opacity: 0.9;
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
 }
 
 .book-content-view__action--active {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
 }
 
 .book-content-view__body {
@@ -292,7 +292,7 @@
   background: var(--studio-accent);
   border-radius: 3px;
   font-weight: 600;
-  color: white;
+  color: var(--studio-text);
 }
 
 .book-content-view__version-changes {
@@ -311,7 +311,7 @@
   border-radius: 12px;
   font-size: 0.6875rem;
   font-weight: 600;
-  color: white;
+  color: var(--studio-text);
 }
 
 /* Save status indicator */
@@ -361,7 +361,7 @@
   margin-top: 0.5rem;
   padding: 0.375rem 0.75rem;
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
   border: none;
   border-radius: 4px;
   font-size: 0.6875rem;

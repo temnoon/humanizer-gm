@@ -187,7 +187,7 @@
 .bucket-action--commit {
   background: var(--studio-accent, #4a90d9);
   border: 1px solid var(--studio-accent, #4a90d9);
-  color: white;
+  color: var(--studio-text);
 }
 
 .bucket-action--commit:hover {
@@ -209,7 +209,7 @@
 .bucket-action--harvest {
   background: var(--color-info, #3b82f6);
   border: 1px solid var(--color-info, #3b82f6);
-  color: white;
+  color: var(--studio-text);
   font-weight: 500;
 }
 

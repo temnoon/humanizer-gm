@@ -111,7 +111,7 @@
 
 .structure-inspector__type-badge {
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
 }
 
 .structure-inspector__source-badge {

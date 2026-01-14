@@ -21,7 +21,7 @@
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  color: white;
+  color: var(--studio-text);
   background: var(--studio-accent);
   border: none;
   border-radius: 50%;

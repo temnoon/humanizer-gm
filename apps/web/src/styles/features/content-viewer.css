@@ -84,7 +84,7 @@
 .content-viewer__badge {
   padding: var(--space-xs) var(--space-sm);
   background: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
   border-radius: var(--radius-sm);
   font-size: 0.6875rem;
   font-weight: 600;

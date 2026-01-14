@@ -105,7 +105,7 @@
 
 .container-workspace__action--active {
   background: var(--studio-accent, #8b7355);
-  color: white;
+  color: var(--studio-text);
   border-color: var(--studio-accent, #8b7355);
 }
 
@@ -692,7 +692,7 @@
 .container-workspace__transcript-btn--active {
   background: var(--studio-accent, #4a90d9);
   border-color: var(--studio-accent, #4a90d9);
-  color: white;
+  color: var(--studio-text);
 }
 
 .container-workspace__transcript-btn--active:hover {

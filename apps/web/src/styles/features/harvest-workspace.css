@@ -358,7 +358,7 @@
 .harvest-message__action--active {
   background: var(--color-success);
   border-color: var(--color-success);
-  color: white;
+  color: var(--studio-text);
 }
 
 .harvest-message__action--gem:hover {

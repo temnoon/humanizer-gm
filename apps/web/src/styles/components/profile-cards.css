@@ -465,7 +465,7 @@
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: white;
+  color: var(--studio-text);
   background: var(--studio-accent);
   border: none;
   border-radius: 4px;
@@ -538,7 +538,7 @@
 .tool-card--primary {
   background: var(--studio-accent);
   border-color: var(--studio-accent);
-  color: white;
+  color: var(--studio-text);
 }
 
 .tool-card--primary:hover {
@@ -549,7 +549,7 @@
 
 .tool-card--primary .tool-card__name,
 .tool-card--primary .tool-card__desc {
-  color: white;
+  color: var(--studio-text);
 }
 
 .tool-card--primary .tool-card__desc {
