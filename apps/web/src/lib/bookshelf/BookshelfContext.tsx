@@ -2,6 +2,7 @@
  * BookshelfContext - React context for bookshelf state management
  *
  * Provides access to personas, styles, and book projects across the app.
+ * Business logic delegated to operation modules in ./operations/.
  *
  * Storage strategy:
  * - In Electron: Uses Xanadu unified storage (SQLite) via IPC
@@ -30,7 +31,6 @@ import type {
   NarrativeArc,
   CurationStatus,
 } from './types';
-import { generateURI } from './types';
 import { bookshelfService } from './BookshelfService';
 import { harvestBucketService } from './HarvestBucketService';
 import {
@@ -39,15 +39,33 @@ import {
   hasDataToMigrate,
 } from '../migration';
 
-// ═══════════════════════════════════════════════════════════════════
-// STORAGE MODE DETECTION
-// ═══════════════════════════════════════════════════════════════════
-
-function isXanaduAvailable(): boolean {
-  return typeof window !== 'undefined' &&
-    window.isElectron === true &&
-    window.electronAPI?.xanadu !== undefined;
-}
+// Operation modules
+import {
+  isXanaduAvailable,
+  isDevFallbackEnabled,
+  getPersona as getPersonaOp,
+  createPersona as createPersonaOp,
+  getStyle as getStyleOp,
+  createStyle as createStyleOp,
+  getBook as getBookOp,
+  getResolvedBook as getResolvedBookOp,
+  createBook as createBookOp,
+  updateBook as updateBookOp,
+  deleteBook as deleteBookOp,
+  renderBook as renderBookOp,
+  getChapter as getChapterOp,
+  addChapter as addChapterOp,
+  updateChapter as updateChapterOp,
+  deleteChapter as deleteChapterOp,
+  saveDraftVersion as saveDraftVersionOp,
+  getChapterVersions as getChapterVersionsOp,
+  updateWriterNotes as updateWriterNotesOp,
+  countWords,
+  getPassages as getPassagesOp,
+  addPassageToBook as addPassageToBookOp,
+  updatePassageStatus as updatePassageStatusOp,
+  deletePassage as deletePassageOp,
+} from './operations';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONTEXT TYPE
@@ -82,7 +100,7 @@ interface BookshelfContextType {
   deleteChapter: (bookUri: EntityURI, chapterId: string) => Promise<BookProject | undefined>;
   getChapter: (bookUri: EntityURI, chapterId: string) => DraftChapter | undefined;
 
-  // Draft versioning (save workspace content as new draft version)
+  // Draft versioning
   saveDraftVersion: (
     bookUri: EntityURI,
     chapterId: string,
@@ -122,28 +140,18 @@ interface BookshelfContextType {
   findByTag: (tag: string) => (Persona | Style | BookProject)[];
   findByAuthor: (author: string) => (Persona | Style | BookProject)[];
 
-  // ─────────────────────────────────────────────────────────────────
-  // HARVEST OPERATIONS
-  // ─────────────────────────────────────────────────────────────────
-
-  // Harvest bucket management
+  // Harvest operations
   createHarvestBucket: (bookUri: EntityURI, queries: string[]) => HarvestBucket;
   getActiveBuckets: (bookUri: EntityURI) => HarvestBucket[];
   getBucket: (bucketId: string) => HarvestBucket | undefined;
-
-  // Passage curation
   approvePassage: (bucketId: string, passageId: string) => HarvestBucket | undefined;
   rejectPassage: (bucketId: string, passageId: string, reason?: string) => HarvestBucket | undefined;
   markAsGem: (bucketId: string, passageId: string) => HarvestBucket | undefined;
   moveToCandidates: (bucketId: string, passageId: string) => HarvestBucket | undefined;
-
-  // Bucket lifecycle
   finishCollecting: (bucketId: string) => HarvestBucket | undefined;
   stageBucket: (bucketId: string) => HarvestBucket | undefined;
   commitBucket: (bucketId: string) => Promise<BookProject | undefined>;
   discardBucket: (bucketId: string) => boolean;
-
-  // Bucket refresh (call after external changes to buckets)
   bucketVersion: number;
   refreshBuckets: () => void;
 
@@ -191,9 +199,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   const [books, setBooks] = useState<BookProject[]>([]);
   const [activeBookUri, setActiveBookUri] = useState<EntityURI | null>(null);
   const [activePersonaUri, setActivePersonaUri] = useState<EntityURI | null>(null);
-
-  // Bucket version - increment to force re-renders when buckets change
   const [bucketVersion, setBucketVersion] = useState(0);
+
   const refreshBuckets = useCallback(() => setBucketVersion(v => v + 1), []);
 
   // ─────────────────────────────────────────────────────────────────
@@ -206,32 +213,26 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
 
     try {
       if (isXanaduAvailable()) {
-        // Xanadu mode - use IPC
         console.log('[Bookshelf] Using Xanadu unified storage');
 
-        // Run migration if needed
         if (!isMigrationComplete() && hasDataToMigrate()) {
           console.log('[Bookshelf] Running localStorage → Xanadu migration...');
           const result = await migrateToUnifiedStorage();
           console.log('[Bookshelf] Migration result:', result);
         }
 
-        // Seed library data
         await window.electronAPI!.xanadu.seedLibrary();
 
-        // Load from Xanadu
         const [xPersonas, xStyles, xBooks] = await Promise.all([
           window.electronAPI!.xanadu.personas.list(true),
           window.electronAPI!.xanadu.styles.list(true),
           window.electronAPI!.xanadu.books.list(true),
         ]);
 
-        // Convert to internal types (they're compatible but need type assertion)
         setPersonas(xPersonas as unknown as Persona[]);
         setStyles(xStyles as unknown as Style[]);
         setBooks(xBooks as unknown as BookProject[]);
-      } else if (import.meta.env.DEV) {
-        // DEV fallback to localStorage
+      } else if (isDevFallbackEnabled()) {
         console.warn('[Bookshelf] [DEV] Using localStorage fallback');
         await bookshelfService.initialize();
         setPersonas(bookshelfService.getAllPersonas());
@@ -252,704 +253,65 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     loadAll();
   }, [loadAll]);
 
-  // ─────────────────────────────────────────────────────────────────
-  // PERSONA OPERATIONS
-  // ─────────────────────────────────────────────────────────────────
-
-  const getPersona = useCallback((uri: EntityURI) => {
-    if (isXanaduAvailable()) {
-      // Find in state (already loaded from Xanadu)
-      return personas.find(p => p.uri === uri);
-    } else if (import.meta.env.DEV) {
-      return bookshelfService.getPersona(uri);
-    }
-    return undefined;
-  }, [personas]);
-
-  const createPersona = useCallback(async (persona: Omit<Persona, 'uri' | 'type'>) => {
-    const uri = generateURI('persona', persona.author || 'user', persona.name);
-    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    const full: Persona = {
-      ...persona,
-      type: 'persona',
-      uri,
-      id,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    if (isXanaduAvailable()) {
-      await window.electronAPI!.xanadu.personas.upsert({
-        id,
-        uri,
-        name: persona.name,
-        description: persona.description,
-        author: persona.author,
-        voice: persona.voice,
-        vocabulary: persona.vocabulary,
-        derivedFrom: persona.derivedFrom,
-        influences: persona.influences,
-        exemplars: persona.exemplars,
-        systemPrompt: persona.systemPrompt,
-        tags: persona.tags,
-      });
-      // Reload to get updated list
-      const xPersonas = await window.electronAPI!.xanadu.personas.list(true);
-      setPersonas(xPersonas as unknown as Persona[]);
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for createPersona');
-      bookshelfService.createPersona(persona);
-      setPersonas(bookshelfService.getAllPersonas());
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-
-    return full;
+  useEffect(() => {
+    harvestBucketService.initialize();
   }, []);
 
   // ─────────────────────────────────────────────────────────────────
-  // STYLE OPERATIONS
+  // DELEGATED OPERATIONS
   // ─────────────────────────────────────────────────────────────────
 
-  const getStyle = useCallback((uri: EntityURI) => {
-    if (isXanaduAvailable()) {
-      return styles.find(s => s.uri === uri);
-    } else if (import.meta.env.DEV) {
-      return bookshelfService.getStyle(uri);
-    }
-    return undefined;
-  }, [styles]);
-
-  const createStyle = useCallback(async (style: Omit<Style, 'uri' | 'type'>) => {
-    const uri = generateURI('style', style.author || 'user', style.name);
-    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    const full: Style = {
-      ...style,
-      type: 'style',
-      uri,
-      id,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    if (isXanaduAvailable()) {
-      await window.electronAPI!.xanadu.styles.upsert({
-        id,
-        uri,
-        name: style.name,
-        description: style.description,
-        author: style.author,
-        characteristics: style.characteristics,
-        structure: style.structure,
-        stylePrompt: style.stylePrompt,
-        derivedFrom: style.derivedFrom,
-        tags: style.tags,
-      });
-      const xStyles = await window.electronAPI!.xanadu.styles.list(true);
-      setStyles(xStyles as unknown as Style[]);
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for createStyle');
-      bookshelfService.createStyle(style);
-      setStyles(bookshelfService.getAllStyles());
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-
-    return full;
-  }, []);
-
-  // ─────────────────────────────────────────────────────────────────
-  // BOOK OPERATIONS
-  // ─────────────────────────────────────────────────────────────────
-
-  const getBook = useCallback((uriOrId: EntityURI | string) => {
-    if (isXanaduAvailable()) {
-      // Try finding by exact URI match first
-      let book = books.find(b => b.uri === uriOrId);
-      if (book) return book;
-
-      // Try finding by ID if URI didn't match (handles format differences)
-      const idFromUri = uriOrId.replace('book://', '').replace(/^user\//, '');
-      book = books.find(b => b.id === idFromUri || b.id === uriOrId);
-      if (book) return book;
-
-      // Also check if the URI path matches (handles book://user/xyz vs book://xyz)
-      book = books.find(b => {
-        const bookPath = b.uri.replace('book://', '').replace(/^user\//, '');
-        const searchPath = uriOrId.replace('book://', '').replace(/^user\//, '');
-        return bookPath === searchPath;
-      });
-      return book;
-    } else if (import.meta.env.DEV) {
-      return bookshelfService.getBook(uriOrId as EntityURI);
-    }
-    return undefined;
-  }, [books]);
-
-  const getResolvedBook = useCallback((uri: EntityURI): ResolvedBookProject | undefined => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === uri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(uri);
-    }
-
-    if (!book) return undefined;
-
-    // Resolve persona and style references
-    const resolvedPersonas = (book.personaRefs || [])
-      .map(ref => personas.find(p => p.uri === ref))
-      .filter((p): p is Persona => p !== undefined);
-
-    const resolvedStyles = (book.styleRefs || [])
-      .map(ref => styles.find(s => s.uri === ref))
-      .filter((s): s is Style => s !== undefined);
-
-    return {
-      ...book,
-      _resolved: true,
-      personas: resolvedPersonas,
-      styles: resolvedStyles,
-    };
-  }, [books, personas, styles]);
-
-  const createBook = useCallback(async (book: Omit<BookProject, 'uri' | 'type'>) => {
-    console.log('[Bookshelf.createBook] Starting book creation:', book.name);
-    console.log('[Bookshelf.createBook] isXanaduAvailable:', isXanaduAvailable());
-
-    const uri = generateURI('book', book.author || 'user', book.name);
-    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    const full: BookProject = {
-      ...book,
-      type: 'book',
-      uri,
-      id,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    console.log('[Bookshelf.createBook] Generated URI:', uri, 'ID:', id);
-
-    if (isXanaduAvailable()) {
-      console.log('[Bookshelf.createBook] Using Xanadu storage');
-      try {
-        await window.electronAPI!.xanadu.books.upsert({
-          id,
-          uri,
-          name: book.name,
-          subtitle: book.subtitle,
-          author: book.author,
-          description: book.description,
-          status: (book.status || 'harvesting') as 'harvesting' | 'drafting' | 'revising' | 'mastering' | 'complete',
-          bookType: book.bookType as 'book' | 'paper' | undefined,
-          personaRefs: book.personaRefs,
-          styleRefs: book.styleRefs,
-          sourceRefs: book.sourceRefs,
-          threads: book.threads,
-          harvestConfig: book.harvestConfig,
-          editorial: book.editorial,
-          thinking: book.thinking,
-          stats: book.stats,
-          profile: book.profile,
-          tags: book.tags,
-        });
-        console.log('[Bookshelf.createBook] Upsert complete');
-
-        const xBooks = await window.electronAPI!.xanadu.books.list(true);
-        console.log('[Bookshelf.createBook] Fetched books count:', xBooks?.length);
-        setBooks(xBooks as unknown as BookProject[]);
-      } catch (err) {
-        console.error('[Bookshelf.createBook] Xanadu error:', err);
-        throw err;
-      }
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for createBook');
-      bookshelfService.createBook(book);
-      setBooks(bookshelfService.getAllBooks());
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-
-    return full;
-  }, []);
-
-  const updateBook = useCallback(async (uri: EntityURI, updates: Partial<BookProject>) => {
-    if (isXanaduAvailable()) {
-      const book = books.find(b => b.uri === uri);
-      if (!book) return undefined;
-
-      // Build upsert payload explicitly to avoid type conflicts
-      type XanaduBookStatus = 'harvesting' | 'drafting' | 'revising' | 'mastering' | 'complete';
-      type XanaduBookType = 'book' | 'paper';
-      await window.electronAPI!.xanadu.books.upsert({
-        id: book.id,
-        uri,
-        name: updates.name || book.name,
-        subtitle: updates.subtitle,
-        author: updates.author,
-        description: updates.description,
-        status: updates.status as XanaduBookStatus | undefined,
-        bookType: updates.bookType as XanaduBookType | undefined,
-        personaRefs: updates.personaRefs,
-        styleRefs: updates.styleRefs,
-        sourceRefs: updates.sourceRefs,
-        threads: updates.threads,
-        harvestConfig: updates.harvestConfig,
-        editorial: updates.editorial,
-        thinking: updates.thinking,
-        stats: updates.stats,
-        profile: updates.profile,
-        tags: updates.tags,
-      });
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-      return xBooks.find(b => b.uri === uri) as unknown as BookProject;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for updateBook');
-      const updated = bookshelfService.updateBook(uri, updates);
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-      }
-      return updated;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  const deleteBook = useCallback(async (uri: EntityURI) => {
-    if (isXanaduAvailable()) {
-      const book = books.find(b => b.uri === uri);
-      if (!book) return false;
-
-      await window.electronAPI!.xanadu.books.delete(book.id);
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-
-      if (activeBookUri === uri) {
-        setActiveBookUri(null);
-      }
-      return true;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for deleteBook');
-      const deleted = bookshelfService.deleteBook(uri);
-      if (deleted) {
-        setBooks(bookshelfService.getAllBooks());
-        if (activeBookUri === uri) {
-          setActiveBookUri(null);
-        }
-      }
-      return deleted;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books, activeBookUri]);
-
-  // ─────────────────────────────────────────────────────────────────
-  // CHAPTER OPERATIONS
-  // ─────────────────────────────────────────────────────────────────
-
-  const addChapter = useCallback(async (bookUri: EntityURI, chapter: DraftChapter) => {
-    if (isXanaduAvailable()) {
-      const book = books.find(b => b.uri === bookUri);
-      if (!book) return undefined;
-
-      // Add chapter via Xanadu
-      await window.electronAPI!.xanadu.chapters.upsert({
-        id: chapter.id,
-        bookId: book.id,
-        number: chapter.number,
-        title: chapter.title,
-        content: chapter.content,
-        wordCount: chapter.wordCount,
-        version: chapter.version,
-        status: chapter.status || 'draft',
-        epigraph: chapter.epigraph?.text,
-        sections: chapter.sections,
-        marginalia: chapter.marginalia,
-        metadata: chapter.metadata,
-        passageRefs: chapter.passageRefs,
-      });
-
-      // Save version history
-      if (chapter.versions?.length) {
-        for (const v of chapter.versions) {
-          await window.electronAPI!.xanadu.versions.save(
-            chapter.id,
-            v.version,
-            v.content,
-            v.changes,
-            v.createdBy
-          );
-        }
-      }
-
-      // Reload books
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-      return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for addChapter');
-      const updated = bookshelfService.addChapter(bookUri, chapter);
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-      }
-      return updated;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  const updateChapter = useCallback(async (
-    bookUri: EntityURI,
-    chapterId: string,
-    updates: Partial<DraftChapter>
-  ) => {
-    if (isXanaduAvailable()) {
-      const book = books.find(b => b.uri === bookUri);
-      if (!book) return undefined;
-
-      // Get existing chapter to merge
-      const existingChapter = await window.electronAPI!.xanadu.chapters.get(chapterId);
-      if (!existingChapter) return undefined;
-
-      await window.electronAPI!.xanadu.chapters.upsert({
-        id: chapterId,
-        bookId: book.id,
-        number: updates.number ?? existingChapter.number,
-        title: updates.title ?? existingChapter.title,
-        content: updates.content ?? existingChapter.content,
-        wordCount: updates.wordCount ?? existingChapter.wordCount,
-        version: updates.version ?? existingChapter.version,
-        status: updates.status ?? existingChapter.status,
-      });
-
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-      return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for updateChapter');
-      const updated = bookshelfService.updateChapter(bookUri, chapterId, updates);
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-      }
-      return updated;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  const deleteChapter = useCallback(async (bookUri: EntityURI, chapterId: string) => {
-    if (isXanaduAvailable()) {
-      const book = books.find(b => b.uri === bookUri);
-      if (!book) return undefined;
-
-      await window.electronAPI!.xanadu.chapters.delete(chapterId);
-
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-      return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for deleteChapter');
-      const book = bookshelfService.getBook(bookUri);
-      if (!book) return undefined;
-
-      const updatedChapters = (book.chapters || [])
-        .filter(c => c.id !== chapterId)
-        .map((c, i) => ({ ...c, number: i + 1 })); // Renumber
-
-      const updated = bookshelfService.updateBook(bookUri, {
-        chapters: updatedChapters,
-        stats: {
-          ...book.stats,
-          chapters: updatedChapters.length,
-        },
-      });
-
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-      }
-      return updated;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  const getChapter = useCallback((bookUri: EntityURI, chapterId: string): DraftChapter | undefined => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === bookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(bookUri);
-    }
-    return book?.chapters?.find(ch => ch.id === chapterId);
-  }, [books]);
-
-  // ─────────────────────────────────────────────────────────────────
-  // DRAFT VERSIONING
-  // ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Save workspace content as a new draft version
-   *
-   * Creates a new version in the chapter's version history,
-   * preserving the previous content for undo/comparison.
-   */
-  const saveDraftVersion = useCallback(async (
-    bookUri: EntityURI,
-    chapterId: string,
-    content: string,
-    metadata: { changes: string; createdBy: 'user' | 'aui' }
-  ): Promise<DraftChapter | undefined> => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === bookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(bookUri);
-    }
-
-    if (!book) {
-      console.error('[saveDraftVersion] Book not found:', bookUri);
-      return undefined;
-    }
-
-    const chapter = book.chapters?.find((ch) => ch.id === chapterId);
-    if (!chapter) {
-      console.error('[saveDraftVersion] Chapter not found:', chapterId);
-      return undefined;
-    }
-
-    // Calculate new version number
-    const newVersionNum = (chapter.version ?? 0) + 1;
-    const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
-
-    if (isXanaduAvailable()) {
-      // Save version via Xanadu
-      await window.electronAPI!.xanadu.versions.save(
-        chapterId,
-        newVersionNum,
-        content,
-        metadata.changes,
-        metadata.createdBy
-      );
-
-      // Update chapter
-      await window.electronAPI!.xanadu.chapters.upsert({
-        id: chapterId,
-        bookId: book.id,
-        number: chapter.number,
-        title: chapter.title,
-        content,
-        wordCount,
-        version: newVersionNum,
-        status: chapter.status || 'draft',
-      });
-
-      // Reload books
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-
-      console.log(`[saveDraftVersion] Saved v${newVersionNum} for chapter "${chapter.title}" via Xanadu`);
-
-      // Return updated chapter from fresh state
-      const updatedBook = xBooks.find(b => b.uri === bookUri);
-      return updatedBook?.chapters?.find((ch: unknown) => (ch as DraftChapter).id === chapterId) as DraftChapter | undefined;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for saveDraftVersion');
-      // Create new version entry
-      const newVersion: DraftVersion = {
-        version: newVersionNum,
-        timestamp: Date.now(),
-        content,
-        wordCount,
-        changes: metadata.changes,
-        createdBy: metadata.createdBy,
-      };
-
-      // Append to versions array (preserve history)
-      const updatedVersions = [...(chapter.versions ?? []), newVersion];
-
-      // Update the chapter with new content and version
-      const updates: Partial<DraftChapter> = {
-        content,
-        wordCount,
-        version: newVersionNum,
-        versions: updatedVersions,
-      };
-
-      const updated = bookshelfService.updateChapter(bookUri, chapterId, updates);
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-        console.log(`[saveDraftVersion] Saved v${newVersionNum} for chapter "${chapter.title}"`);
-        return updated.chapters.find((ch) => ch.id === chapterId);
-      }
-
-      return undefined;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  /**
-   * Revert chapter to a previous version
-   */
-  const revertToVersion = useCallback(async (
-    bookUri: EntityURI,
-    chapterId: string,
-    version: number
-  ): Promise<DraftChapter | undefined> => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === bookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(bookUri);
-    }
-
-    if (!book) return undefined;
-
-    const chapter = book.chapters?.find(ch => ch.id === chapterId);
-    if (!chapter) return undefined;
-
-    const targetVersion = chapter.versions?.find(v => v.version === version);
-    if (!targetVersion) return undefined;
-
-    // Create a new version that reverts to the old content
-    return saveDraftVersion(
-      bookUri,
-      chapterId,
-      targetVersion.content,
-      { changes: `Reverted to version ${version}`, createdBy: 'user' }
-    );
-  }, [books, saveDraftVersion]);
-
-  /**
-   * Get all versions for a chapter
-   */
-  const getChapterVersions = useCallback((bookUri: EntityURI, chapterId: string): DraftVersion[] => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === bookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(bookUri);
-    }
-    const chapter = book?.chapters?.find(ch => ch.id === chapterId);
-    return chapter?.versions || [];
-  }, [books]);
-
-  /**
-   * Update writer notes for a chapter
-   */
-  const updateWriterNotes = useCallback(async (
-    bookUri: EntityURI,
-    chapterId: string,
-    notes: string
-  ): Promise<DraftChapter | undefined> => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === bookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(bookUri);
-    }
-
-    if (!book) return undefined;
-
-    const chapter = book.chapters?.find(ch => ch.id === chapterId);
-    if (!chapter) return undefined;
-
-    const updates: Partial<DraftChapter> = {
-      writerNotes: notes,
-      metadata: {
-        ...chapter.metadata,
-        lastEditedAt: Date.now(),
-      },
-    };
-
-    const updated = await updateChapter(bookUri, chapterId, updates);
-    return updated?.chapters?.find(ch => ch.id === chapterId);
-  }, [books, updateChapter]);
-
-  /**
-   * Render book to markdown
-   */
-  const renderBook = useCallback((bookUri: EntityURI): string => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === bookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(bookUri);
-    }
-
-    if (!book) return '';
-
-    const parts: string[] = [];
-    const chapters = book.chapters || [];
-
-    // Title page
-    parts.push(`# ${book.name}`);
-    if (book.subtitle) {
-      parts.push(`\n*${book.subtitle}*`);
-    }
-    if (book.description) {
-      parts.push(`\n${book.description}`);
-    }
-    parts.push('\n---\n');
-
-    // Table of contents
-    if (chapters.length > 0) {
-      parts.push('## Contents\n');
-      for (const chapter of chapters) {
-        parts.push(`${chapter.number}. [${chapter.title}](#chapter-${chapter.number})`);
-      }
-      parts.push('\n---\n');
-    }
-
-    // Chapters
-    for (const chapter of chapters) {
-      parts.push(`<a id="chapter-${chapter.number}"></a>\n`);
-
-      if (chapter.epigraph) {
-        parts.push(`> ${chapter.epigraph.text}`);
-        if (chapter.epigraph.source) {
-          parts.push(`>\n> — *${chapter.epigraph.source}*`);
-        }
-        parts.push('');
-      }
-
-      parts.push(chapter.content || '');
-      parts.push('\n---\n');
-    }
-
-    // Footer
-    const wordCount = book.stats?.wordCount || 0;
-    const chapterCount = book.stats?.chapters || chapters.length;
-    parts.push(`\n*${wordCount.toLocaleString()} words · ${chapterCount} chapters*`);
-    parts.push(`\n*Last updated: ${new Date(book.updatedAt || Date.now()).toLocaleDateString()}*`);
-
-    return parts.join('\n');
-  }, [books]);
+  const getPersona = useCallback((uri: EntityURI) => getPersonaOp(uri, personas), [personas]);
+  const createPersona = useCallback((p: Omit<Persona, 'uri' | 'type'>) => createPersonaOp(p, setPersonas), []);
+
+  const getStyle = useCallback((uri: EntityURI) => getStyleOp(uri, styles), [styles]);
+  const createStyle = useCallback((s: Omit<Style, 'uri' | 'type'>) => createStyleOp(s, setStyles), []);
+
+  const getBook = useCallback((uri: EntityURI) => getBookOp(uri, books), [books]);
+  const getResolvedBook = useCallback((uri: EntityURI) => getResolvedBookOp(uri, books, personas, styles), [books, personas, styles]);
+  const createBook = useCallback((b: Omit<BookProject, 'uri' | 'type'>) => createBookOp(b, setBooks), []);
+  const updateBook = useCallback((uri: EntityURI, updates: Partial<BookProject>) => updateBookOp(uri, updates, books, setBooks), [books]);
+  const deleteBook = useCallback((uri: EntityURI) => deleteBookOp(uri, books, setBooks, activeBookUri, setActiveBookUri), [books, activeBookUri]);
+  const renderBook = useCallback((uri: EntityURI) => renderBookOp(uri, books), [books]);
+
+  const getChapter = useCallback((bookUri: EntityURI, chapterId: string) => getChapterOp(bookUri, chapterId, books), [books]);
+  const addChapter = useCallback((bookUri: EntityURI, ch: DraftChapter) => addChapterOp(bookUri, ch, books, setBooks), [books]);
+  const updateChapter = useCallback((bookUri: EntityURI, chapterId: string, updates: Partial<DraftChapter>) => updateChapterOp(bookUri, chapterId, updates, books, setBooks), [books]);
+  const deleteChapter = useCallback((bookUri: EntityURI, chapterId: string) => deleteChapterOp(bookUri, chapterId, books, setBooks), [books]);
+
+  const saveDraftVersion = useCallback(
+    (bookUri: EntityURI, chapterId: string, content: string, metadata: { changes: string; createdBy: 'user' | 'aui' }) =>
+      saveDraftVersionOp(bookUri, chapterId, content, metadata, books, setBooks),
+    [books]
+  );
+  const getChapterVersions = useCallback((bookUri: EntityURI, chapterId: string) => getChapterVersionsOp(bookUri, chapterId, books), [books]);
+  const updateWriterNotes = useCallback(
+    (bookUri: EntityURI, chapterId: string, notes: string) => updateWriterNotesOp(bookUri, chapterId, notes, books, setBooks),
+    [books]
+  );
+
+  const revertToVersion = useCallback(
+    async (bookUri: EntityURI, chapterId: string, version: number) => {
+      const versions = getChapterVersions(bookUri, chapterId);
+      const targetVersion = versions.find(v => v.version === version);
+      if (!targetVersion) return undefined;
+      return saveDraftVersion(bookUri, chapterId, targetVersion.content, { changes: `Reverted to version ${version}`, createdBy: 'user' });
+    },
+    [getChapterVersions, saveDraftVersion]
+  );
+
+  const getPassages = useCallback((bookUri: EntityURI) => getPassagesOp(bookUri, books), [books]);
+  const addPassageToBook = useCallback((bookUri: EntityURI, passage: SourcePassage) => addPassageToBookOp(bookUri, passage, books, setBooks), [books]);
+  const updatePassageStatus = useCallback((bookUri: EntityURI, passageId: string, status: CurationStatus) => updatePassageStatusOp(bookUri, passageId, status, books, setBooks), [books]);
+  const deletePassage = useCallback((bookUri: EntityURI, passageId: string) => deletePassageOp(bookUri, passageId, books, setBooks), [books]);
 
   // ─────────────────────────────────────────────────────────────────
   // SIMPLE OPERATIONS (use activeBookUri)
   // ─────────────────────────────────────────────────────────────────
 
-  const countWords = (text: string): number => {
-    return text.trim().split(/\s+/).filter(Boolean).length;
-  };
-
-  const createChapterSimple = useCallback(async (
-    title: string,
-    content?: string
-  ): Promise<DraftChapter | undefined> => {
+  const createChapterSimple = useCallback(async (title: string, content?: string) => {
     if (!activeBookUri) return undefined;
-
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === activeBookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(activeBookUri);
-    }
+    const book = getBook(activeBookUri);
     if (!book) return undefined;
 
     const existingChapters = book.chapters || [];
@@ -965,346 +327,54 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       content: initialContent,
       wordCount: countWords(initialContent),
       version: 1,
-      versions: [
-        {
-          version: 1,
-          timestamp: now,
-          content: initialContent,
-          wordCount: countWords(initialContent),
-          changes: 'Initial draft',
-          createdBy: 'user',
-        },
-      ],
+      versions: [{
+        version: 1,
+        timestamp: now,
+        content: initialContent,
+        wordCount: countWords(initialContent),
+        changes: 'Initial draft',
+        createdBy: 'user',
+      }],
       sections: [],
       status: 'outline',
       marginalia: [],
-      metadata: {
-        notes: [],
-        lastEditedBy: 'user',
-        lastEditedAt: now,
-        auiSuggestions: [],
-      },
+      metadata: { notes: [], lastEditedBy: 'user', lastEditedAt: now, auiSuggestions: [] },
       passageRefs: [],
     };
 
     await addChapter(activeBookUri, chapter);
     return chapter;
-  }, [activeBookUri, books, addChapter]);
+  }, [activeBookUri, getBook, addChapter]);
 
-  const updateChapterSimple = useCallback(async (
-    chapterId: string,
-    content: string,
-    changes?: string
-  ): Promise<void> => {
+  const updateChapterSimple = useCallback(async (chapterId: string, content: string, changes?: string) => {
     if (!activeBookUri) return;
-
-    await saveDraftVersion(activeBookUri, chapterId, content, {
-      changes: changes || 'Updated content',
-      createdBy: 'user',
-    });
+    await saveDraftVersion(activeBookUri, chapterId, content, { changes: changes || 'Updated content', createdBy: 'user' });
   }, [activeBookUri, saveDraftVersion]);
 
-  const deleteChapterSimple = useCallback(async (chapterId: string): Promise<void> => {
+  const deleteChapterSimple = useCallback(async (chapterId: string) => {
     if (!activeBookUri) return;
     await deleteChapter(activeBookUri, chapterId);
   }, [activeBookUri, deleteChapter]);
 
-  const getChapterSimple = useCallback((chapterId: string): DraftChapter | undefined => {
+  const getChapterSimple = useCallback((chapterId: string) => {
     if (!activeBookUri) return undefined;
     return getChapter(activeBookUri, chapterId);
   }, [activeBookUri, getChapter]);
 
-  const revertToVersionSimple = useCallback(async (
-    chapterId: string,
-    version: number
-  ): Promise<void> => {
+  const revertToVersionSimple = useCallback(async (chapterId: string, version: number) => {
     if (!activeBookUri) return;
     await revertToVersion(activeBookUri, chapterId, version);
   }, [activeBookUri, revertToVersion]);
 
-  const updateWriterNotesSimple = useCallback(async (
-    chapterId: string,
-    notes: string
-  ): Promise<void> => {
+  const updateWriterNotesSimple = useCallback(async (chapterId: string, notes: string) => {
     if (!activeBookUri) return;
     await updateWriterNotes(activeBookUri, chapterId, notes);
   }, [activeBookUri, updateWriterNotes]);
 
-  const renderActiveBook = useCallback((): string => {
+  const renderActiveBook = useCallback(() => {
     if (!activeBookUri) return '';
     return renderBook(activeBookUri);
   }, [activeBookUri, renderBook]);
-
-  // ─────────────────────────────────────────────────────────────────
-  // DERIVED STATE
-  // ─────────────────────────────────────────────────────────────────
-
-  const activeBook = (() => {
-    if (!activeBookUri) return null;
-    if (isXanaduAvailable()) {
-      return books.find(b => b.uri === activeBookUri) || null;
-    } else if (import.meta.env.DEV) {
-      return bookshelfService.getBook(activeBookUri) || null;
-    }
-    return null;
-  })();
-  const activeResolvedBook = activeBookUri ? getResolvedBook(activeBookUri) || null : null;
-  const activePersona = (() => {
-    if (!activePersonaUri) return null;
-    if (isXanaduAvailable()) {
-      return personas.find(p => p.uri === activePersonaUri) || null;
-    } else if (import.meta.env.DEV) {
-      return bookshelfService.getPersona(activePersonaUri) || null;
-    }
-    return null;
-  })();
-
-  // ─────────────────────────────────────────────────────────────────
-  // SEARCH
-  // ─────────────────────────────────────────────────────────────────
-
-  const findByTag = useCallback((tag: string) => {
-    if (isXanaduAvailable()) {
-      // Search in local state
-      const results: (Persona | Style | BookProject)[] = [];
-      for (const p of personas) {
-        if (p.tags?.includes(tag)) results.push(p);
-      }
-      for (const s of styles) {
-        if (s.tags?.includes(tag)) results.push(s);
-      }
-      for (const b of books) {
-        if (b.tags?.includes(tag)) results.push(b);
-      }
-      return results;
-    } else if (import.meta.env.DEV) {
-      return bookshelfService.findByTag(tag);
-    }
-    return [];
-  }, [personas, styles, books]);
-
-  const findByAuthor = useCallback((author: string) => {
-    if (isXanaduAvailable()) {
-      const results: (Persona | Style | BookProject)[] = [];
-      for (const p of personas) {
-        if (p.author === author) results.push(p);
-      }
-      for (const s of styles) {
-        if (s.author === author) results.push(s);
-      }
-      for (const b of books) {
-        if (b.author === author) results.push(b);
-      }
-      return results;
-    } else if (import.meta.env.DEV) {
-      return bookshelfService.findByAuthor(author);
-    }
-    return [];
-  }, [personas, styles, books]);
-
-  // ─────────────────────────────────────────────────────────────────
-  // HARVEST OPERATIONS
-  // ─────────────────────────────────────────────────────────────────
-
-  // Initialize harvest service on mount
-  useEffect(() => {
-    harvestBucketService.initialize();
-  }, []);
-
-  const createHarvestBucket = useCallback((bookUri: EntityURI, queries: string[]) => {
-    return harvestBucketService.createBucket(bookUri, queries);
-  }, []);
-
-  const getActiveBuckets = useCallback((bookUri: EntityURI) => {
-    return harvestBucketService.getActiveBucketsForBook(bookUri);
-  }, []);
-
-  const getBucket = useCallback((bucketId: string) => {
-    return harvestBucketService.getBucket(bucketId);
-  }, []);
-
-  const approvePassage = useCallback((bucketId: string, passageId: string) => {
-    return harvestBucketService.approvePassage(bucketId, passageId);
-  }, []);
-
-  const rejectPassage = useCallback((bucketId: string, passageId: string, reason?: string) => {
-    return harvestBucketService.rejectPassage(bucketId, passageId, reason);
-  }, []);
-
-  const markAsGem = useCallback((bucketId: string, passageId: string) => {
-    return harvestBucketService.markAsGem(bucketId, passageId);
-  }, []);
-
-  const moveToCandidates = useCallback((bucketId: string, passageId: string) => {
-    return harvestBucketService.moveToCandidates(bucketId, passageId);
-  }, []);
-
-  const finishCollecting = useCallback((bucketId: string) => {
-    return harvestBucketService.finishCollecting(bucketId);
-  }, []);
-
-  const stageBucket = useCallback((bucketId: string) => {
-    return harvestBucketService.stageBucket(bucketId);
-  }, []);
-
-  const commitBucket = useCallback(async (bucketId: string) => {
-    const result = await harvestBucketService.commitBucket(bucketId);
-    if (result) {
-      if (isXanaduAvailable()) {
-        // Refresh books from Xanadu after commit
-        const xBooks = await window.electronAPI!.xanadu.books.list(true);
-        setBooks(xBooks as unknown as BookProject[]);
-      } else if (import.meta.env.DEV) {
-        // DEV fallback - refresh from localStorage
-        setBooks(bookshelfService.getAllBooks());
-      }
-    }
-    return result;
-  }, []);
-
-  const discardBucket = useCallback((bucketId: string) => {
-    return harvestBucketService.discardBucket(bucketId);
-  }, []);
-
-  // ─────────────────────────────────────────────────────────────────
-  // PASSAGE OPERATIONS ON BOOKS
-  // ─────────────────────────────────────────────────────────────────
-
-  const getPassages = useCallback((bookUri: EntityURI) => {
-    let book: BookProject | undefined;
-    if (isXanaduAvailable()) {
-      book = books.find(b => b.uri === bookUri);
-    } else if (import.meta.env.DEV) {
-      book = bookshelfService.getBook(bookUri);
-    }
-    return book?.passages || [];
-  }, [books]);
-
-  const addPassageToBook = useCallback(async (bookUri: EntityURI, passage: SourcePassage) => {
-    if (isXanaduAvailable()) {
-      const book = books.find(b => b.uri === bookUri);
-      if (!book) return undefined;
-
-      // Add passage via Xanadu
-      await window.electronAPI!.xanadu.passages.upsert({
-        id: passage.id,
-        bookId: book.id,
-        sourceRef: passage.sourceRef,
-        text: passage.text || passage.content || '',
-        wordCount: passage.wordCount,
-        role: passage.role,
-        harvestedBy: passage.harvestedBy,
-        threadId: (passage as unknown as Record<string, unknown>).threadId as string | undefined,
-        curationStatus: passage.curation?.status || 'candidate',
-        curationNote: passage.curation?.notes,
-        tags: passage.tags,
-      });
-
-      // Reload books
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-      return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for addPassageToBook');
-      const book = bookshelfService.getBook(bookUri);
-      if (!book) return undefined;
-
-      const updatedPassages = [...book.passages, passage];
-      const updated = bookshelfService.updateBook(bookUri, {
-        passages: updatedPassages,
-        stats: {
-          ...book.stats,
-          totalPassages: updatedPassages.length,
-        },
-      });
-
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-      }
-      return updated;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  const updatePassageStatus = useCallback(async (
-    bookUri: EntityURI,
-    passageId: string,
-    status: CurationStatus
-  ) => {
-    if (isXanaduAvailable()) {
-      // Update via Xanadu
-      await window.electronAPI!.xanadu.passages.curate(passageId, status);
-
-      // Reload books
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-      return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for updatePassageStatus');
-      const book = bookshelfService.getBook(bookUri);
-      if (!book) return undefined;
-
-      const updatedPassages = book.passages.map((p) =>
-        p.id === passageId
-          ? { ...p, curation: { ...p.curation, status, curatedAt: Date.now() } }
-          : p
-      );
-
-      const updated = bookshelfService.updateBook(bookUri, { passages: updatedPassages });
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-      }
-      return updated;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  const deletePassage = useCallback(async (bookUri: EntityURI, passageId: string) => {
-    if (isXanaduAvailable()) {
-      const book = books.find(b => b.uri === bookUri);
-      if (!book) return undefined;
-
-      await window.electronAPI!.xanadu.passages.delete(passageId);
-
-      const xBooks = await window.electronAPI!.xanadu.books.list(true);
-      setBooks(xBooks as unknown as BookProject[]);
-      return xBooks.find(b => b.uri === bookUri) as unknown as BookProject;
-    } else if (import.meta.env.DEV) {
-      console.warn('[DEV] Using localStorage fallback for deletePassage');
-      const book = bookshelfService.getBook(bookUri);
-      if (!book) return undefined;
-
-      const passage = book.passages.find(p => p.id === passageId);
-      if (!passage) return undefined;
-
-      const status = passage.curation?.status || 'candidate';
-      let statsUpdate = { ...book.stats };
-      statsUpdate.totalPassages = (statsUpdate.totalPassages || 0) - 1;
-      if (status === 'gem') statsUpdate.gems = (statsUpdate.gems || 0) - 1;
-      if (status === 'approved' || status === 'gem') {
-        statsUpdate.approvedPassages = (statsUpdate.approvedPassages || 0) - 1;
-      }
-
-      const updatedPassages = book.passages.filter(p => p.id !== passageId);
-      const updated = bookshelfService.updateBook(bookUri, {
-        passages: updatedPassages,
-        stats: statsUpdate,
-      });
-
-      if (updated) {
-        setBooks(bookshelfService.getAllBooks());
-      }
-      return updated;
-    } else {
-      throw new Error('Xanadu storage unavailable. Run in Electron app.');
-    }
-  }, [books]);
-
-  // ─────────────────────────────────────────────────────────────────
-  // SIMPLE PASSAGE OPERATIONS (use activeBookUri)
-  // ─────────────────────────────────────────────────────────────────
 
   const addPassageSimple = useCallback(async (passageData: {
     content: string;
@@ -1312,9 +382,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     conversationTitle: string;
     role?: 'user' | 'assistant';
     tags?: string[];
-  }): Promise<SourcePassage | undefined> => {
+  }) => {
     if (!activeBookUri) return undefined;
-
     const now = Date.now();
     const passageId = `p-${now}-${Math.random().toString(36).substr(2, 9)}`;
     const conversationId = passageData.conversationId || `manual-${now}`;
@@ -1333,11 +402,8 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
       role: passageData.role || 'user',
       timestamp: now,
       harvestedBy: 'manual',
-      curation: {
-        status: 'candidate',
-      },
+      curation: { status: 'candidate' },
       tags: passageData.tags || [],
-      // Legacy aliases
       conversationId,
       conversationTitle: passageData.conversationTitle,
       content: passageData.content,
@@ -1348,38 +414,91 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     return passage;
   }, [activeBookUri, addPassageToBook]);
 
-  const updatePassageSimple = useCallback(async (
-    passageId: string,
-    updates: Partial<SourcePassage>
-  ): Promise<void> => {
+  const updatePassageSimple = useCallback(async (passageId: string, updates: Partial<SourcePassage>) => {
     if (!activeBookUri) return;
-
-    // For now, only support status updates
     if (updates.curation?.status) {
       await updatePassageStatus(activeBookUri, passageId, updates.curation.status);
     }
   }, [activeBookUri, updatePassageStatus]);
 
-  const getPassagesSimple = useCallback((): SourcePassage[] => {
+  const getPassagesSimple = useCallback(() => {
     if (!activeBookUri) return [];
     return getPassages(activeBookUri);
   }, [activeBookUri, getPassages]);
 
   // ─────────────────────────────────────────────────────────────────
-  // NARRATIVE ARC OPERATIONS
+  // DERIVED STATE
   // ─────────────────────────────────────────────────────────────────
 
-  const createArc = useCallback((bookUri: EntityURI, thesis: string) => {
-    return harvestBucketService.createArc(bookUri, thesis);
+  const activeBook = activeBookUri ? getBook(activeBookUri) || null : null;
+  const activeResolvedBook = activeBookUri ? getResolvedBook(activeBookUri) || null : null;
+  const activePersona = activePersonaUri ? getPersona(activePersonaUri) || null : null;
+
+  // ─────────────────────────────────────────────────────────────────
+  // SEARCH
+  // ─────────────────────────────────────────────────────────────────
+
+  const findByTag = useCallback((tag: string) => {
+    if (isXanaduAvailable()) {
+      const results: (Persona | Style | BookProject)[] = [];
+      for (const p of personas) if (p.tags?.includes(tag)) results.push(p);
+      for (const s of styles) if (s.tags?.includes(tag)) results.push(s);
+      for (const b of books) if (b.tags?.includes(tag)) results.push(b);
+      return results;
+    } else if (isDevFallbackEnabled()) {
+      return bookshelfService.findByTag(tag);
+    }
+    return [];
+  }, [personas, styles, books]);
+
+  const findByAuthor = useCallback((author: string) => {
+    if (isXanaduAvailable()) {
+      const results: (Persona | Style | BookProject)[] = [];
+      for (const p of personas) if (p.author === author) results.push(p);
+      for (const s of styles) if (s.author === author) results.push(s);
+      for (const b of books) if (b.author === author) results.push(b);
+      return results;
+    } else if (isDevFallbackEnabled()) {
+      return bookshelfService.findByAuthor(author);
+    }
+    return [];
+  }, [personas, styles, books]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // HARVEST OPERATIONS (delegate to service)
+  // ─────────────────────────────────────────────────────────────────
+
+  const createHarvestBucket = useCallback((bookUri: EntityURI, queries: string[]) => harvestBucketService.createBucket(bookUri, queries), []);
+  const getActiveBuckets = useCallback((bookUri: EntityURI) => harvestBucketService.getActiveBucketsForBook(bookUri), []);
+  const getBucket = useCallback((bucketId: string) => harvestBucketService.getBucket(bucketId), []);
+  const approvePassage = useCallback((bucketId: string, passageId: string) => harvestBucketService.approvePassage(bucketId, passageId), []);
+  const rejectPassage = useCallback((bucketId: string, passageId: string, reason?: string) => harvestBucketService.rejectPassage(bucketId, passageId, reason), []);
+  const markAsGem = useCallback((bucketId: string, passageId: string) => harvestBucketService.markAsGem(bucketId, passageId), []);
+  const moveToCandidates = useCallback((bucketId: string, passageId: string) => harvestBucketService.moveToCandidates(bucketId, passageId), []);
+  const finishCollecting = useCallback((bucketId: string) => harvestBucketService.finishCollecting(bucketId), []);
+  const stageBucket = useCallback((bucketId: string) => harvestBucketService.stageBucket(bucketId), []);
+  const discardBucket = useCallback((bucketId: string) => harvestBucketService.discardBucket(bucketId), []);
+
+  const commitBucket = useCallback(async (bucketId: string) => {
+    const result = await harvestBucketService.commitBucket(bucketId);
+    if (result) {
+      if (isXanaduAvailable()) {
+        const xBooks = await window.electronAPI!.xanadu.books.list(true);
+        setBooks(xBooks as unknown as BookProject[]);
+      } else if (isDevFallbackEnabled()) {
+        setBooks(bookshelfService.getAllBooks());
+      }
+    }
+    return result;
   }, []);
 
-  const getArcsForBook = useCallback((bookUri: EntityURI) => {
-    return harvestBucketService.getArcsForBook(bookUri);
-  }, []);
+  // ─────────────────────────────────────────────────────────────────
+  // NARRATIVE ARC OPERATIONS (delegate to service)
+  // ─────────────────────────────────────────────────────────────────
 
-  const approveArc = useCallback((arcId: string, feedback?: string) => {
-    return harvestBucketService.approveArc(arcId, feedback);
-  }, []);
+  const createArc = useCallback((bookUri: EntityURI, thesis: string) => harvestBucketService.createArc(bookUri, thesis), []);
+  const getArcsForBook = useCallback((bookUri: EntityURI) => harvestBucketService.getArcsForBook(bookUri), []);
+  const approveArc = useCallback((arcId: string, feedback?: string) => harvestBucketService.approveArc(arcId, feedback), []);
 
   // ─────────────────────────────────────────────────────────────────
   // CONTEXT VALUE
@@ -1388,40 +507,27 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
   const value: BookshelfContextType = {
     loading,
     error,
-
     personas,
     getPersona,
     createPersona,
-
     styles,
     getStyle,
     createStyle,
-
     books,
     getBook,
     getResolvedBook,
     createBook,
     updateBook,
     deleteBook,
-
-    // Chapter operations (URI-based)
     addChapter,
     updateChapter,
     deleteChapter,
     getChapter,
-
-    // Draft versioning
     saveDraftVersion,
     revertToVersion,
     getChapterVersions,
-
-    // Writer notes
     updateWriterNotes,
-
-    // Book rendering
     renderBook,
-
-    // Simple chapter operations (use activeBookUri)
     createChapterSimple,
     updateChapterSimple,
     deleteChapterSimple,
@@ -1429,56 +535,38 @@ export function BookshelfProvider({ children }: BookshelfProviderProps) {
     revertToVersionSimple,
     updateWriterNotesSimple,
     renderActiveBook,
-
     activeBookUri,
     setActiveBookUri,
     activeBook,
     activeResolvedBook,
-
     activePersonaUri,
     setActivePersonaUri,
     activePersona,
-
     findByTag,
     findByAuthor,
-
-    // Harvest operations
     createHarvestBucket,
     getActiveBuckets,
     getBucket,
-
-    // Passage curation
     approvePassage,
     rejectPassage,
     markAsGem,
     moveToCandidates,
-
-    // Bucket lifecycle
     finishCollecting,
     stageBucket,
     commitBucket,
     discardBucket,
-
-    // Bucket refresh
     bucketVersion,
     refreshBuckets,
-
-    // Passage operations
     getPassages,
     addPassageToBook,
     updatePassageStatus,
     deletePassage,
-
-    // Simple passage operations
     addPassageSimple,
     updatePassageSimple,
     getPassagesSimple,
-
-    // Narrative arc
     createArc,
     getArcsForBook,
     approveArc,
-
     refresh: loadAll,
   };
 
