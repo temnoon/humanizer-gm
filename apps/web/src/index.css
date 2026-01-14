@@ -22,7 +22,13 @@
 @import './styles/features/book.css';
 @import './styles/features/studio.css';
 @import './styles/features/workspace.css';
-@import './styles/features/books-tab.css';
+/* Books Tab - modularized from books-tab.css */
+@import './styles/features/books-tab-base.css';
+@import './styles/features/book-project-detail.css';
+@import './styles/features/book-drafts.css';
+@import './styles/features/book-profile.css';
+@import './styles/features/book-pyramid.css';
+@import './styles/features/books-dark-mode.css';
 /* Views - modularized from views.css */
 @import './styles/features/gallery-view.css';
 @import './styles/features/facebook-view.css';

@@ -1,0 +1,81 @@
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   Ensures all books-tab components work properly in dark theme
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Status badges for book cards */
+[data-theme='dark'] .book-card__status--draft {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .book-card__status--building,
+[data-theme='dark'] .book-card__status--curating {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .book-card__status--complete,
+[data-theme='dark'] .book-card__status--mastering {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+[data-theme='dark'] .book-card__status--harvesting {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .book-card__status--drafting {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+}
+
+/* Chapter status badges */
+[data-theme='dark'] .chapter-status--outline {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .chapter-status--drafting {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+}
+
+[data-theme='dark'] .chapter-status--revising {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .chapter-status--complete {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+/* Role badges */
+[data-theme='dark'] .role-badge--user {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .role-badge--assistant {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+/* Status badge (general) */
+[data-theme='dark'] .status-badge {
+  color: var(--color-text-inverse, white);
+}
+
+/* Passage card notes */
+[data-theme='dark'] .passage-card__notes {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+/* Compact node selected state */
+[data-theme='dark'] .compact-node.selected {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+
