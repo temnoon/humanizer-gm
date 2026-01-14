@@ -1,0 +1,206 @@
+/* ═══════════════════════════════════════════════════════════════════
+   GUTENBERG VIEW - Public Domain Book Browser
+   ═══════════════════════════════════════════════════════════════════ */
+
+.gutenberg-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.gutenberg-view__search {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border, var(--studio-border));
+  flex-shrink: 0;
+}
+
+.gutenberg-view__search-row {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.gutenberg-view__search-input {
+  flex: 1;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border, var(--studio-border));
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.875rem;
+  background: var(--color-bg-secondary, var(--studio-bg-secondary));
+  color: var(--color-text-primary, var(--studio-text-primary));
+}
+
+.gutenberg-view__search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.gutenberg-view__search-btn {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-primary);
+  color: var(--color-text-on-primary, white);
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.875rem;
+  cursor: pointer;
+  min-width: 60px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gutenberg-view__search-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.gutenberg-view__search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gutenberg-view__error {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-error-bg, rgba(220, 38, 38, 0.1));
+  color: var(--color-error);
+  font-size: 0.875rem;
+}
+
+.gutenberg-view__content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.gutenberg-view__step {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.gutenberg-view__step-header {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border, var(--studio-border));
+  background: var(--color-bg-secondary, var(--studio-bg-secondary));
+  flex-shrink: 0;
+}
+
+.gutenberg-view__step-header--nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.gutenberg-view__back-btn {
+  padding: var(--space-xs);
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gutenberg-view__back-btn:hover {
+  color: var(--color-text-primary, var(--studio-text-primary));
+}
+
+.gutenberg-view__step-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gutenberg-view__step-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--color-text-primary, var(--studio-text-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gutenberg-view__step-subtitle {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+}
+
+.gutenberg-view__list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.gutenberg-view__list-item {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border-subtle, var(--studio-border-subtle));
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.gutenberg-view__list-item:hover {
+  background: var(--color-bg-hover, var(--studio-bg-hover));
+}
+
+.gutenberg-view__list-item--selected {
+  background: var(--color-primary-subtle, rgba(139, 92, 246, 0.1));
+}
+
+.gutenberg-view__list-item-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-primary, var(--studio-text-primary));
+  margin-bottom: var(--space-micro, 2px);
+}
+
+.gutenberg-view__list-item-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+}
+
+.gutenberg-view__loading {
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+  font-size: 0.875rem;
+}
+
+.gutenberg-view__preview-text {
+  flex: 1;
+  padding: var(--space-md);
+  overflow-y: auto;
+  font-family: var(--font-prose, Georgia, serif);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--color-text-primary, var(--studio-text-primary));
+  white-space: pre-wrap;
+}
+
+.gutenberg-view__action-footer {
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--color-border, var(--studio-border));
+  background: var(--color-bg-secondary, var(--studio-bg-secondary));
+  flex-shrink: 0;
+}
+
+.gutenberg-view__use-btn {
+  width: 100%;
+  padding: var(--space-sm);
+  background: var(--color-primary);
+  color: var(--color-text-on-primary, white);
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.gutenberg-view__use-btn:hover {
+  opacity: 0.9;
+}
+

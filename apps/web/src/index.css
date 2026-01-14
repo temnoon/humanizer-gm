@@ -23,7 +23,14 @@
 @import './styles/features/studio.css';
 @import './styles/features/workspace.css';
 @import './styles/features/books-tab.css';
-@import './styles/features/views.css';
+/* Views - modularized from views.css */
+@import './styles/features/gallery-view.css';
+@import './styles/features/facebook-view.css';
+@import './styles/features/network-graph.css';
+@import './styles/features/explore-view.css';
+@import './styles/features/social-graph.css';
+@import './styles/features/gutenberg-view.css';
+@import './styles/features/files-view.css';
 @import './styles/features/panels.css';
 @import './styles/features/tools.css';
 @import './styles/features/queue.css';

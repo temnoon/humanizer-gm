@@ -1,0 +1,556 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SOCIAL GRAPH - Force-directed relationship visualization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.social-graph {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-primary);
+  overflow: hidden;
+}
+
+.social-graph--loading,
+.social-graph--error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-huge);
+  gap: var(--space-medium);
+}
+
+.social-graph__spinner {
+  width: 32px;
+  height: 32px;
+  border: var(--border-width-thick) solid var(--color-border-subtle);
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-full);
+  animation: social-graph-spin 1s linear infinite;
+}
+
+@keyframes social-graph-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.social-graph__status {
+  font-size: var(--text-size-body);
+  color: var(--color-text-secondary);
+}
+
+.social-graph__status--error {
+  color: var(--color-status-error);
+}
+
+.social-graph__error-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-size-heading-2);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-status-error);
+  background: var(--color-status-error-subtle);
+  border-radius: var(--radius-full);
+}
+
+/* Header */
+.social-graph__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-medium);
+  padding: var(--space-medium) var(--space-large);
+  background: var(--color-surface-secondary);
+  border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+}
+
+.social-graph__close {
+  padding: var(--space-small) var(--space-medium);
+  font-size: var(--text-size-body);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  background: var(--color-surface-tertiary);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-medium);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.social-graph__close:hover {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-primary);
+}
+
+.social-graph__title {
+  font-size: var(--text-size-heading-3);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.social-graph__stats {
+  display: flex;
+  gap: var(--space-medium);
+  margin-left: auto;
+}
+
+.social-graph__stat {
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary);
+}
+
+.social-graph__stat strong {
+  color: var(--color-text-primary);
+}
+
+/* Controls */
+.social-graph__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-large);
+  padding: var(--space-small) var(--space-large);
+  background: var(--color-surface-tertiary);
+  border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+}
+
+.social-graph__zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  padding-right: var(--space-large);
+  border-right: var(--border-width-thin) solid var(--color-border-subtle);
+}
+
+.social-graph__zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: var(--color-text-primary);
+  background: var(--color-surface-secondary);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.social-graph__zoom-btn:hover {
+  background: var(--color-primary);
+  color: var(--studio-text);
+  border-color: var(--color-primary);
+}
+
+.social-graph__zoom-level {
+  min-width: 50px;
+  text-align: center;
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.social-graph__control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+}
+
+.social-graph__label {
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.social-graph__slider {
+  width: 100px;
+  height: var(--space-tiny);
+  appearance: none;
+  background: var(--color-border-default);
+  border-radius: var(--radius-tiny);
+  cursor: pointer;
+}
+
+.social-graph__slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.social-graph__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tiny);
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.social-graph__action {
+  padding: var(--space-small) var(--space-medium);
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-medium);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+  min-height: var(--touch-target);
+}
+
+.social-graph__action:hover {
+  background: var(--color-primary-hover);
+}
+
+.social-graph__action--secondary {
+  background: var(--color-surface-secondary);
+  color: var(--color-text-primary);
+  border: var(--border-width-thin) solid var(--color-border-default);
+}
+
+.social-graph__action--secondary:hover {
+  background: var(--color-surface-tertiary);
+}
+
+/* Canvas */
+.social-graph__canvas {
+  flex: 1;
+  width: 100%;
+  cursor: grab;
+  user-select: none;
+}
+
+.social-graph__canvas:active {
+  cursor: grabbing;
+}
+
+/* Links */
+.social-graph__link {
+  stroke: var(--color-archive-facebook);
+  pointer-events: none;
+}
+
+/* Nodes */
+.social-graph__node-group {
+  cursor: pointer;
+}
+
+.social-graph__node {
+  fill: var(--color-primary);
+  stroke: var(--color-surface-primary);
+  stroke-width: 2;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.social-graph__node--self {
+  fill: var(--color-sic-high);
+  stroke-width: 3;
+}
+
+.social-graph__node--discovered {
+  fill: var(--color-status-warning);
+}
+
+.social-graph__node--hovered {
+  stroke: var(--color-text-primary);
+  stroke-width: 3;
+  filter: brightness(1.15);
+}
+
+.social-graph__node--selected {
+  stroke: var(--color-accent);
+  stroke-width: 4;
+}
+
+/* Node Labels */
+.social-graph__node-label {
+  font-size: var(--text-size-micro);
+  fill: var(--color-text-secondary);
+  font-family: var(--font-family-body);
+  pointer-events: none;
+}
+
+.social-graph__node-label--self {
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-semibold);
+  fill: var(--color-text-primary);
+}
+
+.social-graph__node-label--match {
+  fill: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Search */
+.social-graph__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+}
+
+.social-graph__search-input {
+  padding: var(--space-tiny) var(--space-small);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface-primary);
+  color: var(--color-text-primary);
+  font-size: var(--text-size-small);
+  width: 150px;
+}
+
+.social-graph__search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.social-graph__search-count {
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary);
+}
+
+/* Dimmed nodes (not matching search) */
+.social-graph__node--dimmed {
+  opacity: 0.2;
+}
+
+/* Search match highlight */
+.social-graph__node--search-match {
+  stroke: var(--color-accent);
+  stroke-width: 3;
+  filter: brightness(1.2);
+}
+
+/* Detail Panel */
+.social-graph__detail {
+  position: absolute;
+  top: var(--space-large);
+  right: var(--space-large);
+  padding: var(--space-medium);
+  background: var(--color-surface-elevated);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-large);
+  min-width: 280px;
+  max-width: 350px;
+  max-height: calc(100vh - 10rem);
+  overflow-y: auto;
+  z-index: var(--z-raised);
+}
+
+.social-graph__detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-small);
+  margin-bottom: var(--space-small);
+}
+
+.social-graph__detail-name {
+  font-size: var(--text-size-large);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.social-graph__detail-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-small);
+  color: var(--color-text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.social-graph__detail-close:hover {
+  background: var(--color-surface-secondary);
+  color: var(--color-text-primary);
+}
+
+.social-graph__detail-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-tiny) var(--space-small);
+  margin: 0;
+  font-size: var(--text-size-small);
+}
+
+.social-graph__detail-stats dt {
+  color: var(--color-text-tertiary);
+}
+
+.social-graph__detail-stats dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Friendship date styling */
+.social-graph__detail-friendship {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tiny);
+}
+
+.social-graph__detail-years {
+  font-size: var(--text-size-micro);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-normal);
+}
+
+/* Detail panel loading and context */
+.social-graph__detail-loading {
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary);
+  padding: var(--space-small) 0;
+  font-style: italic;
+}
+
+.social-graph__detail-context {
+  margin-top: var(--space-medium);
+  padding-top: var(--space-small);
+  border-top: var(--border-width-thin) solid var(--color-border-subtle);
+}
+
+.social-graph__detail-dates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tiny);
+  font-size: var(--text-size-micro);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-small);
+}
+
+.social-graph__detail-types h4,
+.social-graph__detail-recent h4 {
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: var(--space-small) 0 var(--space-tiny) 0;
+}
+
+.social-graph__detail-types ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.social-graph__detail-types li {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-size-small);
+  padding: var(--space-tiny) 0;
+}
+
+.social-graph__detail-type {
+  color: var(--color-text-secondary);
+  text-transform: capitalize;
+}
+
+.social-graph__detail-count {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.social-graph__detail-interactions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.social-graph__detail-interaction {
+  padding: var(--space-tiny) 0;
+  border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+}
+
+.social-graph__detail-interaction:last-child {
+  border-bottom: none;
+}
+
+.social-graph__detail-interaction-type {
+  font-size: var(--text-size-micro);
+  color: var(--color-primary);
+  text-transform: capitalize;
+}
+
+.social-graph__detail-interaction-date {
+  font-size: var(--text-size-micro);
+  color: var(--color-text-tertiary);
+  margin-left: var(--space-small);
+}
+
+.social-graph__detail-interaction-text {
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary);
+  margin: var(--space-tiny) 0 0 0;
+  line-height: 1.4;
+}
+
+/* Legend */
+.social-graph__legend {
+  position: absolute;
+  bottom: var(--space-large);
+  left: var(--space-large);
+  padding: var(--space-small) var(--space-medium);
+  background: var(--color-surface-elevated);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-medium);
+  z-index: var(--z-raised);
+}
+
+.social-graph__legend-title {
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-tiny) 0;
+}
+
+.social-graph__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  font-size: var(--text-size-small);
+  color: var(--color-text-secondary);
+  padding: var(--space-micro) 0;
+}
+
+.social-graph__legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  border: var(--border-width-medium) solid var(--color-surface-primary);
+}
+
+.social-graph__legend-dot--self {
+  background: var(--color-sic-high);
+}
+
+.social-graph__legend-dot--friend {
+  background: var(--color-primary);
+}
+
+.social-graph__legend-dot--discovered {
+  background: var(--color-status-warning);
+}
+

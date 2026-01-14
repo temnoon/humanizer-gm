@@ -1,0 +1,592 @@
+/* ═══════════════════════════════════════════════════════════════════
+   NETWORK GRAPH - Force-directed social graph visualization
+   ═══════════════════════════════════════════════════════════════════ */
+
+.network-graph {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+  background: var(--studio-bg);
+  overflow: hidden;
+}
+
+.network-graph--loading,
+.network-graph--error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xlarge);
+  gap: var(--space-medium);
+}
+
+.network-graph__spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--studio-border);
+  border-top-color: var(--studio-accent);
+  border-radius: var(--radius-full);
+  animation: network-graph-spin 1s linear infinite;
+}
+
+@keyframes network-graph-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.network-graph__loading-text {
+  font-size: var(--text-size-small);
+  color: var(--studio-text-secondary);
+}
+
+.network-graph__error-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-status-error);
+  background: rgba(220, 53, 69, 0.1);
+  border-radius: var(--radius-full);
+}
+
+.network-graph__error-text {
+  font-size: var(--text-size-small);
+  color: var(--color-status-error);
+}
+
+.network-graph__retry-btn {
+  padding: var(--space-small) var(--space-medium);
+  font-size: var(--text-size-small);
+  font-weight: 500;
+  background: var(--studio-accent);
+  color: var(--studio-text);
+  border: none;
+  border-radius: var(--radius-medium);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.network-graph__retry-btn:hover {
+  background: var(--studio-accent-hover);
+}
+
+/* Controls */
+.network-graph__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-medium);
+  padding: var(--space-small) var(--space-medium);
+  background: var(--studio-quote-bg);
+  border-bottom: 1px solid var(--studio-border);
+  z-index: 10;
+}
+
+.network-graph__control-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+}
+
+.network-graph__label {
+  font-size: 0.6875rem;
+  color: var(--studio-text-secondary);
+  white-space: nowrap;
+}
+
+.network-graph__slider {
+  width: 80px;
+  height: 4px;
+  appearance: none;
+  background: var(--studio-border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.network-graph__slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--studio-accent);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.network-graph__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tiny);
+  font-size: 0.6875rem;
+  color: var(--studio-text-secondary);
+  cursor: pointer;
+}
+
+.network-graph__btn {
+  padding: var(--space-tiny) var(--space-small);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  background: var(--studio-panel-bg);
+  color: var(--studio-text);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.network-graph__btn:hover {
+  background: var(--studio-accent);
+  color: var(--studio-text);
+  border-color: var(--studio-accent);
+}
+
+/* Stats Bar */
+.network-graph__stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-medium);
+  padding: var(--space-tiny) var(--space-medium);
+  background: var(--studio-panel-bg);
+  border-bottom: 1px solid var(--studio-border);
+  font-size: 0.6875rem;
+  color: var(--studio-text-secondary);
+}
+
+.network-graph__stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tiny);
+}
+
+.network-graph__stat strong {
+  color: var(--studio-text);
+}
+
+.network-graph__stat-type {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.network-graph__stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+}
+
+/* SVG Canvas */
+.network-graph__svg {
+  flex: 1;
+  width: 100%;
+  cursor: grab;
+  user-select: none;
+}
+
+.network-graph__svg:active {
+  cursor: grabbing;
+}
+
+/* Links */
+.network-graph__link {
+  pointer-events: none;
+}
+
+/* Nodes */
+.network-graph__node-group {
+  cursor: pointer;
+}
+
+.network-graph__node {
+  fill: var(--studio-accent);
+  stroke: var(--studio-bg);
+  stroke-width: 2;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.network-graph__node--self {
+  fill: var(--color-status-success);
+  stroke-width: 3;
+}
+
+.network-graph__node--discovered {
+  fill: var(--color-status-warning);
+}
+
+.network-graph__node--hovered {
+  stroke: var(--studio-text);
+  stroke-width: 3;
+  filter: brightness(1.2);
+}
+
+.network-graph__node--selected {
+  stroke: var(--studio-accent);
+  stroke-width: 4;
+}
+
+/* Node Labels */
+.network-graph__label-text {
+  font-size: 10px;
+  fill: var(--studio-text-secondary);
+  font-family: var(--font-family-body);
+  pointer-events: none;
+}
+
+.network-graph__label-text--self {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--studio-text);
+}
+
+/* Detail Panel */
+.network-graph__detail {
+  position: absolute;
+  top: var(--space-medium);
+  right: var(--space-medium);
+  padding: var(--space-medium);
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-large);
+  min-width: 180px;
+  z-index: 20;
+}
+
+.network-graph__detail-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--studio-text);
+  margin: 0 0 var(--space-small) 0;
+}
+
+.network-graph__detail-stat {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  line-height: 1.5;
+}
+
+.network-graph__detail-stat strong {
+  color: var(--studio-text);
+}
+
+/* Legend */
+.network-graph__legend {
+  position: absolute;
+  bottom: var(--space-medium);
+  left: var(--space-medium);
+  padding: var(--space-small) var(--space-medium);
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-medium);
+  z-index: 20;
+}
+
+.network-graph__legend-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--studio-text);
+  margin-bottom: var(--space-tiny);
+}
+
+.network-graph__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  font-size: 0.625rem;
+  color: var(--studio-text-secondary);
+  padding: 2px 0;
+}
+
+.network-graph__legend-circle {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--studio-bg);
+}
+
+.network-graph__legend-circle--self {
+  background: var(--color-status-success);
+}
+
+.network-graph__legend-circle--friend {
+  background: var(--studio-accent);
+}
+
+.network-graph__legend-circle--discovered {
+  background: var(--color-status-warning);
+}
+
+/* Notes View */
+.facebook-view__notes {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.facebook-view__notes-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-small);
+}
+
+.facebook-view__note {
+  background: var(--studio-bg-secondary);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--radius-medium);
+  margin-bottom: var(--space-small);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.facebook-view__note:hover {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__note--expanded {
+  border-color: var(--studio-accent);
+}
+
+.facebook-view__note-header {
+  padding: var(--space-medium);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xsmall);
+}
+
+.facebook-view__note-title {
+  font-weight: 600;
+  color: var(--studio-text);
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.facebook-view__note-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-small);
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+}
+
+.facebook-view__note-words {
+  font-weight: 500;
+  color: var(--studio-accent);
+}
+
+.facebook-view__note-media {
+  color: var(--color-status-info);
+}
+
+.facebook-view__note-content {
+  border-top: 1px solid var(--studio-border);
+  padding: var(--space-medium);
+  background: var(--studio-bg);
+}
+
+.facebook-view__note-text {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--studio-text);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.facebook-view__note-text p {
+  margin: 0 0 var(--space-small) 0;
+}
+
+.facebook-view__note-text p:last-child {
+  margin-bottom: 0;
+}
+
+.facebook-view__note-actions {
+  margin-top: var(--space-medium);
+  padding-top: var(--space-small);
+  border-top: 1px solid var(--studio-border);
+}
+
+.facebook-view__note-select {
+  padding: var(--space-small) var(--space-medium);
+  background: var(--studio-accent);
+  color: var(--studio-text);
+  border: none;
+  border-radius: var(--radius-medium);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 44px;
+  transition: background 0.15s ease;
+}
+
+.facebook-view__note-select:hover {
+  background: var(--studio-accent-hover);
+}
+
+.facebook-view__note-select:focus-visible {
+  outline: var(--border-width-medium) solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+/* Lightbox */
+.facebook-lightbox {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.facebook-lightbox__close {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--studio-text);
+  background: rgba(var(--studio-panel-bg-rgb), 0.9);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 10001;
+}
+
+.facebook-lightbox__close:hover {
+  background: var(--studio-panel-bg);
+}
+
+.facebook-lightbox__nav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: 300;
+  color: var(--studio-text);
+  background: rgba(var(--studio-panel-bg-rgb), 0.9);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 10001;
+}
+
+.facebook-lightbox__nav:hover {
+  background: var(--studio-panel-bg);
+}
+
+.facebook-lightbox__nav--prev {
+  left: 1.5rem;
+}
+
+.facebook-lightbox__nav--next {
+  right: 1.5rem;
+}
+
+.facebook-lightbox__image {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  cursor: zoom-in;
+  transition: none;
+}
+
+.facebook-lightbox__image--zoomed {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+
+.facebook-lightbox__info {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  color: #fff;
+  text-align: center;
+}
+
+.facebook-lightbox__counter {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.facebook-lightbox__filename {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  margin-bottom: 0.25rem;
+}
+
+.facebook-lightbox__meta {
+  font-size: 0.6875rem;
+  opacity: 0.6;
+}
+
+.facebook-lightbox__context {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: left;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.facebook-lightbox__context-loading {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  margin-top: 0.5rem;
+}
+
+.facebook-lightbox__related {
+  font-size: 0.75rem;
+}
+
+.facebook-lightbox__related strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  opacity: 0.8;
+}
+
+.facebook-lightbox__related-link {
+  display: block;
+  padding: 0.25rem 0;
+  color: var(--studio-accent, #a87e5c);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.6875rem;
+}
+
+.facebook-lightbox__related-link:hover {
+  text-decoration: underline;
+}
+
+.facebook-lightbox__albums {
+  margin-top: 0.5rem;
+  font-size: 0.6875rem;
+  opacity: 0.7;
+}
+
