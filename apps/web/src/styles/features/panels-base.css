@@ -1,0 +1,185 @@
+/* ═══════════════════════════════════════════════════════════════════
+   PANELS STYLES
+   Menubar, Corner Assistant, AUI Panel, Bottom Sheet, Resizer, Split, etc.
+   Extracted from index.css during CSS modularization
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* CORNER ASSISTANT - Book-Margin Help Button
+   Subtle, book-safe, non-intrusive
+   ═══════════════════════════════════════════════════════════════════ */
+
+.corner-assistant {
+  position: fixed;
+  bottom: var(--space-xl, 2rem);
+  right: var(--space-xl, 2rem);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--studio-surface, #faf8f5);
+  border: 1px solid var(--studio-border, #e5e2dc);
+  border-radius: var(--radius-full, 9999px);
+  color: var(--studio-text-tertiary, #999);
+  cursor: pointer;
+  transition: all 0.2s ease, right 0.3s ease; /* Smooth slide when panel opens */
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.corner-assistant:hover {
+  background: var(--studio-hover, #f0ede8);
+  color: var(--studio-text-secondary, #666);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: scale(1.05);
+}
+
+.corner-assistant--open {
+  background: var(--studio-accent, #6366f1);
+  color: var(--studio-text);
+  border-color: var(--studio-accent, #6366f1);
+}
+
+.corner-assistant--open:hover {
+  background: var(--studio-accent-hover, #5558e3);
+  color: var(--studio-text);
+}
+
+.corner-assistant:focus {
+  outline: none;
+}
+
+.corner-assistant:focus-visible {
+  outline: 2px solid var(--studio-accent, #6366f1);
+  outline-offset: 2px;
+}
+
+.corner-assistant__icon {
+  line-height: 1;
+}
+
+/* Backdrop for closing menu */
+.corner-assistant__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+/* Popover menu */
+.corner-assistant__menu {
+  position: fixed;
+  bottom: calc(var(--space-xl, 2rem) + 44px);
+  right: var(--space-xl, 2rem);
+  min-width: 160px;
+  padding: var(--space-xs, 0.25rem);
+  background: var(--studio-surface, #faf8f5);
+  border: 1px solid var(--studio-border, #e5e2dc);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 101;
+  animation: corner-menu-in 0.15s ease;
+  transition: right 0.3s ease; /* Smooth slide with button */
+}
+
+@keyframes corner-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.corner-assistant__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+  width: 100%;
+  padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+  font-size: 0.875rem;
+  color: var(--studio-text, #2c2825);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md, 0.5rem);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.corner-assistant__item:hover {
+  background: var(--studio-hover, #f0ede8);
+}
+
+.corner-assistant__item.active {
+  color: var(--studio-accent, #6366f1);
+  font-weight: 500;
+}
+
+.corner-assistant__item-icon {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.corner-assistant__divider {
+  height: 1px;
+  margin: var(--space-xs, 0.25rem) var(--space-sm, 0.5rem);
+  background: var(--studio-border, #e5e2dc);
+}
+
+.corner-assistant__shortcuts {
+  padding: var(--space-xs, 0.25rem) var(--space-md, 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.corner-assistant__shortcut {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.25rem);
+  font-size: 0.6875rem;
+  color: var(--studio-text-tertiary, #999);
+}
+
+.corner-assistant__shortcut kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 0.625rem;
+  background: var(--studio-bg, #f5f2ed);
+  border: 1px solid var(--studio-border, #e5e2dc);
+  border-radius: 3px;
+}
+
+/* Mobile adjustments */
+@media (max-width: 767px) {
+  .corner-assistant {
+    bottom: var(--space-lg, 1.5rem);
+    right: var(--space-lg, 1.5rem);
+    width: 40px;
+    height: 40px;
+  }
+
+  .corner-assistant__menu {
+    bottom: calc(var(--space-lg, 1.5rem) + 48px);
+    right: var(--space-lg, 1.5rem);
+  }
+}
+
+/* Dark mode */
+[data-theme="dark"] .corner-assistant {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .corner-assistant__menu {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+

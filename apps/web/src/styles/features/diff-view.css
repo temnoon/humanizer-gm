@@ -1,0 +1,189 @@
+/* ═══════════════════════════════════════════════════════════════════
+   DIFF VIEW
+   ═══════════════════════════════════════════════════════════════════ */
+
+.diff-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary, #fff);
+}
+
+.diff-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--studio-border, #e5e2dc);
+  background: var(--bg-secondary, #f5f5f0);
+}
+
+.diff-view__stats {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.diff-view__stat {
+  font-size: 0.875rem;
+  color: var(--studio-text-secondary, #666);
+}
+
+.diff-view__stat--improved {
+  color: var(--color-success, #16a34a);
+}
+
+.diff-view__stat--worse {
+  color: var(--color-error, #dc2626);
+}
+
+/* Inline diff mode */
+.diff-view__inline {
+  flex: 1;
+  padding: var(--space-md);
+  line-height: 1.75;
+  overflow-y: auto;
+}
+
+.diff-segment {
+  transition: background-color 0.15s ease;
+}
+
+.diff-segment--unchanged {
+  /* Normal text */
+}
+
+.diff-segment--removed {
+  background-color: rgba(var(--color-error-rgb, 220, 38, 38), 0.2);
+  text-decoration: line-through;
+  color: var(--color-error, #dc2626);
+  cursor: pointer;
+}
+
+.diff-segment--added {
+  background-color: rgba(var(--color-success-rgb, 22, 163, 74), 0.2);
+  color: var(--color-success-dark, #15803d);
+  cursor: pointer;
+}
+
+.diff-segment--removed:hover,
+.diff-segment--added:hover {
+  filter: brightness(0.95);
+}
+
+/* Side-by-side mode */
+.diff-view__side-by-side {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.diff-view__pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.diff-view__pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--studio-border, #e5e2dc);
+  background: var(--bg-secondary, #f5f5f0);
+}
+
+.diff-view__pane-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.diff-view__score {
+  font-size: 0.875rem;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary, #eee);
+}
+
+.diff-view__score--improved {
+  background: rgba(var(--color-success-rgb, 22, 163, 74), 0.15);
+  color: var(--color-success, #16a34a);
+}
+
+.diff-view__pane-content {
+  flex: 1;
+  padding: var(--space-md);
+  overflow-y: auto;
+  line-height: 1.75;
+}
+
+.diff-view__pane--original {
+  border-right: 1px solid var(--studio-border, #e5e2dc);
+}
+
+.diff-view__divider {
+  width: 4px;
+  background: var(--studio-border, #e5e2dc);
+  cursor: col-resize;
+}
+
+.diff-view__text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.diff-view__change {
+  background-color: rgba(var(--color-warning-rgb, 217, 119, 6), 0.2);
+  border-bottom: 2px solid var(--color-warning, #d97706);
+  cursor: pointer;
+}
+
+.diff-view__change:hover {
+  background-color: rgba(var(--color-warning-rgb, 217, 119, 6), 0.3);
+}
+
+/* Mobile: Stack side-by-side vertically */
+@media (max-width: 768px) {
+  .diff-view__side-by-side {
+    flex-direction: column;
+  }
+
+  .diff-view__pane--original {
+    border-right: none;
+    border-bottom: 1px solid var(--studio-border, #e5e2dc);
+    max-height: 50%;
+  }
+
+  .diff-view__divider {
+    width: 100%;
+    height: 4px;
+    cursor: row-resize;
+  }
+}
+
+/* Reduced motion for highlights */
+@media (prefers-reduced-motion: reduce) {
+  .highlight,
+  .sentence-highlight,
+  .metrics-sidebar,
+  .metric-bar__fill {
+    transition: none;
+  }
+}
+/**
+ * ImageCard Component Styles
+ * 
+ * Display images with metadata, supporting:
+ * - Collapsed state (thumbnail ~300px)
+ * - Expanded state (larger image up to 800px)
+ * - Responsive layout (desktop: 2-col, mobile: stacked)
+ * - Book-like sepia aesthetic
+ * 
+ * Following Design System Protocol:
+ * - All spacing from --space-* tokens
+ * - All colors from --color-* variables
+ * - Mobile-first responsive design
+ * - CSS variables with proper fallbacks
+ * - BEM naming convention
+ */
+

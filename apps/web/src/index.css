@@ -31,7 +31,15 @@
 @import './styles/features/social-graph.css';
 @import './styles/features/gutenberg-view.css';
 @import './styles/features/files-view.css';
-@import './styles/features/panels.css';
+/* Panels - modularized from panels.css */
+@import './styles/features/panels-base.css';
+@import './styles/features/aui-panel.css';
+@import './styles/features/menubar.css';
+@import './styles/features/panel-layout.css';
+@import './styles/features/highlight-layers.css';
+@import './styles/features/split-toolbar.css';
+@import './styles/features/diff-view.css';
+@import './styles/features/image-card.css';
 @import './styles/features/tools.css';
 @import './styles/features/queue.css';
 @import './styles/features/auth.css';

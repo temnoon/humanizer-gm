@@ -1,0 +1,174 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SPLIT MODE TOOLBAR
+   ═══════════════════════════════════════════════════════════════════ */
+
+.split-mode-toolbar {
+  position: fixed;
+  bottom: var(--space-xl, 32px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-small, 8px);
+  padding: var(--space-small, 8px) var(--space-medium, 16px);
+  background: var(--color-surface-elevated, #fff);
+  border: var(--border-width-thin, 1px) solid var(--color-border-subtle, #e5e2dc);
+  border-radius: var(--radius-large, 12px);
+  box-shadow: var(--shadow-medium, 0 4px 12px rgba(0, 0, 0, 0.08));
+  opacity: 0.85;
+  pointer-events: auto;
+  transition: opacity var(--duration-normal, 0.2s) var(--ease-out, ease-out),
+              transform 0.1s ease-out;
+  z-index: 1000;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.split-mode-toolbar:active {
+  cursor: grabbing;
+}
+
+.split-mode-toolbar--dragging {
+  opacity: 1;
+  box-shadow: var(--shadow-large, 0 8px 24px rgba(0, 0, 0, 0.15));
+  transition: none; /* Disable transition while dragging */
+}
+
+/* Custom position when dragged (transform is updated via JS) */
+.split-mode-toolbar--custom-position {
+  left: auto;
+  bottom: auto;
+}
+
+.split-mode-toolbar:hover,
+.split-mode-toolbar--visible {
+  opacity: 1;
+}
+
+/* WCAG 2.4.7: Visible focus indicator for keyboard navigation */
+.split-mode-toolbar:focus-visible {
+  opacity: 1;
+  outline: 3px solid var(--color-primary, #4a7c59);
+  outline-offset: 2px;
+}
+
+.split-mode-toolbar__section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tiny, 4px);
+}
+
+.split-mode-toolbar__section-label {
+  font-size: var(--text-size-small, 0.75rem);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--color-text-secondary, #666);  /* WCAG AA: 4.5:1+ contrast */
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide, 0.05em);
+  margin-right: var(--space-small, 8px);
+  white-space: nowrap;
+}
+
+.split-mode-toolbar__divider {
+  width: var(--border-width-thin, 1px);
+  height: 20px;
+  background: var(--color-border-subtle, #e5e2dc);
+  margin: 0 var(--space-small, 8px);
+  flex-shrink: 0;
+}
+
+.split-mode-toolbar__button,
+.split-mode-toolbar__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-tiny, 4px);
+  padding: var(--space-small, 8px) var(--space-medium, 12px);
+  border: var(--border-width-thin, 1px) solid transparent;
+  border-radius: var(--radius-medium, 6px);
+  background: transparent;
+  color: var(--color-text-secondary, #666);
+  font-family: var(--font-family-body, system-ui, sans-serif);
+  font-size: var(--text-size-small, 0.8125rem);
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  transition: all var(--duration-fast, 0.15s) var(--ease-out, ease-out);
+  min-height: 44px; /* WCAG AA touch target minimum */
+  min-width: 44px;  /* WCAG AAA: Square touch targets */
+  white-space: nowrap;
+}
+
+.split-mode-toolbar__button:hover,
+.split-mode-toolbar__toggle:hover {
+  background: var(--color-surface-tertiary, rgba(0, 0, 0, 0.04));
+  color: var(--color-text-primary, #333);
+}
+
+.split-mode-toolbar__button:focus-visible,
+.split-mode-toolbar__toggle:focus-visible {
+  outline: 2px solid var(--color-primary, #4a7c59);
+  outline-offset: 2px;
+  background: var(--color-surface-tertiary, rgba(0, 0, 0, 0.04));
+}
+
+.split-mode-toolbar__button:active,
+.split-mode-toolbar__toggle:active {
+  transform: scale(0.98);
+}
+
+.split-mode-toolbar__button--active {
+  background: var(--color-primary, #4a7c59);
+  color: var(--color-text-inverse, #fff);
+  border-color: var(--color-primary, #4a7c59);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.split-mode-toolbar__button--active:hover {
+  background: var(--color-primary-hover, #3d6749);
+  color: var(--color-text-inverse, #fff);
+}
+
+.split-mode-toolbar__toggle--active {
+  background: var(--color-primary-subtle, rgba(74, 124, 89, 0.12));
+  border-color: var(--color-primary, #4a7c59);
+  color: var(--color-primary, #4a7c59);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.split-mode-toolbar__toggle--active:hover {
+  background: var(--color-primary, #4a7c59);
+  color: var(--color-text-inverse, #fff);
+}
+
+.split-mode-toolbar__icon {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.split-mode-toolbar__label {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .split-mode-toolbar__label {
+    display: inline;
+  }
+}
+
+.split-mode-toolbar__badge {
+  padding: var(--space-tiny, 4px) var(--space-small, 8px);
+  background: var(--color-surface-tertiary, #f0f0f0);
+  border: var(--border-width-thin, 1px) solid var(--color-border-subtle, #e5e2dc);
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--text-size-small, 0.75rem);
+  color: var(--color-text-tertiary, #888);
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+}
+
+/* Show toolbar fully when hovering workspace */
+.split-workspace:hover .split-mode-toolbar {
+  opacity: 1;
+}
+

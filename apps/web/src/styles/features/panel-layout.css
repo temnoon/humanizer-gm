@@ -1,0 +1,527 @@
+/* ═══════════════════════════════════════════════════════════════════
+   PANEL RESIZER - Draggable resize handle between panels
+   ═══════════════════════════════════════════════════════════════════ */
+
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 100;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+
+.panel-resizer--left {
+  right: -4px;
+}
+
+.panel-resizer--right {
+  left: -4px;
+}
+
+.panel-resizer__handle {
+  width: 4px;
+  height: 40px;
+  background: var(--studio-border, #e5e2dc);
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, height 0.15s ease;
+}
+
+.panel-resizer:hover .panel-resizer__handle {
+  opacity: 1;
+  height: 60px;
+}
+
+.panel-resizer:active .panel-resizer__handle,
+.panel-resizer--dragging .panel-resizer__handle {
+  opacity: 1;
+  height: 80px;
+  background: var(--color-primary, #4a7c59);
+}
+
+/* Focus state for keyboard accessibility */
+.panel-resizer:focus {
+  outline: none;
+}
+
+.panel-resizer:focus-visible .panel-resizer__handle {
+  opacity: 1;
+  background: var(--color-primary, #4a7c59);
+}
+
+/* Hide on mobile - panels are full-width bottom sheets */
+@media (max-width: 767px) {
+  .panel-resizer {
+    display: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE BOTTOM SHEET - Panel as full-width bottom drawer
+   ═══════════════════════════════════════════════════════════════════ */
+
+.studio-panel--bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: 100%;
+  max-height: calc(100vh - 60px);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  transform: translateY(calc(100% - 60px));
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 200;
+  background: var(--bg-primary, #fff);
+}
+
+.studio-panel--bottom-sheet.studio-panel--open {
+  transform: translateY(0);
+}
+
+/* Bottom sheet handle */
+.studio-panel__sheet-handle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-lg);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  min-height: var(--touch-target-min, 44px);
+}
+
+.studio-panel__sheet-bar {
+  width: 40px;
+  height: 4px;
+  background: var(--studio-border, #e5e2dc);
+  border-radius: 2px;
+  transition: background 0.15s ease;
+}
+
+.studio-panel__sheet-handle:hover .studio-panel__sheet-bar {
+  background: var(--studio-text-tertiary, #999);
+}
+
+.studio-panel--open .studio-panel__sheet-bar {
+  background: var(--color-primary, #4a7c59);
+}
+
+.studio-panel__sheet-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--studio-text-secondary, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Mobile backdrop */
+.studio-panel__backdrop--mobile {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 199;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Ensure bottom sheet content is scrollable */
+.studio-panel--bottom-sheet .studio-panel__content {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide hover triggers on mobile */
+@media (max-width: 767px) {
+  .studio-panel__trigger {
+    display: none;
+  }
+
+  .studio-panel:not(.studio-panel--bottom-sheet) {
+    display: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SPLIT SCREEN WORKSPACE - Two-pane side-by-side layout
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Desktop split workspace */
+.split-workspace--desktop {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  /* Smooth entry animation */
+  animation: split-enter 0.3s ease-out;
+}
+
+@keyframes split-enter {
+  from {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.split-workspace__pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary, #fff);
+  /* Smooth width transitions when adjusting split ratio */
+  transition: width var(--duration-fast, 150ms) var(--ease-out, ease-out);
+}
+
+/* Disable transition during active drag for responsive feel */
+.split-workspace--desktop:has(.split-divider--dragging) .split-workspace__pane {
+  transition: none;
+}
+
+.split-workspace__pane--left {
+  border-right: 1px solid var(--studio-border, #e5e2dc);
+}
+
+.split-workspace__pane--right {
+  flex: 1;
+}
+
+.split-workspace__pane-content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  /* Center content within pane */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Generous reading space - Nagarjuna-style spacing */
+  padding: var(--space-huge, 48px) var(--space-xlarge, 32px);
+}
+
+/* Content container inside pane - max width for readability */
+.split-workspace__pane-content > * {
+  width: 100%;
+  max-width: min(42rem, 90%); /* ~672px - narrower for comfortable reading */
+  text-align: left;
+  /* Vertical rhythm for comfortable reading */
+  line-height: var(--line-height-relaxed, 1.7);
+}
+
+/* Split pane header */
+.split-workspace__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--studio-border, #e5e2dc);
+  background: var(--bg-secondary, #f5f5f0);
+  flex-shrink: 0;
+}
+
+.split-workspace__header-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.split-workspace__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--studio-text-primary, #1a1a1a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.split-workspace__subtitle {
+  font-size: 0.75rem;
+  color: var(--studio-text-tertiary, #999);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.split-workspace__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.split-workspace__badge {
+  padding: 2px 6px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--studio-info);
+  color: var(--studio-panel-bg);
+  border-radius: var(--radius-sm);
+}
+
+.split-workspace__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--studio-text-tertiary, #999);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.split-workspace__close:hover {
+  background: var(--bg-tertiary, #eee);
+  color: var(--studio-text-primary, #1a1a1a);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SPLIT DIVIDER - Draggable divider between panes
+   ═══════════════════════════════════════════════════════════════════ */
+
+.split-divider {
+  position: relative;
+  width: 8px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  user-select: none;
+  touch-action: none;
+  background: transparent;
+}
+
+.split-divider__handle {
+  width: 4px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.split-divider__grip {
+  width: 4px;
+  height: 48px;
+  background: var(--studio-border, #e5e2dc);
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, height 0.15s ease;
+}
+
+.split-divider:hover .split-divider__grip {
+  opacity: 1;
+  height: 64px;
+}
+
+.split-divider:active .split-divider__grip,
+.split-divider--dragging .split-divider__grip {
+  opacity: 1;
+  height: 80px;
+  background: var(--color-primary, #4a7c59);
+}
+
+.split-divider:focus {
+  outline: none;
+}
+
+.split-divider:focus-visible .split-divider__grip {
+  opacity: 1;
+  background: var(--color-primary, #4a7c59);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE SPLIT WORKSPACE - Tab-based pane switching
+   ═══════════════════════════════════════════════════════════════════ */
+
+.split-workspace--mobile {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.split-workspace__tabs {
+  display: flex;
+  flex-shrink: 0;
+  background: var(--bg-secondary, #f5f5f0);
+  border-bottom: 1px solid var(--studio-border, #e5e2dc);
+}
+
+.split-workspace__tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  min-height: var(--touch-target-min, 44px);
+  transition: background 0.15s ease;
+}
+
+.split-workspace__tab:hover {
+  background: var(--bg-tertiary, #eee);
+}
+
+.split-workspace__tab:focus {
+  outline: none;
+}
+
+.split-workspace__tab:focus-visible {
+  outline: 2px solid var(--color-primary, #4a7c59);
+  outline-offset: -2px;
+}
+
+.split-workspace__tab--active {
+  background: var(--bg-primary, #fff);
+  border-bottom: 2px solid var(--color-primary, #4a7c59);
+  margin-bottom: -1px;
+}
+
+.split-workspace__tab-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--studio-text-secondary, #666);
+}
+
+.split-workspace__tab--active .split-workspace__tab-title {
+  color: var(--studio-text-primary, #1a1a1a);
+}
+
+.split-workspace__tab-badge {
+  padding: 2px 6px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: var(--studio-info);
+  color: var(--studio-panel-bg);
+  border-radius: var(--radius-sm);
+}
+
+.split-workspace__mobile-content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.split-workspace__exit-mobile {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  min-width: var(--touch-target-min, 44px);
+  min-height: var(--touch-target-min, 44px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary, #eee);
+  border: none;
+  cursor: pointer;
+  font-size: 1.25rem;
+  color: var(--studio-text-tertiary, #999);
+  border-radius: var(--radius-full);
+  transition: background 0.15s ease, color 0.15s ease;
+  z-index: 10;
+}
+
+.split-workspace__exit-mobile:hover {
+  background: var(--bg-secondary, #f5f5f0);
+  color: var(--studio-text-primary, #1a1a1a);
+}
+
+/* Split pane inner content */
+.split-pane {
+  height: 100%;
+  overflow: auto;
+}
+
+.split-pane[data-readonly] {
+  background: var(--bg-secondary, #f5f5f0);
+}
+
+.split-pane__content {
+  padding: var(--space-md) var(--space-lg);
+  max-width: 65ch;
+  margin: 0 auto;
+  line-height: 1.7;
+  color: var(--studio-text-primary, #1a1a1a);
+}
+
+.split-pane__content h1,
+.split-pane__content h2,
+.split-pane__content h3 {
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-sm);
+}
+
+.split-pane__content p {
+  margin-bottom: var(--space-md);
+}
+
+.split-pane__content code {
+  background: var(--bg-tertiary, #eee);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+}
+
+.split-pane__content pre {
+  background: var(--bg-tertiary, #eee);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: var(--space-md) 0;
+}
+
+.split-pane__content blockquote {
+  border-left: 3px solid var(--color-primary, #4a7c59);
+  padding-left: var(--space-md);
+  margin: var(--space-md) 0;
+  color: var(--studio-text-secondary, #666);
+  font-style: italic;
+}
+
+/* Hide split divider on mobile */
+@media (max-width: 767px) {
+  .split-divider {
+    display: none;
+  }
+
+  .split-workspace--desktop {
+    display: none;
+  }
+}
+
