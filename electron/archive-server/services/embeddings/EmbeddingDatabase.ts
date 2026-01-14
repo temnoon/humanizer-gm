@@ -29,6 +29,11 @@ import type {
 } from './types.js';
 
 import { EmbeddingMigrations, SCHEMA_VERSION, EMBEDDING_DIM } from './EmbeddingMigrations.js';
+import { ConversationOperations } from './ConversationOperations.js';
+import { VectorOperations } from './VectorOperations.js';
+import { ContentOperations } from './ContentOperations.js';
+import { FacebookOperations } from './FacebookOperations.js';
+import { BookOperations } from './BookOperations.js';
 
 /**
  * Find sqlite-vec extension path - handles both dev and packaged Electron environments
@@ -70,6 +75,13 @@ export class EmbeddingDatabase {
   private vecLoaded: boolean = false;
   private migrations!: EmbeddingMigrations;
 
+  // Operation modules (delegation)
+  private conversationOps!: ConversationOperations;
+  private vectorOps!: VectorOperations;
+  private contentOps!: ContentOperations;
+  private facebookOps!: FacebookOperations;
+  private bookOps!: BookOperations;
+
   constructor(archivePath: string) {
     this.archivePath = archivePath;
     const dbPath = `${archivePath}/.embeddings.db`;
@@ -104,6 +116,13 @@ export class EmbeddingDatabase {
     this.migrations = new EmbeddingMigrations(this.db, this.vecLoaded);
 
     this.initSchema();
+
+    // Initialize operation modules (delegation pattern)
+    this.conversationOps = new ConversationOperations(this.db, this.vecLoaded);
+    this.vectorOps = new VectorOperations(this.db, this.vecLoaded);
+    this.contentOps = new ContentOperations(this.db, this.vecLoaded);
+    this.facebookOps = new FacebookOperations(this.db, this.vecLoaded);
+    this.bookOps = new BookOperations(this.db, this.vecLoaded);
   }
 
   private initSchema(): void {
@@ -691,58 +710,27 @@ export class EmbeddingDatabase {
   // ===========================================================================
 
   insertConversation(conv: Omit<Conversation, 'isInteresting' | 'summary' | 'summaryEmbeddingId'>): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO conversations
-      (id, folder, title, created_at, updated_at, message_count, total_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      conv.id,
-      conv.folder,
-      conv.title,
-      conv.createdAt,
-      conv.updatedAt,
-      conv.messageCount,
-      conv.totalTokens
-    );
+    return this.conversationOps.insertConversation(conv);
   }
 
   getConversation(id: string): Conversation | null {
-    const row = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.rowToConversation(row);
+    return this.conversationOps.getConversation(id);
   }
 
   getAllConversations(): Conversation[] {
-    const rows = this.db.prepare('SELECT * FROM conversations ORDER BY created_at DESC').all() as Record<string, unknown>[];
-    return rows.map(this.rowToConversation);
+    return this.conversationOps.getAllConversations();
   }
 
   getInterestingConversations(): Conversation[] {
-    const rows = this.db.prepare('SELECT * FROM conversations WHERE is_interesting = 1 ORDER BY created_at DESC').all() as Record<string, unknown>[];
-    return rows.map(this.rowToConversation);
+    return this.conversationOps.getInterestingConversations();
   }
 
   markConversationInteresting(id: string, interesting: boolean): void {
-    this.db.prepare('UPDATE conversations SET is_interesting = ? WHERE id = ?').run(interesting ? 1 : 0, id);
+    return this.conversationOps.markConversationInteresting(id, interesting);
   }
 
   updateConversationSummary(id: string, summary: string, embeddingId: string): void {
-    this.db.prepare('UPDATE conversations SET summary = ?, summary_embedding_id = ? WHERE id = ?').run(summary, embeddingId, id);
-  }
-
-  private rowToConversation(row: Record<string, unknown>): Conversation {
-    return {
-      id: row.id as string,
-      folder: row.folder as string,
-      title: row.title as string,
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-      messageCount: row.message_count as number,
-      totalTokens: row.total_tokens as number,
-      isInteresting: (row.is_interesting as number) === 1,
-      summary: row.summary as string | null,
-      summaryEmbeddingId: row.summary_embedding_id as string | null,
-    };
+    return this.conversationOps.updateConversationSummary(id, summary, embeddingId);
   }
 
   // ===========================================================================
@@ -750,83 +738,35 @@ export class EmbeddingDatabase {
   // ===========================================================================
 
   insertMessage(msg: Omit<Message, 'embeddingId'>): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO messages
-      (id, conversation_id, parent_id, role, content, created_at, token_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      msg.id,
-      msg.conversationId,
-      msg.parentId,
-      msg.role,
-      msg.content,
-      msg.createdAt,
-      msg.tokenCount
-    );
+    return this.conversationOps.insertMessage(msg);
   }
 
   insertMessagesBatch(messages: Omit<Message, 'embeddingId'>[]): void {
-    const insert = this.db.prepare(`
-      INSERT OR REPLACE INTO messages
-      (id, conversation_id, parent_id, role, content, created_at, token_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertMany = this.db.transaction((msgs: Omit<Message, 'embeddingId'>[]) => {
-      for (const msg of msgs) {
-        insert.run(msg.id, msg.conversationId, msg.parentId, msg.role, msg.content, msg.createdAt, msg.tokenCount);
-      }
-    });
-
-    insertMany(messages);
+    return this.conversationOps.insertMessagesBatch(messages);
   }
 
   getMessage(id: string): Message | null {
-    const row = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.rowToMessage(row);
+    return this.conversationOps.getMessage(id);
   }
 
   getMessagesForConversation(conversationId: string): Message[] {
-    const rows = this.db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at').all(conversationId) as Record<string, unknown>[];
-    return rows.map(this.rowToMessage);
+    return this.conversationOps.getMessagesForConversation(conversationId);
   }
 
   getAllMessages(): Message[] {
-    const rows = this.db.prepare('SELECT * FROM messages ORDER BY created_at').all() as Record<string, unknown>[];
-    return rows.map(this.rowToMessage);
+    return this.conversationOps.getAllMessages();
   }
 
   getMessagesWithoutEmbeddings(): Message[] {
-    const rows = this.db.prepare('SELECT * FROM messages WHERE embedding_id IS NULL').all() as Record<string, unknown>[];
-    return rows.map(this.rowToMessage);
+    return this.conversationOps.getMessagesWithoutEmbeddings();
   }
 
   updateMessageEmbeddingId(id: string, embeddingId: string): void {
-    this.db.prepare('UPDATE messages SET embedding_id = ? WHERE id = ?').run(embeddingId, id);
+    return this.conversationOps.updateMessageEmbeddingId(id, embeddingId);
   }
 
   updateMessageEmbeddingIdsBatch(updates: { id: string; embeddingId: string }[]): void {
-    const update = this.db.prepare('UPDATE messages SET embedding_id = ? WHERE id = ?');
-    const updateMany = this.db.transaction((items: { id: string; embeddingId: string }[]) => {
-      for (const item of items) {
-        update.run(item.embeddingId, item.id);
-      }
-    });
-    updateMany(updates);
-  }
-
-  private rowToMessage(row: Record<string, unknown>): Message {
-    return {
-      id: row.id as string,
-      conversationId: row.conversation_id as string,
-      parentId: row.parent_id as string | null,
-      role: row.role as 'user' | 'assistant' | 'system' | 'tool',
-      content: row.content as string,
-      createdAt: row.created_at as number,
-      tokenCount: row.token_count as number,
-      embeddingId: row.embedding_id as string | null,
-    };
+    return this.conversationOps.updateMessageEmbeddingIdsBatch(updates);
   }
 
   // ===========================================================================
@@ -834,54 +774,25 @@ export class EmbeddingDatabase {
   // ===========================================================================
 
   insertChunk(chunk: Omit<Chunk, 'embeddingId'>): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO chunks
-      (id, message_id, chunk_index, content, token_count, granularity)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      chunk.id,
-      chunk.messageId,
-      chunk.chunkIndex,
-      chunk.content,
-      chunk.tokenCount,
-      chunk.granularity
-    );
+    return this.conversationOps.insertChunk(chunk);
   }
 
   insertChunksBatch(chunks: Omit<Chunk, 'embeddingId'>[]): void {
-    const insert = this.db.prepare(`
-      INSERT OR REPLACE INTO chunks
-      (id, message_id, chunk_index, content, token_count, granularity)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertMany = this.db.transaction((items: Omit<Chunk, 'embeddingId'>[]) => {
-      for (const chunk of items) {
-        insert.run(chunk.id, chunk.messageId, chunk.chunkIndex, chunk.content, chunk.tokenCount, chunk.granularity);
-      }
-    });
-
-    insertMany(chunks);
+    return this.conversationOps.insertChunksBatch(chunks);
   }
 
   getChunksForMessage(messageId: string): Chunk[] {
-    const rows = this.db.prepare('SELECT * FROM chunks WHERE message_id = ? ORDER BY chunk_index').all(messageId) as Record<string, unknown>[];
-    return rows.map(this.rowToChunk);
+    return this.conversationOps.getChunksForMessage(messageId);
   }
 
   getChunksByGranularity(granularity: 'paragraph' | 'sentence'): Chunk[] {
-    const rows = this.db.prepare('SELECT * FROM chunks WHERE granularity = ?').all(granularity) as Record<string, unknown>[];
-    return rows.map(this.rowToChunk);
+    return this.conversationOps.getChunksByGranularity(granularity);
   }
 
   // ===========================================================================
   // Pyramid Chunk Operations (Content-Type Aware)
   // ===========================================================================
 
-  /**
-   * Insert a content-type aware chunk into pyramid_chunks
-   * Phase 5: Stores content_type, language, and context metadata
-   */
   insertPyramidChunk(chunk: {
     id: string;
     threadId: string;
@@ -898,34 +809,9 @@ export class EmbeddingDatabase {
     contextAfter?: string;
     linkedChunkIds?: string[];
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO pyramid_chunks
-      (id, thread_id, thread_type, chunk_index, content, word_count,
-       start_offset, end_offset, boundary_type, created_at,
-       content_type, language, context_before, context_after, linked_chunk_ids)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      chunk.id,
-      chunk.threadId,
-      chunk.threadType,
-      chunk.chunkIndex,
-      chunk.content,
-      chunk.wordCount,
-      chunk.startOffset ?? null,
-      chunk.endOffset ?? null,
-      chunk.boundaryType ?? null,
-      Date.now(),
-      chunk.contentType ?? null,
-      chunk.language ?? null,
-      chunk.contextBefore ?? null,
-      chunk.contextAfter ?? null,
-      chunk.linkedChunkIds ? JSON.stringify(chunk.linkedChunkIds) : null
-    );
+    return this.conversationOps.insertPyramidChunk(chunk);
   }
 
-  /**
-   * Batch insert pyramid chunks (for performance)
-   */
   insertPyramidChunksBatch(chunks: Array<{
     id: string;
     threadId: string;
@@ -942,43 +828,9 @@ export class EmbeddingDatabase {
     contextAfter?: string;
     linkedChunkIds?: string[];
   }>): void {
-    const insert = this.db.prepare(`
-      INSERT OR REPLACE INTO pyramid_chunks
-      (id, thread_id, thread_type, chunk_index, content, word_count,
-       start_offset, end_offset, boundary_type, created_at,
-       content_type, language, context_before, context_after, linked_chunk_ids)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertMany = this.db.transaction((items: typeof chunks) => {
-      const now = Date.now();
-      for (const chunk of items) {
-        insert.run(
-          chunk.id,
-          chunk.threadId,
-          chunk.threadType,
-          chunk.chunkIndex,
-          chunk.content,
-          chunk.wordCount,
-          chunk.startOffset ?? null,
-          chunk.endOffset ?? null,
-          chunk.boundaryType ?? null,
-          now,
-          chunk.contentType ?? null,
-          chunk.language ?? null,
-          chunk.contextBefore ?? null,
-          chunk.contextAfter ?? null,
-          chunk.linkedChunkIds ? JSON.stringify(chunk.linkedChunkIds) : null
-        );
-      }
-    });
-
-    insertMany(chunks);
+    return this.conversationOps.insertPyramidChunksBatch(chunks);
   }
 
-  /**
-   * Get pyramid chunks by content type
-   */
   getPyramidChunksByContentType(contentType: string): Array<{
     id: string;
     threadId: string;
@@ -986,25 +838,9 @@ export class EmbeddingDatabase {
     contentType: string;
     language?: string;
   }> {
-    const rows = this.db.prepare(`
-      SELECT id, thread_id, content, content_type, language
-      FROM pyramid_chunks
-      WHERE content_type = ?
-    `).all(contentType) as Array<Record<string, unknown>>;
-
-    return rows.map(row => ({
-      id: row.id as string,
-      threadId: row.thread_id as string,
-      content: row.content as string,
-      contentType: row.content_type as string,
-      language: row.language as string | undefined,
-    }));
+    return this.conversationOps.getPyramidChunksByContentType(contentType);
   }
 
-  /**
-   * Search pyramid chunks with optional content-type filtering
-   * Returns chunks ranked by similarity to the query embedding
-   */
   searchPyramidChunks(
     queryEmbedding: number[],
     limit: number = 20,
@@ -1017,67 +853,11 @@ export class EmbeddingDatabase {
     language?: string;
     similarity: number;
   }> {
-    if (!this.vecLoaded) {
-      console.warn('[EmbeddingDatabase] Vector search not available');
-      return [];
-    }
-
-    // Join with pyramid_chunks to get content and filter by type
-    let sql = `
-      SELECT
-        v.id,
-        v.thread_id,
-        p.content,
-        p.content_type,
-        p.language,
-        1 - vec_distance_cosine(v.embedding, ?) as similarity
-      FROM vec_pyramid_chunks v
-      JOIN pyramid_chunks p ON v.id = p.id
-    `;
-
-    const params: unknown[] = [new Float32Array(queryEmbedding)];
-
-    // Add content type filter if specified
-    if (contentTypes && contentTypes.length > 0) {
-      const placeholders = contentTypes.map(() => '?').join(', ');
-      sql += ` WHERE p.content_type IN (${placeholders})`;
-      params.push(...contentTypes);
-    }
-
-    sql += ` ORDER BY similarity DESC LIMIT ?`;
-    params.push(limit);
-
-    try {
-      const rows = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
-
-      return rows.map(row => ({
-        id: row.id as string,
-        threadId: row.thread_id as string,
-        content: row.content as string,
-        contentType: row.content_type as string,
-        language: row.language as string | undefined,
-        similarity: row.similarity as number,
-      }));
-    } catch (err) {
-      console.error('[EmbeddingDatabase] Pyramid chunk search error:', err);
-      return [];
-    }
+    return this.vectorOps.searchPyramidChunks(queryEmbedding, limit, contentTypes);
   }
 
   updateChunkEmbeddingId(id: string, embeddingId: string): void {
-    this.db.prepare('UPDATE chunks SET embedding_id = ? WHERE id = ?').run(embeddingId, id);
-  }
-
-  private rowToChunk(row: Record<string, unknown>): Chunk {
-    return {
-      id: row.id as string,
-      messageId: row.message_id as string,
-      chunkIndex: row.chunk_index as number,
-      content: row.content as string,
-      tokenCount: row.token_count as number,
-      embeddingId: row.embedding_id as string | null,
-      granularity: row.granularity as 'paragraph' | 'sentence',
-    };
+    return this.conversationOps.updateChunkEmbeddingId(id, embeddingId);
   }
 
   // ===========================================================================
@@ -1085,37 +865,19 @@ export class EmbeddingDatabase {
   // ===========================================================================
 
   addUserMark(targetType: TargetType, targetId: string, markType: MarkType, note?: string): string {
-    const id = uuidv4();
-    this.db.prepare(`
-      INSERT INTO user_marks (id, target_type, target_id, mark_type, note, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, targetType, targetId, markType, note || null, Date.now() / 1000);
-    return id;
+    return this.conversationOps.addUserMark(targetType, targetId, markType, note);
   }
 
   removeUserMark(id: string): void {
-    this.db.prepare('DELETE FROM user_marks WHERE id = ?').run(id);
+    return this.conversationOps.removeUserMark(id);
   }
 
   getUserMarksForTarget(targetType: TargetType, targetId: string): UserMark[] {
-    const rows = this.db.prepare('SELECT * FROM user_marks WHERE target_type = ? AND target_id = ?').all(targetType, targetId) as Record<string, unknown>[];
-    return rows.map(this.rowToUserMark);
+    return this.conversationOps.getUserMarksForTarget(targetType, targetId);
   }
 
   getUserMarksByType(markType: MarkType): UserMark[] {
-    const rows = this.db.prepare('SELECT * FROM user_marks WHERE mark_type = ?').all(markType) as Record<string, unknown>[];
-    return rows.map(this.rowToUserMark);
-  }
-
-  private rowToUserMark(row: Record<string, unknown>): UserMark {
-    return {
-      id: row.id as string,
-      targetType: row.target_type as TargetType,
-      targetId: row.target_id as string,
-      markType: row.mark_type as MarkType,
-      note: row.note as string | null,
-      createdAt: row.created_at as number,
-    };
+    return this.conversationOps.getUserMarksByType(markType);
   }
 
   // ===========================================================================
@@ -1123,59 +885,31 @@ export class EmbeddingDatabase {
   // ===========================================================================
 
   insertCluster(cluster: Omit<Cluster, 'id' | 'createdAt'>): string {
-    const id = uuidv4();
-    this.db.prepare(`
-      INSERT INTO clusters (id, name, description, centroid_embedding_id, member_count, coherence_score, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, cluster.name, cluster.description, cluster.centroidEmbeddingId, cluster.memberCount, cluster.coherenceScore, Date.now() / 1000);
-    return id;
+    return this.conversationOps.insertCluster(cluster);
   }
 
   getCluster(id: string): Cluster | null {
-    const row = this.db.prepare('SELECT * FROM clusters WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.rowToCluster(row);
+    return this.conversationOps.getCluster(id);
   }
 
   getAllClusters(): Cluster[] {
-    const rows = this.db.prepare('SELECT * FROM clusters ORDER BY coherence_score DESC').all() as Record<string, unknown>[];
-    return rows.map(this.rowToCluster);
+    return this.conversationOps.getAllClusters();
   }
 
   updateClusterName(id: string, name: string, description?: string): void {
-    this.db.prepare('UPDATE clusters SET name = ?, description = ? WHERE id = ?').run(name, description || null, id);
+    return this.conversationOps.updateClusterName(id, name, description);
   }
 
   addClusterMember(clusterId: string, embeddingId: string, distanceToCentroid: number): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO cluster_members (cluster_id, embedding_id, distance_to_centroid)
-      VALUES (?, ?, ?)
-    `).run(clusterId, embeddingId, distanceToCentroid);
+    return this.conversationOps.addClusterMember(clusterId, embeddingId, distanceToCentroid);
   }
 
   getClusterMembers(clusterId: string): ClusterMember[] {
-    const rows = this.db.prepare('SELECT * FROM cluster_members WHERE cluster_id = ? ORDER BY distance_to_centroid').all(clusterId) as Record<string, unknown>[];
-    return rows.map(row => ({
-      clusterId: row.cluster_id as string,
-      embeddingId: row.embedding_id as string,
-      distanceToCentroid: row.distance_to_centroid as number,
-    }));
+    return this.conversationOps.getClusterMembers(clusterId);
   }
 
   clearClusters(): void {
-    this.db.exec('DELETE FROM cluster_members; DELETE FROM clusters;');
-  }
-
-  private rowToCluster(row: Record<string, unknown>): Cluster {
-    return {
-      id: row.id as string,
-      name: row.name as string | null,
-      description: row.description as string | null,
-      centroidEmbeddingId: row.centroid_embedding_id as string | null,
-      memberCount: row.member_count as number,
-      coherenceScore: row.coherence_score as number,
-      createdAt: row.created_at as number,
-    };
+    return this.conversationOps.clearClusters();
   }
 
   // ===========================================================================
@@ -1183,445 +917,93 @@ export class EmbeddingDatabase {
   // ===========================================================================
 
   insertAnchor(anchor: Omit<Anchor, 'id' | 'createdAt'>): string {
-    const id = uuidv4();
-    const embeddingBlob = Buffer.from(new Float32Array(anchor.embedding).buffer);
-    const sourceIdsJson = JSON.stringify(anchor.sourceEmbeddingIds);
-
-    this.db.prepare(`
-      INSERT INTO anchors (id, name, description, anchor_type, embedding, source_embedding_ids, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, anchor.name, anchor.description, anchor.anchorType, embeddingBlob, sourceIdsJson, Date.now() / 1000);
-    return id;
+    return this.conversationOps.insertAnchor(anchor);
   }
 
   getAnchor(id: string): Anchor | null {
-    const row = this.db.prepare('SELECT * FROM anchors WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.rowToAnchor(row);
+    return this.conversationOps.getAnchor(id);
   }
 
   getAllAnchors(): Anchor[] {
-    const rows = this.db.prepare('SELECT * FROM anchors ORDER BY created_at DESC').all() as Record<string, unknown>[];
-    return rows.map(this.rowToAnchor);
+    return this.conversationOps.getAllAnchors();
   }
 
   getAnchorsByType(anchorType: AnchorType): Anchor[] {
-    const rows = this.db.prepare('SELECT * FROM anchors WHERE anchor_type = ?').all(anchorType) as Record<string, unknown>[];
-    return rows.map(this.rowToAnchor);
+    return this.conversationOps.getAnchorsByType(anchorType);
   }
 
   deleteAnchor(id: string): void {
-    this.db.prepare('DELETE FROM anchors WHERE id = ?').run(id);
-  }
-
-  private rowToAnchor(row: Record<string, unknown>): Anchor {
-    const embeddingBlob = row.embedding as Buffer;
-    const embedding = Array.from(new Float32Array(embeddingBlob.buffer, embeddingBlob.byteOffset, embeddingBlob.byteLength / 4));
-    const sourceIds = JSON.parse(row.source_embedding_ids as string) as string[];
-
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      description: row.description as string | null,
-      anchorType: row.anchor_type as AnchorType,
-      embedding,
-      sourceEmbeddingIds: sourceIds,
-      createdAt: row.created_at as number,
-    };
+    return this.conversationOps.deleteAnchor(id);
   }
 
   // ===========================================================================
-  // Vector Operations (sqlite-vec)
+  // Vector Operations (sqlite-vec) - Delegated to VectorOperations
   // ===========================================================================
 
-  /**
-   * Convert a number array to the JSON format expected by vec0
-   */
-  private embeddingToJson(embedding: number[]): string {
-    return JSON.stringify(embedding);
-  }
-
-  /**
-   * Convert binary buffer from sqlite-vec to number array
-   * sqlite-vec stores vectors as Float32Array binary blobs
-   */
-  private embeddingFromBinary(data: Buffer | string): number[] {
-    if (typeof data === 'string') {
-      // If it's still JSON (shouldn't happen but handle gracefully)
-      return JSON.parse(data);
-    }
-    // Convert binary buffer to Float32Array
-    const floats = new Float32Array(data.buffer, data.byteOffset, data.length / 4);
-    return Array.from(floats);
-  }
-
-  /**
-   * Insert a summary embedding
-   */
   insertSummaryEmbedding(id: string, conversationId: string, embedding: number[]): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-    this.db.prepare(`
-      INSERT INTO vec_summaries (id, conversation_id, embedding)
-      VALUES (?, ?, ?)
-    `).run(id, conversationId, this.embeddingToJson(embedding));
+    return this.vectorOps.insertSummaryEmbedding(id, conversationId, embedding);
   }
 
-  /**
-   * Insert a message embedding
-   */
-  insertMessageEmbedding(
-    id: string,
-    conversationId: string,
-    messageId: string,
-    role: string,
-    embedding: number[]
-  ): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-    this.db.prepare(`
-      INSERT INTO vec_messages (id, conversation_id, message_id, role, embedding)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, conversationId, messageId, role, this.embeddingToJson(embedding));
+  insertMessageEmbedding(id: string, conversationId: string, messageId: string, role: string, embedding: number[]): void {
+    return this.vectorOps.insertMessageEmbedding(id, conversationId, messageId, role, embedding);
   }
 
-  /**
-   * Insert message embeddings in batch (more efficient)
-   */
-  insertMessageEmbeddingsBatch(
-    items: Array<{
-      id: string;
-      conversationId: string;
-      messageId: string;
-      role: string;
-      embedding: number[];
-    }>
-  ): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    const insert = this.db.prepare(`
-      INSERT INTO vec_messages (id, conversation_id, message_id, role, embedding)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    const insertMany = this.db.transaction((items: Array<{
-      id: string;
-      conversationId: string;
-      messageId: string;
-      role: string;
-      embedding: number[];
-    }>) => {
-      for (const item of items) {
-        insert.run(
-          item.id,
-          item.conversationId,
-          item.messageId,
-          item.role,
-          this.embeddingToJson(item.embedding)
-        );
-      }
-    });
-
-    insertMany(items);
+  insertMessageEmbeddingsBatch(items: Array<{
+    id: string;
+    conversationId: string;
+    messageId: string;
+    role: string;
+    embedding: number[];
+  }>): void {
+    return this.vectorOps.insertMessageEmbeddingsBatch(items);
   }
 
-  /**
-   * Insert a paragraph embedding
-   */
-  insertParagraphEmbedding(
-    id: string,
-    conversationId: string,
-    messageId: string,
-    chunkIndex: number,
-    embedding: number[]
-  ): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-    this.db.prepare(`
-      INSERT INTO vec_paragraphs (id, conversation_id, message_id, chunk_index, embedding)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, conversationId, messageId, chunkIndex, this.embeddingToJson(embedding));
+  insertParagraphEmbedding(id: string, conversationId: string, messageId: string, chunkIndex: number, embedding: number[]): void {
+    return this.vectorOps.insertParagraphEmbedding(id, conversationId, messageId, chunkIndex, embedding);
   }
 
-  /**
-   * Insert a sentence embedding
-   */
-  insertSentenceEmbedding(
-    id: string,
-    conversationId: string,
-    messageId: string,
-    chunkIndex: number,
-    sentenceIndex: number,
-    embedding: number[]
-  ): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-    this.db.prepare(`
-      INSERT INTO vec_sentences (id, conversation_id, message_id, chunk_index, sentence_index, embedding)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, conversationId, messageId, chunkIndex, sentenceIndex, this.embeddingToJson(embedding));
+  insertSentenceEmbedding(id: string, conversationId: string, messageId: string, chunkIndex: number, sentenceIndex: number, embedding: number[]): void {
+    return this.vectorOps.insertSentenceEmbedding(id, conversationId, messageId, chunkIndex, sentenceIndex, embedding);
   }
 
-  /**
-   * Insert an anchor embedding
-   */
   insertAnchorEmbedding(id: string, anchorType: AnchorType, name: string, embedding: number[]): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-    this.db.prepare(`
-      INSERT INTO vec_anchors (id, anchor_type, name, embedding)
-      VALUES (?, ?, ?, ?)
-    `).run(id, anchorType, name, this.embeddingToJson(embedding));
+    return this.vectorOps.insertAnchorEmbedding(id, anchorType, name, embedding);
   }
 
-  /**
-   * Insert a cluster centroid embedding
-   */
   insertClusterEmbedding(id: string, clusterId: string, embedding: number[]): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-    this.db.prepare(`
-      INSERT INTO vec_clusters (id, cluster_id, embedding)
-      VALUES (?, ?, ?)
-    `).run(id, clusterId, this.embeddingToJson(embedding));
+    return this.vectorOps.insertClusterEmbedding(id, clusterId, embedding);
   }
 
-  /**
-   * Search for similar messages by embedding
-   * @param role - Optional filter for message role ('user' or 'assistant')
-   */
   searchMessages(queryEmbedding: number[], limit: number = 20, role?: string): SearchResult[] {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    // Build query with optional role filter
-    // Note: sqlite-vec requires filtering AFTER the vector search via a subquery
-    // because the MATCH clause doesn't support AND with other columns directly
-    let sql: string;
-    let params: unknown[];
-
-    if (role) {
-      // Fetch more results initially, then filter by role and content quality
-      // This ensures we get enough substantive results after filtering
-      // Filter out: tool calls (search(...)), very short content, JSON-like content
-      sql = `
-        SELECT * FROM (
-          SELECT
-            vec_messages.id,
-            vec_messages.conversation_id,
-            vec_messages.message_id,
-            vec_messages.role,
-            vec_messages.distance,
-            messages.content,
-            conversations.title as conversation_title,
-            conversations.folder as conversation_folder
-          FROM vec_messages
-          JOIN messages ON messages.id = vec_messages.message_id
-          JOIN conversations ON conversations.id = vec_messages.conversation_id
-          WHERE embedding MATCH ? AND k = ?
-          ORDER BY distance
-        )
-        WHERE role = ?
-          AND LENGTH(content) > 200
-          AND content NOT LIKE 'search("%'
-          AND content NOT LIKE '{"query":%'
-          AND content NOT LIKE '{"type":%'
-        LIMIT ?
-      `;
-      // Fetch 10x more results initially to account for filtering
-      params = [this.embeddingToJson(queryEmbedding), limit * 10, role, limit];
-    } else {
-      sql = `
-        SELECT
-          vec_messages.id,
-          vec_messages.conversation_id,
-          vec_messages.message_id,
-          vec_messages.role,
-          vec_messages.distance,
-          messages.content,
-          conversations.title as conversation_title,
-          conversations.folder as conversation_folder
-        FROM vec_messages
-        JOIN messages ON messages.id = vec_messages.message_id
-        JOIN conversations ON conversations.id = vec_messages.conversation_id
-        WHERE embedding MATCH ? AND k = ?
-        ORDER BY distance
-      `;
-      params = [this.embeddingToJson(queryEmbedding), limit];
-    }
-
-    const results = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
-
-    return results.map(row => ({
-      id: row.id as string,
-      content: row.content as string,
-      similarity: 1 - (row.distance as number),  // Convert distance to similarity
-      metadata: {
-        conversationId: row.conversation_id,
-        messageId: row.message_id,
-        role: row.role,
-      },
-      conversationId: row.conversation_id as string,
-      conversationFolder: row.conversation_folder as string,  // Folder name for loading conversation
-      conversationTitle: row.conversation_title as string,
-      messageRole: row.role as string,
-    }));
+    return this.vectorOps.searchMessages(queryEmbedding, limit, role);
   }
 
-  /**
-   * Search for similar summaries by embedding
-   */
   searchSummaries(queryEmbedding: number[], limit: number = 20): SearchResult[] {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    const results = this.db.prepare(`
-      SELECT
-        vec_summaries.id,
-        vec_summaries.conversation_id,
-        vec_summaries.distance,
-        conversations.title,
-        conversations.summary as content
-      FROM vec_summaries
-      JOIN conversations ON conversations.id = vec_summaries.conversation_id
-      WHERE embedding MATCH ? AND k = ?
-      ORDER BY distance
-    `).all(this.embeddingToJson(queryEmbedding), limit) as Array<Record<string, unknown>>;
-
-    return results.map(row => ({
-      id: row.id as string,
-      content: row.content as string || row.title as string,
-      similarity: 1 - (row.distance as number),
-      metadata: { title: row.title },
-      conversationId: row.conversation_id as string,
-      conversationTitle: row.title as string,
-    }));
+    return this.vectorOps.searchSummaries(queryEmbedding, limit);
   }
 
-  /**
-   * Search for similar paragraphs
-   */
   searchParagraphs(queryEmbedding: number[], limit: number = 20): SearchResult[] {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    const results = this.db.prepare(`
-      SELECT
-        vec_paragraphs.id,
-        vec_paragraphs.conversation_id,
-        vec_paragraphs.message_id,
-        vec_paragraphs.chunk_index,
-        vec_paragraphs.distance,
-        chunks.content,
-        conversations.title as conversation_title
-      FROM vec_paragraphs
-      JOIN chunks ON chunks.id = vec_paragraphs.id
-      JOIN conversations ON conversations.id = vec_paragraphs.conversation_id
-      WHERE embedding MATCH ? AND k = ?
-      ORDER BY distance
-    `).all(this.embeddingToJson(queryEmbedding), limit) as Array<Record<string, unknown>>;
-
-    return results.map(row => ({
-      id: row.id as string,
-      content: row.content as string,
-      similarity: 1 - (row.distance as number),
-      metadata: {
-        conversationId: row.conversation_id,
-        messageId: row.message_id,
-        chunkIndex: row.chunk_index,
-      },
-      conversationId: row.conversation_id as string,
-      conversationTitle: row.conversation_title as string,
-    }));
+    return this.vectorOps.searchParagraphs(queryEmbedding, limit);
   }
 
-  /**
-   * Find messages similar to a given message embedding ID
-   */
   findSimilarToMessage(embeddingId: string, limit: number = 20, excludeSameConversation: boolean = false): SearchResult[] {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    // Get the embedding for the source message
-    const source = this.db.prepare(`
-      SELECT embedding, conversation_id FROM vec_messages WHERE id = ?
-    `).get(embeddingId) as { embedding: string; conversation_id: string } | undefined;
-
-    if (!source) return [];
-
-    let query = `
-      SELECT
-        vec_messages.id,
-        vec_messages.conversation_id,
-        vec_messages.message_id,
-        vec_messages.role,
-        vec_messages.distance,
-        messages.content,
-        conversations.title as conversation_title
-      FROM vec_messages
-      JOIN messages ON messages.id = vec_messages.message_id
-      JOIN conversations ON conversations.id = vec_messages.conversation_id
-      WHERE embedding MATCH ? AND k = ?
-        AND vec_messages.id != ?
-    `;
-
-    if (excludeSameConversation) {
-      query += ` AND vec_messages.conversation_id != ?`;
-    }
-
-    query += ` ORDER BY distance`;
-
-    const params = excludeSameConversation
-      ? [source.embedding, limit + 1, embeddingId, source.conversation_id]  // +1 to account for filtering
-      : [source.embedding, limit + 1, embeddingId];
-
-    const results = this.db.prepare(query).all(...params) as Array<Record<string, unknown>>;
-
-    return results.map(row => ({
-      id: row.id as string,
-      content: row.content as string,
-      similarity: 1 - (row.distance as number),
-      metadata: {
-        conversationId: row.conversation_id,
-        messageId: row.message_id,
-        role: row.role,
-      },
-      conversationId: row.conversation_id as string,
-      conversationTitle: row.conversation_title as string,
-      messageRole: row.role as string,
-    })).slice(0, limit);  // Limit after filtering
+    return this.vectorOps.findSimilarToMessage(embeddingId, limit, excludeSameConversation);
   }
 
-  /**
-   * Get an embedding vector by ID from any vec table
-   */
   getEmbedding(table: 'messages' | 'summaries' | 'paragraphs' | 'sentences' | 'anchors' | 'clusters', id: string): number[] | null {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    const tableName = `vec_${table}`;
-    const row = this.db.prepare(`SELECT embedding FROM ${tableName} WHERE id = ?`).get(id) as { embedding: Buffer | string } | undefined;
-    if (!row) return null;
-
-    return this.embeddingFromBinary(row.embedding);
+    return this.vectorOps.getEmbedding(table, id);
   }
 
-  /**
-   * Get multiple embeddings by IDs
-   */
   getEmbeddings(table: 'messages' | 'summaries' | 'paragraphs' | 'sentences', ids: string[]): Map<string, number[]> {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    const tableName = `vec_${table}`;
-    const placeholders = ids.map(() => '?').join(',');
-    const rows = this.db.prepare(`SELECT id, embedding FROM ${tableName} WHERE id IN (${placeholders})`).all(...ids) as Array<{ id: string; embedding: Buffer | string }>;
-
-    const result = new Map<string, number[]>();
-    for (const row of rows) {
-      result.set(row.id, this.embeddingFromBinary(row.embedding));
-    }
-    return result;
+    return this.vectorOps.getEmbeddings(table, ids);
   }
 
-  /**
-   * Get messages by embedding IDs with optional filters
-   * Used for cluster member retrieval with filtering
-   */
   getMessagesByEmbeddingIds(
     embeddingIds: string[],
     options: {
       roles?: ('user' | 'assistant' | 'system' | 'tool')[];
       excludeImagePrompts?: boolean;
-      excludeShortMessages?: number; // exclude messages shorter than N chars
+      excludeShortMessages?: number;
       limit?: number;
       offset?: number;
       groupByConversation?: boolean;
@@ -1645,128 +1027,9 @@ export class EmbeddingDatabase {
       createdAt: number;
     }>>;
   } {
-    if (embeddingIds.length === 0) {
-      return { messages: [], total: 0 };
-    }
-
-    // Build query with filters
-    const placeholders = embeddingIds.map(() => '?').join(',');
-    let whereClause = `vec_messages.id IN (${placeholders})`;
-    const params: (string | number)[] = [...embeddingIds];
-
-    // Role filter
-    if (options.roles && options.roles.length > 0) {
-      const rolePlaceholders = options.roles.map(() => '?').join(',');
-      whereClause += ` AND vec_messages.role IN (${rolePlaceholders})`;
-      params.push(...options.roles);
-    }
-
-    // First get total count
-    const countQuery = `
-      SELECT COUNT(*) as total
-      FROM vec_messages
-      JOIN messages ON messages.id = vec_messages.message_id
-      WHERE ${whereClause}
-    `;
-    const countResult = this.db.prepare(countQuery).get(...params) as { total: number };
-    let total = countResult.total;
-
-    // Now get the actual data
-    let query = `
-      SELECT
-        vec_messages.id as embedding_id,
-        vec_messages.message_id,
-        vec_messages.conversation_id,
-        vec_messages.role,
-        messages.content,
-        messages.created_at,
-        conversations.title as conversation_title
-      FROM vec_messages
-      JOIN messages ON messages.id = vec_messages.message_id
-      JOIN conversations ON conversations.id = vec_messages.conversation_id
-      WHERE ${whereClause}
-      ORDER BY messages.created_at DESC
-    `;
-
-    if (options.limit) {
-      query += ` LIMIT ?`;
-      params.push(options.limit);
-    }
-    if (options.offset) {
-      query += ` OFFSET ?`;
-      params.push(options.offset);
-    }
-
-    const rows = this.db.prepare(query).all(...params) as Array<Record<string, unknown>>;
-
-    // Apply content-based filters in JS (more flexible)
-    let messages = rows.map(row => ({
-      embeddingId: row.embedding_id as string,
-      messageId: row.message_id as string,
-      conversationId: row.conversation_id as string,
-      conversationTitle: row.conversation_title as string,
-      role: row.role as string,
-      content: row.content as string,
-      createdAt: row.created_at as number,
-    }));
-
-    // Filter out image generation prompts (DALL-E style prompts)
-    if (options.excludeImagePrompts) {
-      const imagePromptPatterns = [
-        /^(create|generate|draw|make|design|paint|illustrate)\s+(an?\s+)?(image|picture|photo|illustration|art|artwork|drawing)/i,
-        /^(show me|can you (create|draw|make))/i,
-        /\bDALL[-·]?E\b/i,
-        /^(a |an )?[\w\s,]+\b(in the style of|digital art|oil painting|watercolor|photograph|3d render)/i,
-      ];
-
-      const beforeFilter = messages.length;
-      messages = messages.filter(m => {
-        const content = m.content.trim();
-        return !imagePromptPatterns.some(pattern => pattern.test(content));
-      });
-      total -= (beforeFilter - messages.length);
-    }
-
-    // Filter short messages
-    if (options.excludeShortMessages && options.excludeShortMessages > 0) {
-      const beforeFilter = messages.length;
-      messages = messages.filter(m => m.content.length >= options.excludeShortMessages!);
-      total -= (beforeFilter - messages.length);
-    }
-
-    // Group by conversation if requested
-    if (options.groupByConversation) {
-      const byConversation = new Map<string, Array<{
-        embeddingId: string;
-        messageId: string;
-        role: string;
-        content: string;
-        createdAt: number;
-      }>>();
-
-      for (const msg of messages) {
-        const key = msg.conversationId;
-        if (!byConversation.has(key)) {
-          byConversation.set(key, []);
-        }
-        byConversation.get(key)!.push({
-          embeddingId: msg.embeddingId,
-          messageId: msg.messageId,
-          role: msg.role,
-          content: msg.content,
-          createdAt: msg.createdAt,
-        });
-      }
-
-      return { messages, total, byConversation };
-    }
-
-    return { messages, total };
+    return this.vectorOps.getMessagesByEmbeddingIds(embeddingIds, options);
   }
 
-  /**
-   * Get vector statistics
-   */
   getVectorStats(): {
     summaryCount: number;
     messageCount: number;
@@ -1775,36 +1038,15 @@ export class EmbeddingDatabase {
     anchorCount: number;
     clusterCount: number;
   } {
-    if (!this.vecLoaded) {
-      return { summaryCount: 0, messageCount: 0, paragraphCount: 0, sentenceCount: 0, anchorCount: 0, clusterCount: 0 };
-    }
-
-    const summaryCount = this.db.prepare('SELECT COUNT(*) as count FROM vec_summaries').get() as { count: number };
-    const messageCount = this.db.prepare('SELECT COUNT(*) as count FROM vec_messages').get() as { count: number };
-    const paragraphCount = this.db.prepare('SELECT COUNT(*) as count FROM vec_paragraphs').get() as { count: number };
-    const sentenceCount = this.db.prepare('SELECT COUNT(*) as count FROM vec_sentences').get() as { count: number };
-    const anchorCount = this.db.prepare('SELECT COUNT(*) as count FROM vec_anchors').get() as { count: number };
-    const clusterCount = this.db.prepare('SELECT COUNT(*) as count FROM vec_clusters').get() as { count: number };
-
-    return {
-      summaryCount: summaryCount.count,
-      messageCount: messageCount.count,
-      paragraphCount: paragraphCount.count,
-      sentenceCount: sentenceCount.count,
-      anchorCount: anchorCount.count,
-      clusterCount: clusterCount.count,
-    };
+    return this.vectorOps.getVectorStats();
   }
 
-  /**
-   * Check if vector operations are available
-   */
   hasVectorSupport(): boolean {
-    return this.vecLoaded;
+    return this.vectorOps.hasVectorSupport();
   }
 
   // ===========================================================================
-  // Statistics
+  // Statistics - Delegated to VectorOperations
   // ===========================================================================
 
   getStats(): {
@@ -1815,25 +1057,11 @@ export class EmbeddingDatabase {
     clusterCount: number;
     anchorCount: number;
   } {
-    const convCount = this.db.prepare('SELECT COUNT(*) as count FROM conversations').get() as { count: number };
-    const msgCount = this.db.prepare('SELECT COUNT(*) as count FROM messages').get() as { count: number };
-    const chunkCount = this.db.prepare('SELECT COUNT(*) as count FROM chunks').get() as { count: number };
-    const interestingCount = this.db.prepare('SELECT COUNT(*) as count FROM conversations WHERE is_interesting = 1').get() as { count: number };
-    const clusterCount = this.db.prepare('SELECT COUNT(*) as count FROM clusters').get() as { count: number };
-    const anchorCount = this.db.prepare('SELECT COUNT(*) as count FROM anchors').get() as { count: number };
-
-    return {
-      conversationCount: convCount.count,
-      messageCount: msgCount.count,
-      chunkCount: chunkCount.count,
-      interestingCount: interestingCount.count,
-      clusterCount: clusterCount.count,
-      anchorCount: anchorCount.count,
-    };
+    return this.vectorOps.getStats();
   }
 
   // ===========================================================================
-  // Content Items (Facebook posts, comments, etc.)
+  // Content Items - Delegated to ContentOperations
   // ===========================================================================
 
   insertContentItem(item: {
@@ -1857,33 +1085,7 @@ export class EmbeddingDatabase {
     tags?: string;
     search_text?: string;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO content_items (
-        id, type, source, text, title, created_at, updated_at,
-        author_name, author_id, is_own_content, parent_id, thread_id,
-        context, file_path, media_refs, media_count, metadata, tags, search_text
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      item.id,
-      item.type,
-      item.source,
-      item.text,
-      item.title,
-      item.created_at,
-      item.updated_at,
-      item.author_name,
-      item.author_id,
-      item.is_own_content ? 1 : 0,
-      item.parent_id,
-      item.thread_id,
-      item.context,
-      item.file_path,
-      item.media_refs,
-      item.media_count,
-      item.metadata,
-      item.tags,
-      item.search_text
-    );
+    return this.contentOps.insertContentItem(item);
   }
 
   insertContentItemsBatch(items: Array<{
@@ -1907,31 +1109,21 @@ export class EmbeddingDatabase {
     tags?: string;
     search_text?: string;
   }>): void {
-    const insertMany = this.db.transaction((items: any[]) => {
-      for (const item of items) {
-        this.insertContentItem(item);
-      }
-    });
-
-    insertMany(items);
+    return this.contentOps.insertContentItemsBatch(items);
   }
 
-  getContentItem(id: string): any | null {
-    const row = this.db.prepare('SELECT * FROM content_items WHERE id = ?').get(id);
-    return row || null;
+  getContentItem(id: string): Record<string, unknown> | null {
+    return this.contentOps.getContentItem(id);
   }
 
-  getContentItemsBySource(source: string): any[] {
-    return this.db.prepare('SELECT * FROM content_items WHERE source = ? ORDER BY created_at DESC').all(source);
+  getContentItemsBySource(source: string): Record<string, unknown>[] {
+    return this.contentOps.getContentItemsBySource(source);
   }
 
-  getContentItemsByType(type: string): any[] {
-    return this.db.prepare('SELECT * FROM content_items WHERE type = ? ORDER BY created_at DESC').all(type);
+  getContentItemsByType(type: string): Record<string, unknown>[] {
+    return this.contentOps.getContentItemsByType(type);
   }
 
-  /**
-   * Insert content item embedding into vec_content_items
-   */
   insertContentItemEmbedding(
     id: string,
     contentItemId: string,
@@ -1939,50 +1131,20 @@ export class EmbeddingDatabase {
     source: string,
     embedding: number[]
   ): void {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-    this.db.prepare(`
-      INSERT OR REPLACE INTO vec_content_items (id, content_item_id, type, source, embedding)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, contentItemId, type, source, this.embeddingToJson(embedding));
+    return this.contentOps.insertContentItemEmbedding(id, contentItemId, type, source, embedding);
   }
 
-  /**
-   * Search content items by semantic similarity
-   */
   searchContentItems(
     queryEmbedding: number[],
     limit: number = 20,
     type?: string,
     source?: string
   ): Array<{ id: string; content_item_id: string; type: string; source: string; distance: number }> {
-    if (!this.vecLoaded) throw new Error('Vector operations not available');
-
-    let sql = `
-      SELECT id, content_item_id, type, source, distance
-      FROM vec_content_items
-      WHERE embedding MATCH ?
-    `;
-
-    const params: any[] = [this.embeddingToJson(queryEmbedding)];
-
-    if (type) {
-      sql += ` AND type = ?`;
-      params.push(type);
-    }
-
-    if (source) {
-      sql += ` AND source = ?`;
-      params.push(source);
-    }
-
-    sql += ` ORDER BY distance LIMIT ?`;
-    params.push(limit);
-
-    return this.db.prepare(sql).all(...params) as any[];
+    return this.contentOps.searchContentItems(queryEmbedding, limit, type, source);
   }
 
   // ===========================================================================
-  // Reactions
+  // Reactions - Delegated to ContentOperations
   // ===========================================================================
 
   insertReaction(reaction: {
@@ -1993,18 +1155,7 @@ export class EmbeddingDatabase {
     reactor_id?: string;
     created_at: number;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO reactions (
-        id, content_item_id, reaction_type, reactor_name, reactor_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      reaction.id,
-      reaction.content_item_id,
-      reaction.reaction_type,
-      reaction.reactor_name,
-      reaction.reactor_id,
-      reaction.created_at
-    );
+    return this.contentOps.insertReaction(reaction);
   }
 
   insertReactionsBatch(reactions: Array<{
@@ -2015,21 +1166,15 @@ export class EmbeddingDatabase {
     reactor_id?: string;
     created_at: number;
   }>): void {
-    const insertMany = this.db.transaction((reactions: any[]) => {
-      for (const reaction of reactions) {
-        this.insertReaction(reaction);
-      }
-    });
-
-    insertMany(reactions);
+    return this.contentOps.insertReactionsBatch(reactions);
   }
 
-  getReactionsForContentItem(contentItemId: string): any[] {
-    return this.db.prepare('SELECT * FROM reactions WHERE content_item_id = ? ORDER BY created_at DESC').all(contentItemId);
+  getReactionsForContentItem(contentItemId: string): Record<string, unknown>[] {
+    return this.contentOps.getReactionsForContentItem(contentItemId);
   }
 
   // ===========================================================================
-  // Import Tracking
+  // Import Tracking - Delegated to ContentOperations
   // ===========================================================================
 
   createImport(params: {
@@ -2038,22 +1183,11 @@ export class EmbeddingDatabase {
     sourcePath?: string;
     metadata?: Record<string, unknown>;
   }): void {
-    this.db.prepare(`
-      INSERT INTO imports (id, source, source_path, status, created_at, metadata)
-      VALUES (?, ?, ?, 'pending', ?, ?)
-    `).run(
-      params.id,
-      params.source,
-      params.sourcePath || null,
-      Date.now(),
-      params.metadata ? JSON.stringify(params.metadata) : null
-    );
+    return this.contentOps.createImport(params);
   }
 
   startImport(id: string): void {
-    this.db.prepare(`
-      UPDATE imports SET status = 'processing', started_at = ? WHERE id = ?
-    `).run(Date.now(), id);
+    return this.contentOps.startImport(id);
   }
 
   completeImport(id: string, stats: {
@@ -2062,46 +1196,27 @@ export class EmbeddingDatabase {
     mediaCount: number;
     totalWords: number;
   }): void {
-    this.db.prepare(`
-      UPDATE imports SET
-        status = 'completed',
-        completed_at = ?,
-        thread_count = ?,
-        message_count = ?,
-        media_count = ?,
-        total_words = ?
-      WHERE id = ?
-    `).run(
-      Date.now(),
-      stats.threadCount,
-      stats.messageCount,
-      stats.mediaCount,
-      stats.totalWords,
-      id
-    );
+    return this.contentOps.completeImport(id, stats);
   }
 
   failImport(id: string, errorMessage: string): void {
-    this.db.prepare(`
-      UPDATE imports SET status = 'failed', completed_at = ?, error_message = ? WHERE id = ?
-    `).run(Date.now(), errorMessage, id);
+    return this.contentOps.failImport(id, errorMessage);
   }
 
   getImport(id: string): Record<string, unknown> | null {
-    return this.db.prepare('SELECT * FROM imports WHERE id = ?').get(id) as Record<string, unknown> | null;
+    return this.contentOps.getImport(id);
   }
 
   getImportsByStatus(status: string): Record<string, unknown>[] {
-    return this.db.prepare('SELECT * FROM imports WHERE status = ? ORDER BY created_at DESC').all(status) as Record<string, unknown>[];
+    return this.contentOps.getImportsByStatus(status);
   }
 
   getAllImports(): Record<string, unknown>[] {
-    return this.db.prepare('SELECT * FROM imports ORDER BY created_at DESC').all() as Record<string, unknown>[];
+    return this.contentOps.getAllImports();
   }
 
   deleteImport(id: string): boolean {
-    const result = this.db.prepare('DELETE FROM imports WHERE id = ?').run(id);
-    return result.changes > 0;
+    return this.contentOps.deleteImport(id);
   }
 
   // ===========================================================================
@@ -2117,7 +1232,7 @@ export class EmbeddingDatabase {
   }
 
   // ===========================================================================
-  // Facebook Entity Graph
+  // Facebook Entity Graph - Delegated to FacebookOperations
   // ===========================================================================
 
   insertFbPerson(person: {
@@ -2137,18 +1252,7 @@ export class EmbeddingDatabase {
     created_at: number;
     updated_at?: number;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO fb_people
-      (id, name, facebook_id, profile_url, is_friend, friend_since, is_follower, is_following,
-       interaction_count, tag_count, last_interaction, first_interaction, relationship_strength, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      person.id, person.name, person.facebook_id || null, person.profile_url || null,
-      person.is_friend, person.friend_since || null, person.is_follower, person.is_following,
-      person.interaction_count, person.tag_count, person.last_interaction || null,
-      person.first_interaction || null, person.relationship_strength || null,
-      person.created_at, person.updated_at || null
-    );
+    return this.facebookOps.insertFbPerson(person);
   }
 
   insertFbPeopleBatch(people: Array<{
@@ -2168,18 +1272,7 @@ export class EmbeddingDatabase {
     created_at: number;
     updated_at?: number;
   }>): number {
-    const insertMany = this.db.transaction((items: typeof people) => {
-      for (const p of items) {
-        this.insertFbPerson({
-          ...p,
-          is_friend: p.is_friend ? 1 : 0,
-          is_follower: p.is_follower ? 1 : 0,
-          is_following: p.is_following ? 1 : 0,
-        });
-      }
-    });
-    insertMany(people);
-    return people.length;
+    return this.facebookOps.insertFbPeopleBatch(people);
   }
 
   insertFbPlace(place: {
@@ -2196,16 +1289,7 @@ export class EmbeddingDatabase {
     metadata?: string;
     created_at: number;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO fb_places
-      (id, name, address, city, latitude, longitude, visit_count, first_visit, last_visit, place_type, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      place.id, place.name, place.address || null, place.city || null,
-      place.latitude || null, place.longitude || null, place.visit_count,
-      place.first_visit || null, place.last_visit || null,
-      place.place_type || null, place.metadata || null, place.created_at
-    );
+    return this.facebookOps.insertFbPlace(place);
   }
 
   insertFbPlacesBatch(places: Array<{
@@ -2222,16 +1306,7 @@ export class EmbeddingDatabase {
     metadata?: Record<string, unknown>;
     created_at: number;
   }>): number {
-    const insertMany = this.db.transaction((items: typeof places) => {
-      for (const p of items) {
-        this.insertFbPlace({
-          ...p,
-          metadata: p.metadata ? JSON.stringify(p.metadata) : undefined,
-        });
-      }
-    });
-    insertMany(places);
-    return places.length;
+    return this.facebookOps.insertFbPlacesBatch(places);
   }
 
   insertFbEvent(event: {
@@ -2245,15 +1320,7 @@ export class EmbeddingDatabase {
     metadata?: string;
     created_at: number;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO fb_events
-      (id, name, start_timestamp, end_timestamp, place_id, response_type, response_timestamp, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      event.id, event.name, event.start_timestamp || null, event.end_timestamp || null,
-      event.place_id || null, event.response_type || null, event.response_timestamp || null,
-      event.metadata || null, event.created_at
-    );
+    return this.facebookOps.insertFbEvent(event);
   }
 
   insertFbEventsBatch(events: Array<{
@@ -2267,16 +1334,7 @@ export class EmbeddingDatabase {
     metadata?: Record<string, unknown>;
     created_at: number;
   }>): number {
-    const insertMany = this.db.transaction((items: typeof events) => {
-      for (const e of items) {
-        this.insertFbEvent({
-          ...e,
-          metadata: e.metadata ? JSON.stringify(e.metadata) : undefined,
-        });
-      }
-    });
-    insertMany(events);
-    return events.length;
+    return this.facebookOps.insertFbEventsBatch(events);
   }
 
   insertFbAdvertiser(advertiser: {
@@ -2290,15 +1348,7 @@ export class EmbeddingDatabase {
     metadata?: string;
     created_at: number;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO fb_advertisers
-      (id, name, targeting_type, interaction_count, first_seen, last_seen, is_data_broker, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      advertiser.id, advertiser.name, advertiser.targeting_type || null,
-      advertiser.interaction_count, advertiser.first_seen || null, advertiser.last_seen || null,
-      advertiser.is_data_broker, advertiser.metadata || null, advertiser.created_at
-    );
+    return this.facebookOps.insertFbAdvertiser(advertiser);
   }
 
   insertFbAdvertisersBatch(advertisers: Array<{
@@ -2312,17 +1362,7 @@ export class EmbeddingDatabase {
     metadata?: Record<string, unknown>;
     created_at: number;
   }>): number {
-    const insertMany = this.db.transaction((items: typeof advertisers) => {
-      for (const a of items) {
-        this.insertFbAdvertiser({
-          ...a,
-          is_data_broker: a.is_data_broker ? 1 : 0,
-          metadata: a.metadata ? JSON.stringify(a.metadata) : undefined,
-        });
-      }
-    });
-    insertMany(advertisers);
-    return advertisers.length;
+    return this.facebookOps.insertFbAdvertisersBatch(advertisers);
   }
 
   insertFbOffFacebookActivity(activity: {
@@ -2335,15 +1375,7 @@ export class EmbeddingDatabase {
     metadata?: string;
     created_at: number;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO fb_off_facebook_activity
-      (id, app_name, event_type, event_count, first_event, last_event, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      activity.id, activity.app_name, activity.event_type || null,
-      activity.event_count, activity.first_event || null, activity.last_event || null,
-      activity.metadata || null, activity.created_at
-    );
+    return this.facebookOps.insertFbOffFacebookActivity(activity);
   }
 
   insertFbOffFacebookBatch(activities: Array<{
@@ -2356,92 +1388,28 @@ export class EmbeddingDatabase {
     metadata?: Record<string, unknown>;
     created_at: number;
   }>): number {
-    const insertMany = this.db.transaction((items: typeof activities) => {
-      for (const a of items) {
-        this.insertFbOffFacebookActivity({
-          ...a,
-          metadata: a.metadata ? JSON.stringify(a.metadata) : undefined,
-        });
-      }
-    });
-    insertMany(activities);
-    return activities.length;
+    return this.facebookOps.insertFbOffFacebookBatch(activities);
   }
 
-  // Query methods for entities
-  getFbPeople(options?: { isFriend?: boolean; limit?: number }): any[] {
-    let sql = 'SELECT * FROM fb_people';
-    const params: unknown[] = [];
-
-    if (options?.isFriend !== undefined) {
-      sql += ' WHERE is_friend = ?';
-      params.push(options.isFriend ? 1 : 0);
-    }
-
-    sql += ' ORDER BY interaction_count DESC';
-
-    if (options?.limit) {
-      sql += ' LIMIT ?';
-      params.push(options.limit);
-    }
-
-    return this.db.prepare(sql).all(...params);
+  // Query methods for entities - delegated
+  getFbPeople(options?: { isFriend?: boolean; limit?: number }): Record<string, unknown>[] {
+    return this.facebookOps.getFbPeople(options);
   }
 
-  getFbPlaces(options?: { limit?: number }): any[] {
-    let sql = 'SELECT * FROM fb_places ORDER BY visit_count DESC';
-    if (options?.limit) {
-      sql += ' LIMIT ?';
-      return this.db.prepare(sql).all(options.limit);
-    }
-    return this.db.prepare(sql).all();
+  getFbPlaces(options?: { limit?: number }): Record<string, unknown>[] {
+    return this.facebookOps.getFbPlaces(options);
   }
 
-  getFbEvents(options?: { responseType?: string; limit?: number }): any[] {
-    let sql = 'SELECT * FROM fb_events';
-    const params: unknown[] = [];
-
-    if (options?.responseType) {
-      sql += ' WHERE response_type = ?';
-      params.push(options.responseType);
-    }
-
-    sql += ' ORDER BY start_timestamp DESC';
-
-    if (options?.limit) {
-      sql += ' LIMIT ?';
-      params.push(options.limit);
-    }
-
-    return this.db.prepare(sql).all(...params);
+  getFbEvents(options?: { responseType?: string; limit?: number }): Record<string, unknown>[] {
+    return this.facebookOps.getFbEvents(options);
   }
 
-  getFbAdvertisers(options?: { isDataBroker?: boolean; limit?: number }): any[] {
-    let sql = 'SELECT * FROM fb_advertisers';
-    const params: unknown[] = [];
-
-    if (options?.isDataBroker !== undefined) {
-      sql += ' WHERE is_data_broker = ?';
-      params.push(options.isDataBroker ? 1 : 0);
-    }
-
-    sql += ' ORDER BY interaction_count DESC';
-
-    if (options?.limit) {
-      sql += ' LIMIT ?';
-      params.push(options.limit);
-    }
-
-    return this.db.prepare(sql).all(...params);
+  getFbAdvertisers(options?: { isDataBroker?: boolean; limit?: number }): Record<string, unknown>[] {
+    return this.facebookOps.getFbAdvertisers(options);
   }
 
-  getFbOffFacebookActivity(options?: { limit?: number }): any[] {
-    let sql = 'SELECT * FROM fb_off_facebook_activity ORDER BY event_count DESC';
-    if (options?.limit) {
-      sql += ' LIMIT ?';
-      return this.db.prepare(sql).all(options.limit);
-    }
-    return this.db.prepare(sql).all();
+  getFbOffFacebookActivity(options?: { limit?: number }): Record<string, unknown>[] {
+    return this.facebookOps.getFbOffFacebookActivity(options);
   }
 
   getEntityStats(): {
@@ -2452,18 +1420,11 @@ export class EmbeddingDatabase {
     offFacebook: number;
     dataBrokers: number;
   } {
-    return {
-      people: (this.db.prepare('SELECT COUNT(*) as count FROM fb_people').get() as { count: number }).count,
-      places: (this.db.prepare('SELECT COUNT(*) as count FROM fb_places').get() as { count: number }).count,
-      events: (this.db.prepare('SELECT COUNT(*) as count FROM fb_events').get() as { count: number }).count,
-      advertisers: (this.db.prepare('SELECT COUNT(*) as count FROM fb_advertisers').get() as { count: number }).count,
-      offFacebook: (this.db.prepare('SELECT COUNT(*) as count FROM fb_off_facebook_activity').get() as { count: number }).count,
-      dataBrokers: (this.db.prepare('SELECT COUNT(*) as count FROM fb_advertisers WHERE is_data_broker = 1').get() as { count: number }).count,
-    };
+    return this.facebookOps.getEntityStats();
   }
 
   // ===========================================================================
-  // Relationship Operations
+  // Relationship Operations - Delegated to FacebookOperations
   // ===========================================================================
 
   insertFbRelationship(rel: {
@@ -2480,16 +1441,7 @@ export class EmbeddingDatabase {
     metadata?: string;
     created_at: number;
   }): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO fb_relationships
-      (id, source_type, source_id, target_type, target_id, relationship_type,
-       context_type, context_id, timestamp, weight, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      rel.id, rel.source_type, rel.source_id, rel.target_type, rel.target_id,
-      rel.relationship_type, rel.context_type || null, rel.context_id || null,
-      rel.timestamp || null, rel.weight, rel.metadata || null, rel.created_at
-    );
+    return this.facebookOps.insertFbRelationship(rel);
   }
 
   insertFbRelationshipsBatch(relationships: Array<{
@@ -2506,21 +1458,9 @@ export class EmbeddingDatabase {
     metadata?: Record<string, unknown>;
     created_at: number;
   }>): number {
-    const insertMany = this.db.transaction((items: typeof relationships) => {
-      for (const r of items) {
-        this.insertFbRelationship({
-          ...r,
-          metadata: r.metadata ? JSON.stringify(r.metadata) : undefined,
-        });
-      }
-    });
-    insertMany(relationships);
-    return relationships.length;
+    return this.facebookOps.insertFbRelationshipsBatch(relationships);
   }
 
-  /**
-   * Get relationships with filtering options
-   */
   getFbRelationships(options?: {
     sourceType?: string;
     sourceId?: string;
@@ -2528,220 +1468,45 @@ export class EmbeddingDatabase {
     targetId?: string;
     relationshipType?: string;
     limit?: number;
-  }): any[] {
-    let sql = 'SELECT * FROM fb_relationships WHERE 1=1';
-    const params: unknown[] = [];
-
-    if (options?.sourceType) {
-      sql += ' AND source_type = ?';
-      params.push(options.sourceType);
-    }
-    if (options?.sourceId) {
-      sql += ' AND source_id = ?';
-      params.push(options.sourceId);
-    }
-    if (options?.targetType) {
-      sql += ' AND target_type = ?';
-      params.push(options.targetType);
-    }
-    if (options?.targetId) {
-      sql += ' AND target_id = ?';
-      params.push(options.targetId);
-    }
-    if (options?.relationshipType) {
-      sql += ' AND relationship_type = ?';
-      params.push(options.relationshipType);
-    }
-
-    sql += ' ORDER BY weight DESC, timestamp DESC';
-
-    if (options?.limit) {
-      sql += ' LIMIT ?';
-      params.push(options.limit);
-    }
-
-    return this.db.prepare(sql).all(...params);
+  }): Record<string, unknown>[] {
+    return this.facebookOps.getFbRelationships(options);
   }
 
-  /**
-   * Get all people connected to a specific person with relationship details
-   */
   getFbPersonConnections(personId: string, options?: { limit?: number }): Array<{
-    person: any;
+    person: Record<string, unknown>;
     relationship_type: string;
     weight: number;
     timestamp?: number;
     direction: 'outgoing' | 'incoming';
   }> {
-    const limit = options?.limit || 100;
-
-    // Outgoing relationships (this person → others)
-    const outgoing = this.db.prepare(`
-      SELECT r.*, p.name, p.is_friend, p.is_follower, p.interaction_count
-      FROM fb_relationships r
-      JOIN fb_people p ON r.target_id = p.id
-      WHERE r.source_id = ? AND r.target_type = 'person'
-      ORDER BY r.weight DESC
-      LIMIT ?
-    `).all(personId, limit);
-
-    // Incoming relationships (others → this person)
-    const incoming = this.db.prepare(`
-      SELECT r.*, p.name, p.is_friend, p.is_follower, p.interaction_count
-      FROM fb_relationships r
-      JOIN fb_people p ON r.source_id = p.id
-      WHERE r.target_id = ? AND r.source_type = 'person'
-      ORDER BY r.weight DESC
-      LIMIT ?
-    `).all(personId, limit);
-
-    const results: Array<{
-      person: any;
-      relationship_type: string;
-      weight: number;
-      timestamp?: number;
-      direction: 'outgoing' | 'incoming';
-    }> = [];
-
-    for (const row of outgoing as any[]) {
-      results.push({
-        person: {
-          id: row.target_id,
-          name: row.name,
-          is_friend: row.is_friend === 1,
-          is_follower: row.is_follower === 1,
-          interaction_count: row.interaction_count,
-        },
-        relationship_type: row.relationship_type,
-        weight: row.weight,
-        timestamp: row.timestamp,
-        direction: 'outgoing',
-      });
-    }
-
-    for (const row of incoming as any[]) {
-      results.push({
-        person: {
-          id: row.source_id,
-          name: row.name,
-          is_friend: row.is_friend === 1,
-          is_follower: row.is_follower === 1,
-          interaction_count: row.interaction_count,
-        },
-        relationship_type: row.relationship_type,
-        weight: row.weight,
-        timestamp: row.timestamp,
-        direction: 'incoming',
-      });
-    }
-
-    // Sort by weight and dedupe
-    results.sort((a, b) => b.weight - a.weight);
-    return results.slice(0, limit);
+    return this.facebookOps.getFbPersonConnections(personId, options);
   }
 
-  /**
-   * Get top connected people (highest relationship weights)
-   */
   getTopConnectedPeople(options?: { limit?: number }): Array<{
-    person: any;
+    person: Record<string, unknown>;
     total_weight: number;
     relationship_count: number;
   }> {
-    const limit = options?.limit || 50;
-
-    const rows = this.db.prepare(`
-      SELECT
-        p.id, p.name, p.is_friend, p.is_follower, p.interaction_count,
-        SUM(r.weight) as total_weight,
-        COUNT(r.id) as relationship_count
-      FROM fb_people p
-      JOIN fb_relationships r ON (r.source_id = p.id OR r.target_id = p.id)
-      WHERE p.id != ?
-      GROUP BY p.id
-      ORDER BY total_weight DESC
-      LIMIT ?
-    `).all('fb_person_self', limit);
-
-    return (rows as any[]).map(row => ({
-      person: {
-        id: row.id,
-        name: row.name,
-        is_friend: row.is_friend === 1,
-        is_follower: row.is_follower === 1,
-        interaction_count: row.interaction_count,
-      },
-      total_weight: row.total_weight,
-      relationship_count: row.relationship_count,
-    }));
+    return this.facebookOps.getTopConnectedPeople(options);
   }
 
-  /**
-   * Get relationship statistics
-   */
   getRelationshipStats(): {
     totalRelationships: number;
     byType: Record<string, number>;
     avgWeight: number;
     topRelationshipTypes: Array<{ type: string; count: number; avg_weight: number }>;
   } {
-    const total = (this.db.prepare('SELECT COUNT(*) as count FROM fb_relationships').get() as { count: number }).count;
-    const avgWeight = (this.db.prepare('SELECT AVG(weight) as avg FROM fb_relationships').get() as { avg: number }).avg || 0;
-
-    const byTypeRows = this.db.prepare(`
-      SELECT relationship_type, COUNT(*) as count, AVG(weight) as avg_weight
-      FROM fb_relationships
-      GROUP BY relationship_type
-      ORDER BY count DESC
-    `).all() as Array<{ relationship_type: string; count: number; avg_weight: number }>;
-
-    const byType: Record<string, number> = {};
-    for (const row of byTypeRows) {
-      byType[row.relationship_type] = row.count;
-    }
-
-    return {
-      totalRelationships: total,
-      byType,
-      avgWeight,
-      topRelationshipTypes: byTypeRows.slice(0, 10).map(r => ({
-        type: r.relationship_type,
-        count: r.count,
-        avg_weight: r.avg_weight,
-      })),
-    };
+    return this.facebookOps.getRelationshipStats();
   }
 
-  /**
-   * Update entity stats after relationship building
-   * Updates interaction_count and relationship_strength on fb_people
-   */
   updatePersonInteractionStats(): void {
-    // Update interaction counts based on relationship weights
-    this.db.exec(`
-      UPDATE fb_people
-      SET
-        interaction_count = (
-          SELECT COALESCE(SUM(weight), 0)
-          FROM fb_relationships
-          WHERE (source_id = fb_people.id AND source_type = 'person')
-             OR (target_id = fb_people.id AND target_type = 'person')
-        ),
-        relationship_strength = (
-          SELECT COALESCE(SUM(weight), 0)
-          FROM fb_relationships
-          WHERE (source_id = fb_people.id OR target_id = fb_people.id)
-        )
-    `);
+    return this.facebookOps.updatePersonInteractionStats();
   }
 
   // ===========================================================================
-  // Image Analysis Operations
+  // Image Analysis Operations - Delegated to FacebookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update image analysis
-   */
   upsertImageAnalysis(analysis: {
     id: string;
     file_path: string;
@@ -2757,44 +1522,9 @@ export class EmbeddingDatabase {
     processing_time_ms?: number;
     media_file_id?: string;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO image_analysis
-      (id, file_path, file_hash, source, description, categories, objects, scene, mood,
-       model_used, confidence, processing_time_ms, analyzed_at, updated_at, media_file_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(file_path) DO UPDATE SET
-        description = excluded.description,
-        categories = excluded.categories,
-        objects = excluded.objects,
-        scene = excluded.scene,
-        mood = excluded.mood,
-        model_used = excluded.model_used,
-        confidence = excluded.confidence,
-        processing_time_ms = excluded.processing_time_ms,
-        updated_at = excluded.updated_at
-    `).run(
-      analysis.id,
-      analysis.file_path,
-      analysis.file_hash || null,
-      analysis.source,
-      analysis.description || null,
-      analysis.categories ? JSON.stringify(analysis.categories) : null,
-      analysis.objects ? JSON.stringify(analysis.objects) : null,
-      analysis.scene || null,
-      analysis.mood || null,
-      analysis.model_used || null,
-      analysis.confidence || null,
-      analysis.processing_time_ms || null,
-      now,
-      now,
-      analysis.media_file_id || null
-    );
+    return this.facebookOps.upsertImageAnalysis(analysis);
   }
 
-  /**
-   * Get image analysis by file path
-   */
   getImageAnalysisByPath(filePath: string): {
     id: string;
     file_path: string;
@@ -2809,31 +1539,9 @@ export class EmbeddingDatabase {
     confidence: number | null;
     analyzed_at: number;
   } | null {
-    const row = this.db.prepare(`
-      SELECT * FROM image_analysis WHERE file_path = ?
-    `).get(filePath) as any;
-
-    if (!row) return null;
-
-    return {
-      id: row.id,
-      file_path: row.file_path,
-      file_hash: row.file_hash,
-      source: row.source,
-      description: row.description,
-      categories: row.categories ? JSON.parse(row.categories) : [],
-      objects: row.objects ? JSON.parse(row.objects) : [],
-      scene: row.scene,
-      mood: row.mood,
-      model_used: row.model_used,
-      confidence: row.confidence,
-      analyzed_at: row.analyzed_at,
-    };
+    return this.facebookOps.getImageAnalysisByPath(filePath);
   }
 
-  /**
-   * Get image analysis by ID
-   */
   getImageAnalysisById(id: string): {
     id: string;
     file_path: string;
@@ -2849,32 +1557,9 @@ export class EmbeddingDatabase {
     processing_time_ms: number | null;
     analyzed_at: number;
   } | null {
-    const row = this.db.prepare(`
-      SELECT * FROM image_analysis WHERE id = ?
-    `).get(id) as any;
-
-    if (!row) return null;
-
-    return {
-      id: row.id,
-      file_path: row.file_path,
-      file_hash: row.file_hash,
-      source: row.source,
-      description: row.description,
-      categories: row.categories ? JSON.parse(row.categories) : [],
-      objects: row.objects ? JSON.parse(row.objects) : [],
-      scene: row.scene,
-      mood: row.mood,
-      model_used: row.model_used,
-      confidence: row.confidence,
-      processing_time_ms: row.processing_time_ms,
-      analyzed_at: row.analyzed_at,
-    };
+    return this.facebookOps.getImageAnalysisById(id);
   }
 
-  /**
-   * Full-text search on image descriptions
-   */
   searchImagesFTS(query: string, options?: {
     limit?: number;
     source?: string;
@@ -2886,40 +1571,9 @@ export class EmbeddingDatabase {
     source: string;
     rank: number;
   }> {
-    const limit = options?.limit || 20;
-    let sql = `
-      SELECT ia.id, ia.file_path, ia.description, ia.categories, ia.source,
-             bm25(image_fts) as rank
-      FROM image_fts
-      JOIN image_analysis ia ON ia.rowid = image_fts.rowid
-      WHERE image_fts MATCH ?
-    `;
-
-    const params: (string | number)[] = [query];
-
-    if (options?.source) {
-      sql += ` AND ia.source = ?`;
-      params.push(options.source);
-    }
-
-    sql += ` ORDER BY rank LIMIT ?`;
-    params.push(limit);
-
-    const rows = this.db.prepare(sql).all(...params) as any[];
-
-    return rows.map(row => ({
-      id: row.id,
-      file_path: row.file_path,
-      description: row.description,
-      categories: row.categories ? JSON.parse(row.categories) : [],
-      source: row.source,
-      rank: row.rank,
-    }));
+    return this.facebookOps.searchImagesFTS(query, options);
   }
 
-  /**
-   * Insert image embedding
-   */
   insertImageEmbedding(data: {
     id: string;
     image_analysis_id: string;
@@ -2927,42 +1581,9 @@ export class EmbeddingDatabase {
     model: string;
     dimensions: number;
   }): void {
-    const embeddingBuffer = Buffer.from(
-      data.embedding instanceof Float32Array
-        ? data.embedding.buffer
-        : new Float32Array(data.embedding).buffer
-    );
-
-    this.db.prepare(`
-      INSERT OR REPLACE INTO image_embeddings
-      (id, image_analysis_id, embedding, model, dimensions, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      data.id,
-      data.image_analysis_id,
-      embeddingBuffer,
-      data.model,
-      data.dimensions,
-      Date.now()
-    );
-
-    // Also insert into vec table if available
-    if (this.vecLoaded) {
-      const analysis = this.db.prepare('SELECT source FROM image_analysis WHERE id = ?')
-        .get(data.image_analysis_id) as { source: string } | undefined;
-
-      if (analysis) {
-        this.db.prepare(`
-          INSERT OR REPLACE INTO vec_image_embeddings (id, image_analysis_id, source, embedding)
-          VALUES (?, ?, ?, ?)
-        `).run(data.id, data.image_analysis_id, analysis.source, embeddingBuffer);
-      }
-    }
+    return this.facebookOps.insertImageEmbedding(data);
   }
 
-  /**
-   * Vector similarity search for images
-   */
   searchImagesByVector(
     queryEmbedding: Float32Array | number[],
     options?: { limit?: number; source?: string }
@@ -2974,99 +1595,18 @@ export class EmbeddingDatabase {
     source: string;
     similarity: number;
   }> {
-    if (!this.vecLoaded) {
-      console.warn('Vector search not available - sqlite-vec not loaded');
-      return [];
-    }
-
-    const limit = options?.limit || 20;
-    const embeddingBuffer = Buffer.from(
-      queryEmbedding instanceof Float32Array
-        ? queryEmbedding.buffer
-        : new Float32Array(queryEmbedding).buffer
-    );
-
-    let sql = `
-      SELECT v.image_analysis_id, v.distance,
-             ia.id, ia.file_path, ia.description, ia.categories, ia.source
-      FROM vec_image_embeddings v
-      JOIN image_analysis ia ON ia.id = v.image_analysis_id
-      WHERE v.embedding MATCH ?
-    `;
-
-    const params: (Buffer | string | number)[] = [embeddingBuffer];
-
-    if (options?.source) {
-      sql += ` AND v.source = ?`;
-      params.push(options.source);
-    }
-
-    sql += ` ORDER BY v.distance LIMIT ?`;
-    params.push(limit);
-
-    const rows = this.db.prepare(sql).all(...params) as any[];
-
-    return rows.map(row => ({
-      id: row.id,
-      file_path: row.file_path,
-      description: row.description,
-      categories: row.categories ? JSON.parse(row.categories) : [],
-      source: row.source,
-      similarity: 1 - row.distance, // Convert distance to similarity
-    }));
+    return this.facebookOps.searchImagesByVector(queryEmbedding, options);
   }
 
-  // ===========================================================================
-  // Image Description Embedding Operations (Text embeddings for semantic search)
-  // ===========================================================================
-
-  /**
-   * Insert text embedding for an image description
-   * Uses nomic-embed-text (768-dim) for semantic search on description text
-   */
   insertImageDescriptionEmbedding(data: {
     id: string;
     imageAnalysisId: string;
     text: string;
     embedding: Float32Array | number[];
   }): void {
-    const embeddingBuffer = Buffer.from(
-      data.embedding instanceof Float32Array
-        ? data.embedding.buffer
-        : new Float32Array(data.embedding).buffer
-    );
-
-    this.db.prepare(`
-      INSERT OR REPLACE INTO image_description_embeddings
-      (id, image_analysis_id, text, embedding, model, dimensions, created_at)
-      VALUES (?, ?, ?, ?, 'nomic-embed-text', ?, ?)
-    `).run(
-      data.id,
-      data.imageAnalysisId,
-      data.text,
-      embeddingBuffer,
-      EMBEDDING_DIM,
-      Date.now() / 1000
-    );
-
-    // Also insert into vec table if available
-    if (this.vecLoaded) {
-      const analysis = this.db.prepare('SELECT source FROM image_analysis WHERE id = ?')
-        .get(data.imageAnalysisId) as { source: string } | undefined;
-
-      if (analysis) {
-        this.db.prepare(`
-          INSERT OR REPLACE INTO vec_image_descriptions (id, image_analysis_id, source, embedding)
-          VALUES (?, ?, ?, ?)
-        `).run(data.id, data.imageAnalysisId, analysis.source, embeddingBuffer);
-      }
-    }
+    return this.facebookOps.insertImageDescriptionEmbedding(data);
   }
 
-  /**
-   * Search image descriptions by semantic similarity
-   * Returns images whose descriptions are semantically similar to the query
-   */
   searchImageDescriptionsByVector(
     queryEmbedding: Float32Array | number[],
     options?: { limit?: number; source?: string }
@@ -3078,152 +1618,42 @@ export class EmbeddingDatabase {
     source: string;
     similarity: number;
   }> {
-    if (!this.vecLoaded) {
-      console.warn('[EmbeddingDatabase] Vector search not available - sqlite-vec not loaded');
-      return [];
-    }
-
-    const limit = options?.limit || 20;
-    const embeddingBuffer = Buffer.from(
-      queryEmbedding instanceof Float32Array
-        ? queryEmbedding.buffer
-        : new Float32Array(queryEmbedding).buffer
-    );
-
-    let sql = `
-      SELECT v.id, v.image_analysis_id, v.distance,
-             ia.file_path, ia.description, ia.source
-      FROM vec_image_descriptions v
-      JOIN image_analysis ia ON ia.id = v.image_analysis_id
-      WHERE v.embedding MATCH ?
-    `;
-
-    const params: (Buffer | string | number)[] = [embeddingBuffer];
-
-    if (options?.source) {
-      sql += ` AND v.source = ?`;
-      params.push(options.source);
-    }
-
-    sql += ` ORDER BY v.distance LIMIT ?`;
-    params.push(limit);
-
-    const rows = this.db.prepare(sql).all(...params) as any[];
-
-    return rows.map(row => ({
-      id: row.id,
-      imageAnalysisId: row.image_analysis_id,
-      filePath: row.file_path,
-      description: row.description || '',
-      source: row.source,
-      similarity: 1 - row.distance, // Convert distance to similarity
-    }));
+    return this.facebookOps.searchImageDescriptionsByVector(queryEmbedding, options);
   }
 
-  /**
-   * Get image analyses that don't have description embeddings yet
-   */
   getImageAnalysesWithoutDescriptionEmbeddings(limit: number = 100): Array<{
     id: string;
     description: string;
     source: string;
   }> {
-    return this.db.prepare(`
-      SELECT ia.id, ia.description, ia.source
-      FROM image_analysis ia
-      LEFT JOIN image_description_embeddings ide ON ide.image_analysis_id = ia.id
-      WHERE ia.description IS NOT NULL
-        AND ia.description != ''
-        AND ide.id IS NULL
-      LIMIT ?
-    `).all(limit) as any[];
+    return this.facebookOps.getImageAnalysesWithoutDescriptionEmbeddings(limit);
   }
 
-  /**
-   * Count image description embeddings
-   */
   getImageDescriptionEmbeddingCount(): number {
-    const result = this.db.prepare(
-      'SELECT COUNT(*) as count FROM image_description_embeddings'
-    ).get() as { count: number };
-    return result.count;
+    return this.facebookOps.getImageDescriptionEmbeddingCount();
   }
 
-  /**
-   * Get all unanalyzed images from media_files
-   */
   getUnanalyzedImages(options?: { source?: string; limit?: number }): Array<{
     id: string;
     file_path: string;
     content_item_id: string | null;
   }> {
-    const limit = options?.limit || 1000;
-    let sql = `
-      SELECT mf.id, mf.file_path, mf.content_item_id
-      FROM media_files mf
-      LEFT JOIN image_analysis ia ON ia.file_path = mf.file_path
-      WHERE ia.id IS NULL
-        AND mf.type IN ('photo', 'image')
-    `;
-
-    const params: (string | number)[] = [];
-
-    if (options?.source) {
-      sql += ` AND mf.file_path LIKE ?`;
-      params.push(`%${options.source}%`);
-    }
-
-    sql += ` LIMIT ?`;
-    params.push(limit);
-
-    return this.db.prepare(sql).all(...params) as any[];
+    return this.facebookOps.getUnanalyzedImages(options);
   }
 
-  /**
-   * Get image analysis stats
-   */
   getImageAnalysisStats(): {
     total: number;
     bySource: Record<string, number>;
     byScene: Record<string, number>;
     byMood: Record<string, number>;
   } {
-    // Count all analyzed images
-    const total = (this.db.prepare('SELECT COUNT(*) as count FROM image_analysis').get() as { count: number }).count;
-
-    const bySourceRows = this.db.prepare(`
-      SELECT source, COUNT(*) as count FROM image_analysis GROUP BY source
-    `).all() as Array<{ source: string; count: number }>;
-
-    const bySource: Record<string, number> = {};
-    for (const row of bySourceRows) {
-      bySource[row.source] = row.count;
-    }
-
-    const bySceneRows = this.db.prepare(`
-      SELECT scene, COUNT(*) as count FROM image_analysis WHERE scene IS NOT NULL GROUP BY scene
-    `).all() as Array<{ scene: string; count: number }>;
-
-    const byScene: Record<string, number> = {};
-    for (const row of bySceneRows) {
-      byScene[row.scene] = row.count;
-    }
-
-    const byMoodRows = this.db.prepare(`
-      SELECT mood, COUNT(*) as count FROM image_analysis WHERE mood IS NOT NULL GROUP BY mood
-    `).all() as Array<{ mood: string; count: number }>;
-
-    const byMood: Record<string, number> = {};
-    for (const row of byMoodRows) {
-      byMood[row.mood] = row.count;
-    }
-
-    return { total, bySource, byScene, byMood };
+    return this.facebookOps.getImageAnalysisStats();
   }
 
-  /**
-   * Create or update image cluster
-   */
+  // ===========================================================================
+  // Image Clustering - Delegated to FacebookOperations
+  // ===========================================================================
+
   upsertImageCluster(cluster: {
     id: string;
     cluster_index: number;
@@ -3232,43 +1662,13 @@ export class EmbeddingDatabase {
     representative_image_id?: string;
     image_count: number;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO image_clusters
-      (id, cluster_index, name, description, representative_image_id, image_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        description = excluded.description,
-        representative_image_id = excluded.representative_image_id,
-        image_count = excluded.image_count,
-        updated_at = excluded.updated_at
-    `).run(
-      cluster.id,
-      cluster.cluster_index,
-      cluster.name || null,
-      cluster.description || null,
-      cluster.representative_image_id || null,
-      cluster.image_count,
-      now,
-      now
-    );
+    return this.facebookOps.upsertImageCluster(cluster);
   }
 
-  /**
-   * Add image to cluster
-   */
   addImageToCluster(clusterId: string, imageAnalysisId: string, distance: number, isRepresentative = false): void {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO image_cluster_members
-      (cluster_id, image_analysis_id, distance_to_center, is_representative)
-      VALUES (?, ?, ?, ?)
-    `).run(clusterId, imageAnalysisId, distance, isRepresentative ? 1 : 0);
+    return this.facebookOps.addImageToCluster(clusterId, imageAnalysisId, distance, isRepresentative);
   }
 
-  /**
-   * Get all image clusters
-   */
   getImageClusters(): Array<{
     id: string;
     cluster_index: number;
@@ -3277,30 +1677,9 @@ export class EmbeddingDatabase {
     image_count: number;
     representative: { id: string; file_path: string; description: string | null } | null;
   }> {
-    const rows = this.db.prepare(`
-      SELECT c.*, ia.file_path as rep_path, ia.description as rep_desc
-      FROM image_clusters c
-      LEFT JOIN image_analysis ia ON ia.id = c.representative_image_id
-      ORDER BY c.image_count DESC
-    `).all() as any[];
-
-    return rows.map(row => ({
-      id: row.id,
-      cluster_index: row.cluster_index,
-      name: row.name,
-      description: row.description,
-      image_count: row.image_count,
-      representative: row.representative_image_id ? {
-        id: row.representative_image_id,
-        file_path: row.rep_path,
-        description: row.rep_desc,
-      } : null,
-    }));
+    return this.facebookOps.getImageClusters();
   }
 
-  /**
-   * Get images in a cluster
-   */
   getClusterImages(clusterId: string): Array<{
     id: string;
     file_path: string;
@@ -3309,42 +1688,19 @@ export class EmbeddingDatabase {
     distance: number;
     is_representative: boolean;
   }> {
-    const rows = this.db.prepare(`
-      SELECT ia.id, ia.file_path, ia.description, ia.categories,
-             cm.distance_to_center as distance, cm.is_representative
-      FROM image_cluster_members cm
-      JOIN image_analysis ia ON ia.id = cm.image_analysis_id
-      WHERE cm.cluster_id = ?
-      ORDER BY cm.distance_to_center ASC
-    `).all(clusterId) as any[];
-
-    return rows.map(row => ({
-      id: row.id,
-      file_path: row.file_path,
-      description: row.description,
-      categories: row.categories ? JSON.parse(row.categories) : [],
-      distance: row.distance,
-      is_representative: row.is_representative === 1,
-    }));
+    return this.facebookOps.getClusterImages(clusterId);
   }
 
-  /**
-   * Clear all image clusters (for re-clustering)
-   */
   clearImageClusters(): void {
-    this.db.exec(`
-      DELETE FROM image_cluster_members;
-      DELETE FROM image_clusters;
-    `);
+    return this.facebookOps.clearImageClusters();
   }
 
   // ===========================================================================
   // Xanadu Links (Bidirectional)
   // ===========================================================================
+  // Xanadu Links - Delegated to BookOperations
+  // ===========================================================================
 
-  /**
-   * Insert a new link
-   */
   insertLink(link: {
     id: string;
     sourceUri: string;
@@ -3359,31 +1715,9 @@ export class EmbeddingDatabase {
     createdBy: string;
     metadata?: Record<string, unknown>;
   }): void {
-    this.db.prepare(`
-      INSERT INTO links (id, source_uri, target_uri, link_type, link_strength,
-        source_start, source_end, target_start, target_end,
-        label, created_at, created_by, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      link.id,
-      link.sourceUri,
-      link.targetUri,
-      link.linkType,
-      link.linkStrength ?? 1.0,
-      link.sourceStart ?? null,
-      link.sourceEnd ?? null,
-      link.targetStart ?? null,
-      link.targetEnd ?? null,
-      link.label ?? null,
-      Date.now(),
-      link.createdBy,
-      link.metadata ? JSON.stringify(link.metadata) : null
-    );
+    return this.bookOps.insertLink(link);
   }
 
-  /**
-   * Get links by source URI
-   */
   getLinksBySource(sourceUri: string): Array<{
     id: string;
     sourceUri: string;
@@ -3393,15 +1727,9 @@ export class EmbeddingDatabase {
     label: string | null;
     createdBy: string;
   }> {
-    return this.db.prepare(`
-      SELECT id, source_uri, target_uri, link_type, link_strength, label, created_by
-      FROM links WHERE source_uri = ?
-    `).all(sourceUri) as any[];
+    return this.bookOps.getLinksBySource(sourceUri);
   }
 
-  /**
-   * Get links by target URI (reverse traversal)
-   */
   getLinksByTarget(targetUri: string): Array<{
     id: string;
     sourceUri: string;
@@ -3411,15 +1739,9 @@ export class EmbeddingDatabase {
     label: string | null;
     createdBy: string;
   }> {
-    return this.db.prepare(`
-      SELECT id, source_uri, target_uri, link_type, link_strength, label, created_by
-      FROM links WHERE target_uri = ?
-    `).all(targetUri) as any[];
+    return this.bookOps.getLinksByTarget(targetUri);
   }
 
-  /**
-   * Get all links for a URI (bidirectional)
-   */
   getLinksBidirectional(uri: string): Array<{
     id: string;
     sourceUri: string;
@@ -3428,33 +1750,17 @@ export class EmbeddingDatabase {
     linkStrength: number;
     direction: 'outgoing' | 'incoming';
   }> {
-    const outgoing = this.db.prepare(`
-      SELECT id, source_uri, target_uri, link_type, link_strength, 'outgoing' as direction
-      FROM links WHERE source_uri = ?
-    `).all(uri) as any[];
-
-    const incoming = this.db.prepare(`
-      SELECT id, source_uri, target_uri, link_type, link_strength, 'incoming' as direction
-      FROM links WHERE target_uri = ?
-    `).all(uri) as any[];
-
-    return [...outgoing, ...incoming];
+    return this.bookOps.getLinksBidirectional(uri);
   }
 
-  /**
-   * Delete a link by ID
-   */
   deleteLink(id: string): void {
-    this.db.prepare('DELETE FROM links WHERE id = ?').run(id);
+    return this.bookOps.deleteLink(id);
   }
 
   // ===========================================================================
-  // Content-Addressable Media Items
+  // Content-Addressable Media Items - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert a media item (or return existing if hash exists)
-   */
   upsertMediaItem(item: {
     id: string;
     contentHash: string;
@@ -3467,39 +1773,9 @@ export class EmbeddingDatabase {
     duration?: number;
     takenAt?: number;
   }): { id: string; contentHash: string; isNew: boolean } {
-    // Check if hash already exists
-    const existing = this.db.prepare(
-      'SELECT id, content_hash FROM media_items WHERE content_hash = ?'
-    ).get(item.contentHash) as { id: string; content_hash: string } | undefined;
-
-    if (existing) {
-      return { id: existing.id, contentHash: existing.content_hash, isNew: false };
-    }
-
-    this.db.prepare(`
-      INSERT INTO media_items (id, content_hash, file_path, original_filename,
-        mime_type, file_size, width, height, duration, taken_at, imported_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      item.id,
-      item.contentHash,
-      item.filePath,
-      item.originalFilename ?? null,
-      item.mimeType ?? null,
-      item.fileSize ?? null,
-      item.width ?? null,
-      item.height ?? null,
-      item.duration ?? null,
-      item.takenAt ?? null,
-      Date.now()
-    );
-
-    return { id: item.id, contentHash: item.contentHash, isNew: true };
+    return this.bookOps.upsertMediaItem(item);
   }
 
-  /**
-   * Get media item by content hash
-   */
   getMediaByHash(contentHash: string): {
     id: string;
     contentHash: string;
@@ -3508,17 +1784,9 @@ export class EmbeddingDatabase {
     mimeType: string | null;
     fileSize: number | null;
   } | null {
-    return this.db.prepare(`
-      SELECT id, content_hash as contentHash, file_path as filePath,
-             original_filename as originalFilename, mime_type as mimeType,
-             file_size as fileSize
-      FROM media_items WHERE content_hash = ?
-    `).get(contentHash) as any || null;
+    return this.bookOps.getMediaByHash(contentHash);
   }
 
-  /**
-   * Get media item by ID
-   */
   getMediaById(id: string): {
     id: string;
     contentHash: string;
@@ -3529,30 +1797,17 @@ export class EmbeddingDatabase {
     width: number | null;
     height: number | null;
   } | null {
-    return this.db.prepare(`
-      SELECT id, content_hash as contentHash, file_path as filePath,
-             original_filename as originalFilename, mime_type as mimeType,
-             file_size as fileSize, width, height
-      FROM media_items WHERE id = ?
-    `).get(id) as any || null;
+    return this.bookOps.getMediaById(id);
   }
 
-  /**
-   * Update media item vision description
-   */
   updateMediaVision(contentHash: string, description: string): void {
-    this.db.prepare(`
-      UPDATE media_items SET vision_description = ? WHERE content_hash = ?
-    `).run(description, contentHash);
+    return this.bookOps.updateMediaVision(contentHash, description);
   }
 
   // ===========================================================================
-  // Media References (Content to Media links)
+  // Media References - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert a media reference
-   */
   insertMediaReference(ref: {
     id: string;
     contentId: string;
@@ -3564,27 +1819,9 @@ export class EmbeddingDatabase {
     caption?: string;
     altText?: string;
   }): void {
-    this.db.prepare(`
-      INSERT INTO media_references (id, content_id, media_hash, position, char_offset,
-        reference_type, original_pointer, caption, alt_text, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      ref.id,
-      ref.contentId,
-      ref.mediaHash,
-      ref.position ?? null,
-      ref.charOffset ?? null,
-      ref.referenceType,
-      ref.originalPointer ?? null,
-      ref.caption ?? null,
-      ref.altText ?? null,
-      Date.now()
-    );
+    return this.bookOps.insertMediaReference(ref);
   }
 
-  /**
-   * Get media references for a content item
-   */
   getMediaRefsForContent(contentId: string): Array<{
     id: string;
     mediaHash: string;
@@ -3593,49 +1830,26 @@ export class EmbeddingDatabase {
     referenceType: string;
     originalPointer: string | null;
   }> {
-    return this.db.prepare(`
-      SELECT mr.id, mr.media_hash as mediaHash, mi.file_path as filePath,
-             mr.position, mr.reference_type as referenceType,
-             mr.original_pointer as originalPointer
-      FROM media_references mr
-      JOIN media_items mi ON mi.content_hash = mr.media_hash
-      WHERE mr.content_id = ?
-      ORDER BY mr.position ASC
-    `).all(contentId) as any[];
+    return this.bookOps.getMediaRefsForContent(contentId);
   }
 
-  /**
-   * Resolve an original pointer to a media hash
-   */
   resolveMediaPointer(originalPointer: string): string | null {
-    const result = this.db.prepare(`
-      SELECT media_hash FROM media_references WHERE original_pointer = ? LIMIT 1
-    `).get(originalPointer) as { media_hash: string } | undefined;
-    return result?.media_hash ?? null;
+    return this.bookOps.resolveMediaPointer(originalPointer);
   }
 
   // ===========================================================================
-  // Import Jobs
+  // Import Jobs - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Create a new import job
-   */
   createImportJob(job: {
     id: string;
     sourceType: string;
     sourcePath?: string;
     sourceName?: string;
   }): void {
-    this.db.prepare(`
-      INSERT INTO import_jobs (id, status, source_type, source_path, source_name, created_at)
-      VALUES (?, 'pending', ?, ?, ?, ?)
-    `).run(job.id, job.sourceType, job.sourcePath ?? null, job.sourceName ?? null, Date.now());
+    return this.bookOps.createImportJob(job);
   }
 
-  /**
-   * Update import job status and progress
-   */
   updateImportJob(id: string, updates: {
     status?: string;
     progress?: number;
@@ -3651,32 +1865,9 @@ export class EmbeddingDatabase {
     completedAt?: number;
     errorLog?: string[];
   }): void {
-    const fields: string[] = [];
-    const values: (string | number | null)[] = [];
-
-    if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
-    if (updates.progress !== undefined) { fields.push('progress = ?'); values.push(updates.progress); }
-    if (updates.currentPhase !== undefined) { fields.push('current_phase = ?'); values.push(updates.currentPhase); }
-    if (updates.currentItem !== undefined) { fields.push('current_item = ?'); values.push(updates.currentItem); }
-    if (updates.unitsTotal !== undefined) { fields.push('units_total = ?'); values.push(updates.unitsTotal); }
-    if (updates.unitsProcessed !== undefined) { fields.push('units_processed = ?'); values.push(updates.unitsProcessed); }
-    if (updates.mediaTotal !== undefined) { fields.push('media_total = ?'); values.push(updates.mediaTotal); }
-    if (updates.mediaProcessed !== undefined) { fields.push('media_processed = ?'); values.push(updates.mediaProcessed); }
-    if (updates.linksCreated !== undefined) { fields.push('links_created = ?'); values.push(updates.linksCreated); }
-    if (updates.errorsCount !== undefined) { fields.push('errors_count = ?'); values.push(updates.errorsCount); }
-    if (updates.startedAt !== undefined) { fields.push('started_at = ?'); values.push(updates.startedAt); }
-    if (updates.completedAt !== undefined) { fields.push('completed_at = ?'); values.push(updates.completedAt); }
-    if (updates.errorLog !== undefined) { fields.push('error_log = ?'); values.push(JSON.stringify(updates.errorLog)); }
-
-    if (fields.length === 0) return;
-
-    values.push(id);
-    this.db.prepare(`UPDATE import_jobs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    return this.bookOps.updateImportJob(id, updates);
   }
 
-  /**
-   * Get import job by ID
-   */
   getImportJob(id: string): {
     id: string;
     status: string;
@@ -3697,28 +1888,9 @@ export class EmbeddingDatabase {
     completedAt: number | null;
     errorLog: string[];
   } | null {
-    const row = this.db.prepare(`
-      SELECT id, status, source_type as sourceType, source_path as sourcePath,
-             source_name as sourceName, progress, current_phase as currentPhase,
-             current_item as currentItem, units_total as unitsTotal,
-             units_processed as unitsProcessed, media_total as mediaTotal,
-             media_processed as mediaProcessed, links_created as linksCreated,
-             errors_count as errorsCount, created_at as createdAt,
-             started_at as startedAt, completed_at as completedAt, error_log as errorLog
-      FROM import_jobs WHERE id = ?
-    `).get(id) as any;
-
-    if (!row) return null;
-
-    return {
-      ...row,
-      errorLog: row.errorLog ? JSON.parse(row.errorLog) : [],
-    };
+    return this.bookOps.getImportJob(id);
   }
 
-  /**
-   * Get recent import jobs
-   */
   getRecentImportJobs(limit = 10): Array<{
     id: string;
     status: string;
@@ -3731,24 +1903,13 @@ export class EmbeddingDatabase {
     createdAt: number;
     completedAt: number | null;
   }> {
-    return this.db.prepare(`
-      SELECT id, status, source_type as sourceType, source_name as sourceName,
-             progress, units_processed as unitsProcessed, media_processed as mediaProcessed,
-             errors_count as errorsCount, created_at as createdAt,
-             completed_at as completedAt
-      FROM import_jobs
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all(limit) as any[];
+    return this.bookOps.getRecentImportJobs(limit);
   }
 
   // ===========================================================================
-  // Book Operations (Xanadu Unified Storage)
+  // Book Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a book
-   */
   upsertBook(book: {
     id: string;
     uri: string;
@@ -3771,186 +1932,25 @@ export class EmbeddingDatabase {
     tags?: string[];
     isLibrary?: boolean;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO books (
-        id, uri, name, subtitle, author, description, status, book_type,
-        persona_refs, style_refs, source_refs, threads, harvest_config,
-        editorial, thinking, pyramid_id, stats, profile, tags, is_library,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        uri = excluded.uri,
-        name = excluded.name,
-        subtitle = excluded.subtitle,
-        author = excluded.author,
-        description = excluded.description,
-        status = excluded.status,
-        book_type = excluded.book_type,
-        persona_refs = excluded.persona_refs,
-        style_refs = excluded.style_refs,
-        source_refs = excluded.source_refs,
-        threads = excluded.threads,
-        harvest_config = excluded.harvest_config,
-        editorial = excluded.editorial,
-        thinking = excluded.thinking,
-        pyramid_id = excluded.pyramid_id,
-        stats = excluded.stats,
-        profile = excluded.profile,
-        tags = excluded.tags,
-        is_library = excluded.is_library,
-        updated_at = excluded.updated_at
-    `).run(
-      book.id,
-      book.uri,
-      book.name,
-      book.subtitle ?? null,
-      book.author ?? null,
-      book.description ?? null,
-      book.status ?? 'harvesting',
-      book.bookType ?? 'book',
-      book.personaRefs ? JSON.stringify(book.personaRefs) : null,
-      book.styleRefs ? JSON.stringify(book.styleRefs) : null,
-      book.sourceRefs ? JSON.stringify(book.sourceRefs) : null,
-      book.threads ? JSON.stringify(book.threads) : null,
-      book.harvestConfig ? JSON.stringify(book.harvestConfig) : null,
-      book.editorial ? JSON.stringify(book.editorial) : null,
-      book.thinking ? JSON.stringify(book.thinking) : null,
-      book.pyramidId ?? null,
-      book.stats ? JSON.stringify(book.stats) : null,
-      book.profile ? JSON.stringify(book.profile) : null,
-      book.tags ? JSON.stringify(book.tags) : null,
-      book.isLibrary ? 1 : 0,
-      now,
-      now
-    );
+    return this.bookOps.upsertBook(book);
   }
 
-  /**
-   * Get a book by ID or URI (includes chapters and passages)
-   */
   getBook(idOrUri: string): Record<string, unknown> | null {
-    const row = this.db.prepare(`
-      SELECT * FROM books WHERE id = ? OR uri = ?
-    `).get(idOrUri, idOrUri) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    const book = this.parseBookRow(row);
-    // Include chapters and passages
-    book.chapters = this.getBookChapters(book.id as string);
-    book.passages = this.getBookPassages(book.id as string);
-    // Compute stats from actual data (override stored stats)
-    book.stats = this.computeBookStats(book);
-    return book;
+    return this.bookOps.getBook(idOrUri);
   }
 
-  /**
-   * Get all books with their chapters and passages included
-   */
   getAllBooks(includeLibrary = true): Record<string, unknown>[] {
-    const query = includeLibrary
-      ? 'SELECT * FROM books ORDER BY updated_at DESC'
-      : 'SELECT * FROM books WHERE is_library = 0 ORDER BY updated_at DESC';
-    const rows = this.db.prepare(query).all() as Record<string, unknown>[];
-
-    return rows.map(row => {
-      const book = this.parseBookRow(row);
-      // Include chapters
-      book.chapters = this.getBookChapters(book.id as string);
-      // Include passages
-      book.passages = this.getBookPassages(book.id as string);
-      // Compute stats from actual data (override stored stats)
-      book.stats = this.computeBookStats(book);
-      return book;
-    });
+    return this.bookOps.getAllBooks(includeLibrary);
   }
 
-  /**
-   * Delete a book and all related data
-   */
   deleteBook(id: string): void {
-    this.db.prepare('DELETE FROM books WHERE id = ?').run(id);
-  }
-
-  private parseBookRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      uri: row.uri,
-      name: row.name,
-      subtitle: row.subtitle,
-      author: row.author,
-      description: row.description,
-      status: row.status,
-      bookType: row.book_type ?? 'book',
-      personaRefs: row.persona_refs ? JSON.parse(row.persona_refs as string) : [],
-      styleRefs: row.style_refs ? JSON.parse(row.style_refs as string) : [],
-      sourceRefs: row.source_refs ? JSON.parse(row.source_refs as string) : [],
-      threads: row.threads ? JSON.parse(row.threads as string) : [],
-      harvestConfig: row.harvest_config ? JSON.parse(row.harvest_config as string) : null,
-      editorial: row.editorial ? JSON.parse(row.editorial as string) : null,
-      thinking: row.thinking ? JSON.parse(row.thinking as string) : null,
-      pyramidId: row.pyramid_id,
-      stats: row.stats ? JSON.parse(row.stats as string) : {},
-      profile: row.profile ? JSON.parse(row.profile as string) : null,
-      tags: row.tags ? JSON.parse(row.tags as string) : [],
-      isLibrary: row.is_library === 1,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-  }
-
-  /**
-   * Compute stats from actual chapters/passages arrays
-   */
-  private computeBookStats(book: Record<string, unknown>): Record<string, unknown> {
-    const chapters = (book.chapters || []) as Array<{ wordCount?: number; content?: string }>;
-    const passages = (book.passages || []) as Array<{ curation?: { status?: string }; curationStatus?: string; text?: string; wordCount?: number }>;
-    const sourceRefs = (book.sourceRefs || []) as unknown[];
-
-    // Count passages by status
-    const approved = passages.filter(p => {
-      const status = p.curation?.status || p.curationStatus;
-      return status === 'approved' || status === 'gem';
-    });
-    const gems = passages.filter(p => {
-      const status = p.curation?.status || p.curationStatus;
-      return status === 'gem';
-    });
-
-    // Compute word count from chapters
-    const chapterWordCount = chapters.reduce((sum, ch) => {
-      if (ch.wordCount) return sum + ch.wordCount;
-      if (ch.content && typeof ch.content === 'string') {
-        return sum + ch.content.trim().split(/\s+/).filter(Boolean).length;
-      }
-      return sum;
-    }, 0);
-
-    // Fallback: count from passages if no chapters
-    const passageWordCount = passages.reduce((sum, p) => {
-      if (p.wordCount) return sum + p.wordCount;
-      if (p.text && typeof p.text === 'string') {
-        return sum + p.text.trim().split(/\s+/).filter(Boolean).length;
-      }
-      return sum;
-    }, 0);
-
-    return {
-      totalSources: sourceRefs.length,
-      totalPassages: passages.length,
-      approvedPassages: approved.length,
-      gems: gems.length,
-      chapters: chapters.length,
-      wordCount: chapterWordCount > 0 ? chapterWordCount : passageWordCount,
-    };
+    return this.bookOps.deleteBook(id);
   }
 
   // ===========================================================================
-  // Persona Operations
+  // Persona Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a persona
-   */
   upsertPersona(persona: {
     id: string;
     uri: string;
@@ -3966,102 +1966,25 @@ export class EmbeddingDatabase {
     tags?: string[];
     isLibrary?: boolean;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO personas (
-        id, uri, name, description, author, voice, vocabulary,
-        derived_from, influences, exemplars, system_prompt, tags, is_library,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        uri = excluded.uri,
-        name = excluded.name,
-        description = excluded.description,
-        author = excluded.author,
-        voice = excluded.voice,
-        vocabulary = excluded.vocabulary,
-        derived_from = excluded.derived_from,
-        influences = excluded.influences,
-        exemplars = excluded.exemplars,
-        system_prompt = excluded.system_prompt,
-        tags = excluded.tags,
-        is_library = excluded.is_library,
-        updated_at = excluded.updated_at
-    `).run(
-      persona.id,
-      persona.uri,
-      persona.name,
-      persona.description ?? null,
-      persona.author ?? null,
-      persona.voice ? JSON.stringify(persona.voice) : null,
-      persona.vocabulary ? JSON.stringify(persona.vocabulary) : null,
-      persona.derivedFrom ? JSON.stringify(persona.derivedFrom) : null,
-      persona.influences ? JSON.stringify(persona.influences) : null,
-      persona.exemplars ? JSON.stringify(persona.exemplars) : null,
-      persona.systemPrompt ?? null,
-      persona.tags ? JSON.stringify(persona.tags) : null,
-      persona.isLibrary ? 1 : 0,
-      now,
-      now
-    );
+    return this.bookOps.upsertPersona(persona);
   }
 
-  /**
-   * Get a persona by ID or URI
-   */
   getPersona(idOrUri: string): Record<string, unknown> | null {
-    const row = this.db.prepare(`
-      SELECT * FROM personas WHERE id = ? OR uri = ?
-    `).get(idOrUri, idOrUri) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.parsePersonaRow(row);
+    return this.bookOps.getPersona(idOrUri);
   }
 
-  /**
-   * Get all personas
-   */
   getAllPersonas(includeLibrary = true): Record<string, unknown>[] {
-    const query = includeLibrary
-      ? 'SELECT * FROM personas ORDER BY name'
-      : 'SELECT * FROM personas WHERE is_library = 0 ORDER BY name';
-    const rows = this.db.prepare(query).all() as Record<string, unknown>[];
-    return rows.map(row => this.parsePersonaRow(row));
+    return this.bookOps.getAllPersonas(includeLibrary);
   }
 
-  /**
-   * Delete a persona
-   */
   deletePersona(id: string): void {
-    this.db.prepare('DELETE FROM personas WHERE id = ?').run(id);
-  }
-
-  private parsePersonaRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      uri: row.uri,
-      name: row.name,
-      description: row.description,
-      author: row.author,
-      voice: row.voice ? JSON.parse(row.voice as string) : null,
-      vocabulary: row.vocabulary ? JSON.parse(row.vocabulary as string) : null,
-      derivedFrom: row.derived_from ? JSON.parse(row.derived_from as string) : [],
-      influences: row.influences ? JSON.parse(row.influences as string) : [],
-      exemplars: row.exemplars ? JSON.parse(row.exemplars as string) : [],
-      systemPrompt: row.system_prompt,
-      tags: row.tags ? JSON.parse(row.tags as string) : [],
-      isLibrary: row.is_library === 1,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+    return this.bookOps.deletePersona(id);
   }
 
   // ===========================================================================
-  // Style Operations
+  // Style Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a style
-   */
   upsertStyle(style: {
     id: string;
     uri: string;
@@ -4075,95 +1998,25 @@ export class EmbeddingDatabase {
     tags?: string[];
     isLibrary?: boolean;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO styles (
-        id, uri, name, description, author, characteristics, structure,
-        style_prompt, derived_from, tags, is_library, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        uri = excluded.uri,
-        name = excluded.name,
-        description = excluded.description,
-        author = excluded.author,
-        characteristics = excluded.characteristics,
-        structure = excluded.structure,
-        style_prompt = excluded.style_prompt,
-        derived_from = excluded.derived_from,
-        tags = excluded.tags,
-        is_library = excluded.is_library,
-        updated_at = excluded.updated_at
-    `).run(
-      style.id,
-      style.uri,
-      style.name,
-      style.description ?? null,
-      style.author ?? null,
-      style.characteristics ? JSON.stringify(style.characteristics) : null,
-      style.structure ? JSON.stringify(style.structure) : null,
-      style.stylePrompt ?? null,
-      style.derivedFrom ? JSON.stringify(style.derivedFrom) : null,
-      style.tags ? JSON.stringify(style.tags) : null,
-      style.isLibrary ? 1 : 0,
-      now,
-      now
-    );
+    return this.bookOps.upsertStyle(style);
   }
 
-  /**
-   * Get a style by ID or URI
-   */
   getStyle(idOrUri: string): Record<string, unknown> | null {
-    const row = this.db.prepare(`
-      SELECT * FROM styles WHERE id = ? OR uri = ?
-    `).get(idOrUri, idOrUri) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.parseStyleRow(row);
+    return this.bookOps.getStyle(idOrUri);
   }
 
-  /**
-   * Get all styles
-   */
   getAllStyles(includeLibrary = true): Record<string, unknown>[] {
-    const query = includeLibrary
-      ? 'SELECT * FROM styles ORDER BY name'
-      : 'SELECT * FROM styles WHERE is_library = 0 ORDER BY name';
-    const rows = this.db.prepare(query).all() as Record<string, unknown>[];
-    return rows.map(row => this.parseStyleRow(row));
+    return this.bookOps.getAllStyles(includeLibrary);
   }
 
-  /**
-   * Delete a style
-   */
   deleteStyle(id: string): void {
-    this.db.prepare('DELETE FROM styles WHERE id = ?').run(id);
-  }
-
-  private parseStyleRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      uri: row.uri,
-      name: row.name,
-      description: row.description,
-      author: row.author,
-      characteristics: row.characteristics ? JSON.parse(row.characteristics as string) : null,
-      structure: row.structure ? JSON.parse(row.structure as string) : null,
-      stylePrompt: row.style_prompt,
-      derivedFrom: row.derived_from ? JSON.parse(row.derived_from as string) : [],
-      tags: row.tags ? JSON.parse(row.tags as string) : [],
-      isLibrary: row.is_library === 1,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+    return this.bookOps.deleteStyle(id);
   }
 
   // ===========================================================================
-  // Book Passage Operations
+  // Book Passage Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a book passage
-   */
   upsertBookPassage(passage: {
     id: string;
     bookId: string;
@@ -4178,101 +2031,25 @@ export class EmbeddingDatabase {
     chapterId?: string;
     tags?: string[];
   }): void {
-    const now = Date.now();
-    const wordCount = passage.wordCount ?? passage.text.trim().split(/\s+/).filter(Boolean).length;
-
-    this.db.prepare(`
-      INSERT INTO book_passages (
-        id, book_id, source_ref, text, word_count, role, harvested_by,
-        thread_id, curation_status, curation_note, chapter_id, tags, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        source_ref = excluded.source_ref,
-        text = excluded.text,
-        word_count = excluded.word_count,
-        role = excluded.role,
-        harvested_by = excluded.harvested_by,
-        thread_id = excluded.thread_id,
-        curation_status = excluded.curation_status,
-        curation_note = excluded.curation_note,
-        chapter_id = excluded.chapter_id,
-        tags = excluded.tags
-    `).run(
-      passage.id,
-      passage.bookId,
-      passage.sourceRef ? JSON.stringify(passage.sourceRef) : null,
-      passage.text,
-      wordCount,
-      passage.role ?? null,
-      passage.harvestedBy ?? 'manual',
-      passage.threadId ?? null,
-      passage.curationStatus ?? 'candidate',
-      passage.curationNote ?? null,
-      passage.chapterId ?? null,
-      passage.tags ? JSON.stringify(passage.tags) : null,
-      now
-    );
+    return this.bookOps.upsertBookPassage(passage);
   }
 
-  /**
-   * Get passages for a book
-   */
   getBookPassages(bookId: string, curationStatus?: string): Record<string, unknown>[] {
-    let query = 'SELECT * FROM book_passages WHERE book_id = ?';
-    const params: (string | null)[] = [bookId];
-
-    if (curationStatus) {
-      query += ' AND curation_status = ?';
-      params.push(curationStatus);
-    }
-
-    query += ' ORDER BY created_at DESC';
-
-    const rows = this.db.prepare(query).all(...params) as Record<string, unknown>[];
-    return rows.map(row => this.parsePassageRow(row));
+    return this.bookOps.getBookPassages(bookId, curationStatus);
   }
 
-  /**
-   * Update passage curation status
-   */
   updatePassageCuration(id: string, status: string, note?: string): void {
-    this.db.prepare(`
-      UPDATE book_passages SET curation_status = ?, curation_note = ? WHERE id = ?
-    `).run(status, note ?? null, id);
+    return this.bookOps.updatePassageCuration(id, status, note);
   }
 
-  /**
-   * Delete a passage
-   */
   deleteBookPassage(id: string): void {
-    this.db.prepare('DELETE FROM book_passages WHERE id = ?').run(id);
-  }
-
-  private parsePassageRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      bookId: row.book_id,
-      sourceRef: row.source_ref ? JSON.parse(row.source_ref as string) : null,
-      text: row.text,
-      wordCount: row.word_count,
-      role: row.role,
-      harvestedBy: row.harvested_by,
-      threadId: row.thread_id,
-      curationStatus: row.curation_status,
-      curationNote: row.curation_note,
-      chapterId: row.chapter_id,
-      tags: row.tags ? JSON.parse(row.tags as string) : [],
-      createdAt: row.created_at,
-    };
+    return this.bookOps.deleteBookPassage(id);
   }
 
   // ===========================================================================
-  // Book Chapter Operations
+  // Book Chapter Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a chapter
-   */
   upsertBookChapter(chapter: {
     id: string;
     bookId: string;
@@ -4288,130 +2065,33 @@ export class EmbeddingDatabase {
     metadata?: unknown;
     passageRefs?: string[];
   }): void {
-    const now = Date.now();
-    const wordCount = chapter.wordCount ?? (chapter.content?.trim().split(/\s+/).filter(Boolean).length ?? 0);
-
-    this.db.prepare(`
-      INSERT INTO book_chapters (
-        id, book_id, number, title, content, word_count, version, status,
-        epigraph, sections, marginalia, metadata, passage_refs, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        number = excluded.number,
-        title = excluded.title,
-        content = excluded.content,
-        word_count = excluded.word_count,
-        version = excluded.version,
-        status = excluded.status,
-        epigraph = excluded.epigraph,
-        sections = excluded.sections,
-        marginalia = excluded.marginalia,
-        metadata = excluded.metadata,
-        passage_refs = excluded.passage_refs,
-        updated_at = excluded.updated_at
-    `).run(
-      chapter.id,
-      chapter.bookId,
-      chapter.number,
-      chapter.title,
-      chapter.content ?? null,
-      wordCount,
-      chapter.version ?? 1,
-      chapter.status ?? 'outline',
-      chapter.epigraph ? JSON.stringify(chapter.epigraph) : null,
-      chapter.sections ? JSON.stringify(chapter.sections) : null,
-      chapter.marginalia ? JSON.stringify(chapter.marginalia) : null,
-      chapter.metadata ? JSON.stringify(chapter.metadata) : null,
-      chapter.passageRefs ? JSON.stringify(chapter.passageRefs) : null,
-      now,
-      now
-    );
+    return this.bookOps.upsertBookChapter(chapter);
   }
 
-  /**
-   * Get chapters for a book
-   */
   getBookChapters(bookId: string): Record<string, unknown>[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM book_chapters WHERE book_id = ? ORDER BY number
-    `).all(bookId) as Record<string, unknown>[];
-    return rows.map(row => this.parseChapterRow(row));
+    return this.bookOps.getBookChapters(bookId);
   }
 
-  /**
-   * Get a single chapter
-   */
   getBookChapter(id: string): Record<string, unknown> | null {
-    const row = this.db.prepare(`
-      SELECT * FROM book_chapters WHERE id = ?
-    `).get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.parseChapterRow(row);
+    return this.bookOps.getBookChapter(id);
   }
 
-  /**
-   * Delete a chapter
-   */
   deleteBookChapter(id: string): void {
-    this.db.prepare('DELETE FROM book_chapters WHERE id = ?').run(id);
+    return this.bookOps.deleteBookChapter(id);
   }
 
-  /**
-   * Save a chapter version snapshot
-   */
   saveChapterVersion(chapterId: string, version: number, content: string, changes?: string, createdBy?: string): void {
-    const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
-    this.db.prepare(`
-      INSERT INTO chapter_versions (id, chapter_id, version, content, word_count, changes, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      `${chapterId}-v${version}`,
-      chapterId,
-      version,
-      content,
-      wordCount,
-      changes ?? null,
-      createdBy ?? 'user',
-      Date.now()
-    );
+    return this.bookOps.saveChapterVersion(chapterId, version, content, changes, createdBy);
   }
 
-  /**
-   * Get chapter version history
-   */
   getChapterVersions(chapterId: string): Record<string, unknown>[] {
-    return this.db.prepare(`
-      SELECT * FROM chapter_versions WHERE chapter_id = ? ORDER BY version DESC
-    `).all(chapterId) as Record<string, unknown>[];
-  }
-
-  private parseChapterRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      bookId: row.book_id,
-      number: row.number,
-      title: row.title,
-      content: row.content,
-      wordCount: row.word_count,
-      version: row.version,
-      status: row.status,
-      epigraph: row.epigraph ? JSON.parse(row.epigraph as string) : null,
-      sections: row.sections ? JSON.parse(row.sections as string) : [],
-      marginalia: row.marginalia ? JSON.parse(row.marginalia as string) : [],
-      metadata: row.metadata ? JSON.parse(row.metadata as string) : null,
-      passageRefs: row.passage_refs ? JSON.parse(row.passage_refs as string) : [],
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+    return this.bookOps.getChapterVersions(chapterId);
   }
 
   // ===========================================================================
-  // Harvest Bucket Operations
+  // Harvest Bucket Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a harvest bucket
-   */
   upsertHarvestBucket(bucket: {
     id: string;
     bookId: string;
@@ -4430,117 +2110,29 @@ export class EmbeddingDatabase {
     completedAt?: number;
     finalizedAt?: number;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO harvest_buckets (
-        id, book_id, book_uri, status, queries, candidates, approved, gems, rejected,
-        duplicate_ids, config, thread_uri, stats, initiated_by, created_at, updated_at,
-        completed_at, finalized_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        status = excluded.status,
-        queries = excluded.queries,
-        candidates = excluded.candidates,
-        approved = excluded.approved,
-        gems = excluded.gems,
-        rejected = excluded.rejected,
-        duplicate_ids = excluded.duplicate_ids,
-        config = excluded.config,
-        thread_uri = excluded.thread_uri,
-        stats = excluded.stats,
-        updated_at = excluded.updated_at,
-        completed_at = excluded.completed_at,
-        finalized_at = excluded.finalized_at
-    `).run(
-      bucket.id,
-      bucket.bookId,
-      bucket.bookUri,
-      bucket.status ?? 'collecting',
-      bucket.queries ? JSON.stringify(bucket.queries) : null,
-      bucket.candidates ? JSON.stringify(bucket.candidates) : null,
-      bucket.approved ? JSON.stringify(bucket.approved) : null,
-      bucket.gems ? JSON.stringify(bucket.gems) : null,
-      bucket.rejected ? JSON.stringify(bucket.rejected) : null,
-      bucket.duplicateIds ? JSON.stringify(bucket.duplicateIds) : null,
-      bucket.config ? JSON.stringify(bucket.config) : null,
-      bucket.threadUri ?? null,
-      bucket.stats ? JSON.stringify(bucket.stats) : null,
-      bucket.initiatedBy ?? null,
-      now,
-      now,
-      bucket.completedAt ?? null,
-      bucket.finalizedAt ?? null
-    );
+    return this.bookOps.upsertHarvestBucket(bucket);
   }
 
-  /**
-   * Get a harvest bucket by ID
-   */
   getHarvestBucket(id: string): Record<string, unknown> | null {
-    const row = this.db.prepare(`
-      SELECT * FROM harvest_buckets WHERE id = ?
-    `).get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.parseHarvestBucketRow(row);
+    return this.bookOps.getHarvestBucket(id);
   }
 
-  /**
-   * Get harvest buckets for a book
-   */
   getHarvestBucketsForBook(bookUri: string): Record<string, unknown>[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM harvest_buckets WHERE book_uri = ? ORDER BY created_at DESC
-    `).all(bookUri) as Record<string, unknown>[];
-    return rows.map(row => this.parseHarvestBucketRow(row));
+    return this.bookOps.getHarvestBucketsForBook(bookUri);
   }
 
-  /**
-   * Get all harvest buckets
-   */
   getAllHarvestBuckets(): Record<string, unknown>[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM harvest_buckets ORDER BY created_at DESC
-    `).all() as Record<string, unknown>[];
-    return rows.map(row => this.parseHarvestBucketRow(row));
+    return this.bookOps.getAllHarvestBuckets();
   }
 
-  /**
-   * Delete a harvest bucket
-   */
   deleteHarvestBucket(id: string): void {
-    this.db.prepare('DELETE FROM harvest_buckets WHERE id = ?').run(id);
-  }
-
-  private parseHarvestBucketRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      bookId: row.book_id,
-      bookUri: row.book_uri,
-      status: row.status,
-      queries: row.queries ? JSON.parse(row.queries as string) : [],
-      candidates: row.candidates ? JSON.parse(row.candidates as string) : [],
-      approved: row.approved ? JSON.parse(row.approved as string) : [],
-      gems: row.gems ? JSON.parse(row.gems as string) : [],
-      rejected: row.rejected ? JSON.parse(row.rejected as string) : [],
-      duplicateIds: row.duplicate_ids ? JSON.parse(row.duplicate_ids as string) : [],
-      config: row.config ? JSON.parse(row.config as string) : {},
-      threadUri: row.thread_uri,
-      stats: row.stats ? JSON.parse(row.stats as string) : {},
-      initiatedBy: row.initiated_by,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      completedAt: row.completed_at,
-      finalizedAt: row.finalized_at,
-    };
+    return this.bookOps.deleteHarvestBucket(id);
   }
 
   // ===========================================================================
-  // Narrative Arc Operations
+  // Narrative Arc Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a narrative arc
-   */
   upsertNarrativeArc(arc: {
     id: string;
     bookId: string;
@@ -4552,164 +2144,56 @@ export class EmbeddingDatabase {
     evaluatedAt?: number;
     proposedBy?: string;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO narrative_arcs (
-        id, book_id, book_uri, thesis, arc_type, evaluation_status, evaluation_feedback,
-        evaluated_at, proposed_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        thesis = excluded.thesis,
-        arc_type = excluded.arc_type,
-        evaluation_status = excluded.evaluation_status,
-        evaluation_feedback = excluded.evaluation_feedback,
-        evaluated_at = excluded.evaluated_at,
-        updated_at = excluded.updated_at
-    `).run(
-      arc.id,
-      arc.bookId,
-      arc.bookUri,
-      arc.thesis,
-      arc.arcType ?? 'thematic',
-      arc.evaluationStatus ?? null,
-      arc.evaluationFeedback ?? null,
-      arc.evaluatedAt ?? null,
-      arc.proposedBy ?? null,
-      now,
-      now
-    );
+    return this.bookOps.upsertNarrativeArc(arc);
   }
 
-  /**
-   * Get a narrative arc by ID
-   */
   getNarrativeArc(id: string): Record<string, unknown> | null {
-    const row = this.db.prepare(`
-      SELECT * FROM narrative_arcs WHERE id = ?
-    `).get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.parseNarrativeArcRow(row);
+    return this.bookOps.getNarrativeArc(id);
   }
 
-  /**
-   * Get narrative arcs for a book
-   */
   getNarrativeArcsForBook(bookUri: string): Record<string, unknown>[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM narrative_arcs WHERE book_uri = ? ORDER BY created_at DESC
-    `).all(bookUri) as Record<string, unknown>[];
-    return rows.map(row => this.parseNarrativeArcRow(row));
+    return this.bookOps.getNarrativeArcsForBook(bookUri);
   }
 
-  /**
-   * Delete a narrative arc
-   */
   deleteNarrativeArc(id: string): void {
-    this.db.prepare('DELETE FROM narrative_arcs WHERE id = ?').run(id);
-  }
-
-  private parseNarrativeArcRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      bookId: row.book_id,
-      bookUri: row.book_uri,
-      thesis: row.thesis,
-      arcType: row.arc_type,
-      evaluation: row.evaluation_status ? {
-        status: row.evaluation_status,
-        feedback: row.evaluation_feedback,
-        evaluatedAt: row.evaluated_at,
-      } : null,
-      proposedBy: row.proposed_by,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+    return this.bookOps.deleteNarrativeArc(id);
   }
 
   // ===========================================================================
-  // Passage Link Operations
+  // Passage Link Operations - Delegated to BookOperations
   // ===========================================================================
 
-  /**
-   * Insert or update a passage link
-   */
   upsertPassageLink(link: {
     id: string;
-    passageId: string;
     chapterId: string;
+    passageId: string;
     position: number;
-    sectionId?: string;
-    usageType?: string;
-    createdBy?: string;
+    transformations?: unknown;
+    originalText?: string;
+    transformedText?: string;
   }): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO passage_links (
-        id, passage_id, chapter_id, position, section_id, usage_type, created_by, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        position = excluded.position,
-        section_id = excluded.section_id,
-        usage_type = excluded.usage_type
-    `).run(
-      link.id,
-      link.passageId,
-      link.chapterId,
-      link.position,
-      link.sectionId ?? null,
-      link.usageType ?? 'quote',
-      link.createdBy ?? 'user',
-      now
-    );
+    return this.bookOps.upsertPassageLink(link);
   }
 
-  /**
-   * Get passage links for a chapter
-   */
   getPassageLinksForChapter(chapterId: string): Record<string, unknown>[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM passage_links WHERE chapter_id = ? ORDER BY position
-    `).all(chapterId) as Record<string, unknown>[];
-    return rows.map(row => this.parsePassageLinkRow(row));
+    return this.bookOps.getPassageLinksForChapter(chapterId);
   }
 
-  /**
-   * Get passage links for a passage
-   */
   getPassageLinksForPassage(passageId: string): Record<string, unknown>[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM passage_links WHERE passage_id = ?
-    `).all(passageId) as Record<string, unknown>[];
-    return rows.map(row => this.parsePassageLinkRow(row));
+    return this.bookOps.getPassageLinksForPassage(passageId);
   }
 
-  /**
-   * Delete a passage link
-   */
   deletePassageLink(id: string): void {
-    this.db.prepare('DELETE FROM passage_links WHERE id = ?').run(id);
-  }
-
-  private parsePassageLinkRow(row: Record<string, unknown>): Record<string, unknown> {
-    return {
-      id: row.id,
-      passageId: row.passage_id,
-      chapterId: row.chapter_id,
-      position: row.position,
-      sectionId: row.section_id,
-      usageType: row.usage_type,
-      createdBy: row.created_by,
-      createdAt: row.created_at,
-    };
+    return this.bookOps.deletePassageLink(id);
   }
 
   // ===========================================================================
-  // Raw Access (for complex queries in routes)
+  // Raw Database Access
   // ===========================================================================
 
   /**
-   * Get raw database instance for complex queries
-   * Use sparingly - prefer adding methods to this class
+   * Get the raw database instance for direct SQL queries
+   * Used by routes that need custom queries
    */
   getRawDb(): Database.Database {
     return this.db;

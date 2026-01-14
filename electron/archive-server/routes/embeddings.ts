@@ -470,19 +470,19 @@ export function createEmbeddingsRouter(): Router {
           if (types && types.length > 0 && !types.includes(r.type)) continue;
 
           // Fetch full content item
-          const contentItem = db.getContentItem(r.content_item_id);
+          const contentItem = db.getContentItem(r.content_item_id) as Record<string, unknown> | null;
           if (!contentItem) continue;
 
           allResults.push({
             id: r.content_item_id,
             type: contentItem.type as 'post' | 'comment' | 'document' | 'note',
             source: r.source,
-            content: contentItem.text || '',
-            title: contentItem.title,
+            content: (contentItem.text as string) || '',
+            title: contentItem.title as string | undefined,
             similarity: 1 - r.distance, // Convert distance to similarity
-            authorName: contentItem.author_name,
-            createdAt: contentItem.created_at,
-            parentId: contentItem.parent_id,
+            authorName: contentItem.author_name as string | undefined,
+            createdAt: contentItem.created_at as number | undefined,
+            parentId: contentItem.parent_id as string | undefined,
             isOwnContent: contentItem.is_own_content === 1,
           });
         }

@@ -220,12 +220,13 @@ export function createMediaRouter(): Router {
 
       // Parse media refs (these are file paths, not IDs)
       let mediaRefs: string[] = [];
-      if (content.media_refs) {
+      const mediaRefsRaw = content.media_refs as string | undefined;
+      if (mediaRefsRaw) {
         try {
-          mediaRefs = JSON.parse(content.media_refs);
+          mediaRefs = JSON.parse(mediaRefsRaw);
         } catch {
           // Try as comma-separated
-          mediaRefs = content.media_refs.split(',').map((s: string) => s.trim());
+          mediaRefs = mediaRefsRaw.split(',').map((s: string) => s.trim());
         }
       }
 
