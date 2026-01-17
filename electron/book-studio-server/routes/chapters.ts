@@ -1,13 +1,29 @@
 /**
  * Chapters API Routes
+ *
+ * All routes require authentication and verify book ownership.
  */
 
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateId, now, DbChapter } from '../database';
+import { getDatabase, generateId, now, DbChapter, DbBook } from '../database';
 import { broadcastEvent } from '../server';
+import { requireAuth, getUserId, isOwner } from '../middleware/auth';
 
 export function createChaptersRouter(): Router {
   const router = Router();
+
+  // Apply auth middleware to all routes
+  router.use(requireAuth());
+
+  // Helper to verify book ownership
+  function verifyBookOwnership(bookId: string, req: Request): DbBook | null {
+    const db = getDatabase();
+    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as DbBook | undefined;
+    if (!book || !isOwner(req, book.user_id)) {
+      return null;
+    }
+    return book;
+  }
 
   // GET /api/chapters?bookId=xxx - List chapters for a book
   router.get('/', (req: Request, res: Response) => {
@@ -16,6 +32,11 @@ export function createChaptersRouter(): Router {
 
       if (!bookId) {
         return res.status(400).json({ error: 'bookId is required' });
+      }
+
+      // Verify book ownership
+      if (!verifyBookOwnership(bookId as string, req)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       const db = getDatabase();
@@ -41,6 +62,11 @@ export function createChaptersRouter(): Router {
         return res.status(404).json({ error: 'Chapter not found' });
       }
 
+      // Verify book ownership
+      if (!verifyBookOwnership(chapter.book_id, req)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
       // Get cards assigned to this chapter
       const cards = db.prepare(`
         SELECT * FROM cards WHERE chapter_id = ? ORDER BY created_at ASC
@@ -55,19 +81,20 @@ export function createChaptersRouter(): Router {
   // POST /api/chapters - Create a new chapter
   router.post('/', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { bookId, title, order, draftInstructions } = req.body;
 
       if (!bookId || !title) {
         return res.status(400).json({ error: 'bookId and title are required' });
       }
 
-      const db = getDatabase();
-
-      // Verify book exists
-      const book = db.prepare('SELECT id FROM books WHERE id = ?').get(bookId);
+      // Verify book ownership
+      const book = verifyBookOwnership(bookId, req);
       if (!book) {
-        return res.status(404).json({ error: 'Book not found' });
+        return res.status(403).json({ error: 'Access denied' });
       }
+
+      const db = getDatabase();
 
       // Get max order if not specified
       let chapterOrder = order;
@@ -82,9 +109,9 @@ export function createChaptersRouter(): Router {
       const timestamp = now();
 
       db.prepare(`
-        INSERT INTO chapters (id, book_id, title, "order", draft_instructions, word_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-      `).run(id, bookId, title, chapterOrder, draftInstructions || null, timestamp, timestamp);
+        INSERT INTO chapters (id, book_id, title, "order", draft_instructions, word_count, user_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+      `).run(id, bookId, title, chapterOrder, draftInstructions || null, userId, timestamp, timestamp);
 
       // Update book's updated_at
       db.prepare('UPDATE books SET updated_at = ? WHERE id = ?').run(timestamp, bookId);
@@ -110,19 +137,20 @@ export function createChaptersRouter(): Router {
   // POST /api/chapters/batch - Create multiple chapters
   router.post('/batch', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { bookId, chapters: chapterData } = req.body;
 
       if (!bookId || !Array.isArray(chapterData) || chapterData.length === 0) {
         return res.status(400).json({ error: 'bookId and chapters array are required' });
       }
 
-      const db = getDatabase();
-
-      // Verify book exists
-      const book = db.prepare('SELECT id FROM books WHERE id = ?').get(bookId);
+      // Verify book ownership
+      const book = verifyBookOwnership(bookId, req);
       if (!book) {
-        return res.status(404).json({ error: 'Book not found' });
+        return res.status(403).json({ error: 'Access denied' });
       }
+
+      const db = getDatabase();
 
       // Get current max order
       const maxOrder = db.prepare(`
@@ -134,8 +162,8 @@ export function createChaptersRouter(): Router {
       const createdChapters: DbChapter[] = [];
 
       const insertStmt = db.prepare(`
-        INSERT INTO chapters (id, book_id, title, "order", word_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 0, ?, ?)
+        INSERT INTO chapters (id, book_id, title, "order", word_count, user_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?)
       `);
 
       // Use a transaction for batch insert
@@ -143,7 +171,7 @@ export function createChaptersRouter(): Router {
         for (const item of items) {
           const id = generateId();
           const order = item.order ?? nextOrder++;
-          insertStmt.run(id, bookId, item.title, order, timestamp, timestamp);
+          insertStmt.run(id, bookId, item.title, order, userId, timestamp, timestamp);
           const chapter = db.prepare('SELECT * FROM chapters WHERE id = ?').get(id) as DbChapter;
           createdChapters.push(chapter);
         }
@@ -178,6 +206,11 @@ export function createChaptersRouter(): Router {
       const existing = db.prepare('SELECT * FROM chapters WHERE id = ?').get(req.params.id) as DbChapter | undefined;
       if (!existing) {
         return res.status(404).json({ error: 'Chapter not found' });
+      }
+
+      // Verify book ownership
+      if (!verifyBookOwnership(existing.book_id, req)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       const updates: string[] = ['updated_at = ?'];
@@ -241,6 +274,11 @@ export function createChaptersRouter(): Router {
         return res.status(404).json({ error: 'Chapter not found' });
       }
 
+      // Verify book ownership
+      if (!verifyBookOwnership(existing.book_id, req)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
       // Delete chapter (cards will have chapter_id set to NULL)
       db.prepare('DELETE FROM chapters WHERE id = ?').run(req.params.id);
 
@@ -262,13 +300,18 @@ export function createChaptersRouter(): Router {
     }
   });
 
-  // POST /api/chapters/:id/reorder - Reorder chapters
+  // POST /api/chapters/reorder - Reorder chapters
   router.post('/reorder', (req: Request, res: Response) => {
     try {
       const { bookId, chapterIds } = req.body;
 
       if (!bookId || !Array.isArray(chapterIds)) {
         return res.status(400).json({ error: 'bookId and chapterIds array are required' });
+      }
+
+      // Verify book ownership
+      if (!verifyBookOwnership(bookId, req)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       const db = getDatabase();

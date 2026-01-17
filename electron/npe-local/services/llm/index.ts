@@ -10,11 +10,41 @@ import { getProviderType, DEFAULT_MODEL_CONFIG } from './types';
 import { OllamaProvider } from './ollama';
 import { OpenAIProvider } from './openai';
 import { AnthropicProvider } from './anthropic';
+import { CloudflareProvider } from './cloudflare';
+import { OpenRouterProvider } from './openrouter';
+import { TogetherProvider } from './together';
 
 export * from './types';
 export { OllamaProvider } from './ollama';
 export { OpenAIProvider } from './openai';
 export { AnthropicProvider } from './anthropic';
+export { CloudflareProvider, CLOUDFLARE_MODELS } from './cloudflare';
+export { OpenRouterProvider, OPENROUTER_MODELS } from './openrouter';
+export { TogetherProvider, TOGETHER_MODELS } from './together';
+export {
+  FallbackRouter,
+  createFallbackRouter,
+  getProviderHealth,
+  resetProviderHealth,
+  DEFAULT_PROVIDER_PRIORITY,
+  type FallbackOptions,
+} from './fallback-router';
+export {
+  recordUsage,
+  calculateCost,
+  getUsageSummary,
+  getDailyUsage,
+  getMonthlyUsage,
+  getProjectedMonthlyCost,
+  formatCost,
+  formatTokens,
+  getAllRecords,
+  loadRecords,
+  clearRecords,
+  MODEL_PRICING,
+  type UsageRecord,
+  type UsageSummary,
+} from './cost-tracker';
 
 // Runtime configuration (can be updated at startup)
 let currentConfig: ModelConfig = { ...DEFAULT_MODEL_CONFIG };
@@ -93,6 +123,34 @@ export async function createLLMProvider(
     case 'groq': {
       // Groq provider not implemented for local yet
       throw new Error('Groq provider not yet implemented for local use');
+    }
+
+    case 'cloudflare': {
+      const apiKey = effectiveConfig.apiKeys.cloudflare;
+      const accountId = effectiveConfig.cloudflareAccountId;
+      if (!apiKey) {
+        throw new Error('Cloudflare API key not configured. Please add your API key in settings.');
+      }
+      if (!accountId) {
+        throw new Error('Cloudflare Account ID not configured. Please add your account ID in settings.');
+      }
+      return new CloudflareProvider(apiKey, accountId, model);
+    }
+
+    case 'openrouter': {
+      const apiKey = effectiveConfig.apiKeys.openrouter;
+      if (!apiKey) {
+        throw new Error('OpenRouter API key not configured. Please add your API key in settings.');
+      }
+      return new OpenRouterProvider(apiKey, model);
+    }
+
+    case 'together': {
+      const apiKey = effectiveConfig.apiKeys.together;
+      if (!apiKey) {
+        throw new Error('Together API key not configured. Please add your API key in settings.');
+      }
+      return new TogetherProvider(apiKey, model);
     }
 
     default:

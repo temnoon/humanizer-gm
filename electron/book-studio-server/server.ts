@@ -7,10 +7,21 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { Server as HttpServer } from 'http';
+import { Server as HttpServer, IncomingMessage } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { URL } from 'url';
+
+// Dynamic import for ESM-only jose library
+let joseModule: typeof import('jose') | null = null;
+async function getJose(): Promise<typeof import('jose')> {
+  if (!joseModule) {
+    joseModule = await import('jose');
+  }
+  return joseModule;
+}
 import { initConfig, getConfig } from './config';
-import { getDatabase, closeDatabase } from './database';
+import { getDatabase, closeDatabase, DbBook } from './database';
+import { initAuth, isAuthEnabled, getJwtSecret, AuthContext } from './middleware/auth';
 
 // Route modules
 import { createBooksRouter } from './routes/books';
@@ -30,6 +41,14 @@ let wss: WebSocketServer | null = null;
 
 // WebSocket connections by book ID
 const subscriptions = new Map<string, Set<WebSocket>>();
+
+// WebSocket auth context (stored per connection)
+const wsAuthContexts = new WeakMap<WebSocket, AuthContext>();
+
+// WebSocket close codes
+const WS_CLOSE_NO_TOKEN = 4001;
+const WS_CLOSE_INVALID_TOKEN = 4002;
+const WS_CLOSE_ACCESS_DENIED = 4003;
 
 // ============================================================================
 // WebSocket Event Broadcasting
@@ -61,13 +80,40 @@ export function broadcastEvent(event: BookEvent): void {
 
 /**
  * Subscribe a WebSocket to a book's events
+ * Returns true if successful, false if access denied
  */
-function subscribeToBook(ws: WebSocket, bookId: string): void {
+function subscribeToBook(ws: WebSocket, bookId: string): boolean {
+  // Verify ownership before subscribing
+  const authContext = wsAuthContexts.get(ws);
+  if (!authContext) {
+    console.log(`[book-studio-ws] No auth context for subscription`);
+    return false;
+  }
+
+  // Check if user owns the book
+  const db = getDatabase();
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as DbBook | undefined;
+
+  if (!book) {
+    console.log(`[book-studio-ws] Book not found: ${bookId}`);
+    return false;
+  }
+
+  // Allow if:
+  // - Book has no owner (legacy data)
+  // - User is the owner
+  // - User is admin
+  if (book.user_id && book.user_id !== authContext.userId && authContext.role !== 'admin') {
+    console.log(`[book-studio-ws] Access denied to book ${bookId} for user ${authContext.userId}`);
+    return false;
+  }
+
   if (!subscriptions.has(bookId)) {
     subscriptions.set(bookId, new Set());
   }
   subscriptions.get(bookId)!.add(ws);
   console.log(`[book-studio-ws] Subscribed to book ${bookId}`);
+  return true;
 }
 
 /**
@@ -168,11 +214,84 @@ function createApp(): Express {
 // WebSocket Server Setup
 // ============================================================================
 
-function setupWebSocket(server: HttpServer): WebSocketServer {
-  const wsServer = new WebSocketServer({ server, path: '/ws' });
+/**
+ * Validate JWT token from WebSocket connection query params
+ */
+async function validateWsToken(request: IncomingMessage): Promise<AuthContext | null> {
+  // Skip auth if not enabled (development mode)
+  if (!isAuthEnabled()) {
+    return {
+      userId: 'dev-user',
+      email: 'dev@localhost',
+      role: 'admin',
+      tier: 'admin',
+    };
+  }
 
-  wsServer.on('connection', (ws: WebSocket) => {
-    console.log('[book-studio-ws] Client connected');
+  try {
+    // Parse URL to get token from query params
+    const url = new URL(request.url || '', `http://${request.headers.host}`);
+    const token = url.searchParams.get('token');
+
+    if (!token) {
+      return null;
+    }
+
+    const jose = await getJose();
+    const secret = getJwtSecret();
+    const { payload } = await jose.jwtVerify(token, secret, {
+      algorithms: ['HS256'],
+    });
+
+    const userId = payload.sub as string;
+    const email = (payload.email as string) || '';
+    const role = (payload.role as AuthContext['role']) || 'free';
+    const tier = (payload.tier as string) || role;
+
+    if (!userId) {
+      return null;
+    }
+
+    return { userId, email, role, tier };
+  } catch (error) {
+    console.warn('[book-studio-ws] Token validation error:', error);
+    return null;
+  }
+}
+
+function setupWebSocket(server: HttpServer): WebSocketServer {
+  const wsServer = new WebSocketServer({
+    server,
+    path: '/ws',
+    verifyClient: async ({ req }, callback) => {
+      // Validate token before accepting connection
+      const authContext = await validateWsToken(req);
+
+      if (!authContext) {
+        console.log('[book-studio-ws] Connection rejected: no valid token');
+        callback(false, 401, 'Unauthorized');
+        return;
+      }
+
+      // Store auth context temporarily for use in connection handler
+      (req as IncomingMessage & { authContext?: AuthContext }).authContext = authContext;
+      callback(true);
+    },
+  });
+
+  wsServer.on('connection', (ws: WebSocket, request: IncomingMessage) => {
+    // Get auth context from request (set during verification)
+    const authContext = (request as IncomingMessage & { authContext?: AuthContext }).authContext;
+
+    if (!authContext) {
+      // This shouldn't happen since verifyClient checks, but just in case
+      ws.close(WS_CLOSE_NO_TOKEN, 'No auth context');
+      return;
+    }
+
+    // Store auth context for this WebSocket
+    wsAuthContexts.set(ws, authContext);
+    console.log(`[book-studio-ws] Client connected: ${authContext.userId}`);
 
     ws.on('message', (data: Buffer) => {
       try {
@@ -181,8 +300,12 @@ function setupWebSocket(server: HttpServer): WebSocketServer {
         switch (message.type) {
           case 'subscribe':
             if (message.bookId) {
-              subscribeToBook(ws, message.bookId);
-              ws.send(JSON.stringify({ type: 'subscribed', bookId: message.bookId }));
+              const success = subscribeToBook(ws, message.bookId);
+              if (success) {
+                ws.send(JSON.stringify({ type: 'subscribed', bookId: message.bookId }));
+              } else {
+                ws.send(JSON.stringify({ type: 'error', code: 'ACCESS_DENIED', message: 'Access denied to book' }));
+              }
             }
             break;
 
@@ -316,5 +439,6 @@ export function getWss(): WebSocketServer | null {
   return wss;
 }
 
-// Re-export config
+// Re-export config and auth
 export { getConfig };
+export { initAuth };

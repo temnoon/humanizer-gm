@@ -60,11 +60,16 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [loadingContent, setLoadingContent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);  // DEBT-003 FIX: Track errors
+  const [thumbnailError, setThumbnailError] = useState(false);  // Track thumbnail load errors
   const status = passage.curation?.status || 'candidate';
   const text = passage.text || '';
   const conversationId = passage.sourceRef?.conversationId;
   const conversationFolder = passage.sourceRef?.conversationFolder;  // Use folder for API calls
   const conversationTitle = passage.sourceRef?.conversationTitle || 'Unknown Source';
+
+  // Media/thumbnail support
+  const media = (passage as { media?: { thumbnail?: string; images?: string[]; imageCount?: number } }).media;
+  const hasThumbnail = media?.thumbnail && !thumbnailError;
 
   // Show full content if loaded, otherwise show indexed text
   const displayText = fullContent || text;
@@ -127,12 +132,28 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
 
   return (
     <div
-      className={`harvest-card harvest-card--${status} ${isExpanded ? 'harvest-card--expanded' : ''}`}
+      className={`harvest-card harvest-card--${status} ${isExpanded ? 'harvest-card--expanded' : ''} ${hasThumbnail ? 'harvest-card--has-media' : ''}`}
       onClick={onSelect}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onSelect?.()}
     >
+      {/* Thumbnail for visual passages */}
+      {hasThumbnail && (
+        <div className="harvest-card__thumbnail">
+          <img
+            src={`file://${media!.thumbnail}`}
+            alt={conversationTitle}
+            className="harvest-card__thumbnail-img"
+            onError={() => setThumbnailError(true)}
+          />
+          {media!.imageCount && media!.imageCount > 1 && (
+            <span className="harvest-card__image-count">
+              +{media!.imageCount - 1}
+            </span>
+          )}
+        </div>
+      )}
       <div className="harvest-card__content">
         <div className="harvest-card__header">
           <div className="harvest-card__source">

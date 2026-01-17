@@ -1,0 +1,308 @@
+/* ═══════════════════════════════════════════════════════════════════
+   UPGRADE PROMPT MODAL
+   Shown when users hit quota or tier limits
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Modal Container */
+.upgrade-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 3rem;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  overflow-y: auto;
+}
+
+.upgrade-modal__content {
+  width: 100%;
+  max-width: 720px;
+  margin: 1rem;
+  padding: 1.5rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* Header */
+.upgrade-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.upgrade-modal__title {
+  font-family: Georgia, serif;
+  font-size: 1.375rem;
+  font-weight: normal;
+  color: var(--studio-text);
+  margin: 0;
+}
+
+.upgrade-modal__close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: var(--studio-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.upgrade-modal__close:hover {
+  background: var(--studio-hover);
+  color: var(--studio-text);
+}
+
+/* Description */
+.upgrade-modal__description {
+  margin-bottom: 1.25rem;
+  color: var(--studio-text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.upgrade-modal__description p {
+  margin: 0 0 0.5rem 0;
+}
+
+.upgrade-modal__feature-desc {
+  padding: 0.75rem;
+  background: var(--studio-hover);
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.upgrade-modal__feature-desc strong {
+  color: var(--studio-text);
+}
+
+/* Usage stats (for quota exceeded) */
+.upgrade-modal__usage {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 8px;
+}
+
+.upgrade-modal__usage-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.upgrade-modal__usage-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #dc2626;
+}
+
+.upgrade-modal__usage-value {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--studio-text);
+}
+
+/* Error */
+.upgrade-modal__error {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
+/* Tier options */
+.upgrade-modal__tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.upgrade-modal__tier {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 10px;
+  transition: all 0.15s ease;
+}
+
+.upgrade-modal__tier:hover {
+  border-color: var(--studio-accent);
+}
+
+.upgrade-modal__tier--recommended {
+  border-color: var(--studio-accent);
+  background: rgba(var(--studio-accent-rgb), 0.05);
+}
+
+.upgrade-modal__tier-badge {
+  position: absolute;
+  top: -0.5rem;
+  left: 1rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: white;
+  background: var(--studio-accent);
+  border-radius: 4px;
+}
+
+.upgrade-modal__tier-name {
+  font-family: Georgia, serif;
+  font-size: 1.125rem;
+  font-weight: normal;
+  color: var(--studio-text);
+  margin: 0 0 0.5rem 0;
+}
+
+.upgrade-modal__tier-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.upgrade-modal__tier-amount {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.upgrade-modal__tier-period {
+  font-size: 0.875rem;
+  color: var(--studio-text-secondary);
+}
+
+.upgrade-modal__tier-features {
+  flex: 1;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 0;
+  font-size: 0.8125rem;
+  color: var(--studio-text-secondary);
+  line-height: 1.6;
+}
+
+.upgrade-modal__tier-features li {
+  position: relative;
+  padding-left: 1.25rem;
+}
+
+.upgrade-modal__tier-features li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #16a34a;
+}
+
+.upgrade-modal__tier-btn {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--studio-border);
+  background: var(--studio-hover);
+  color: var(--studio-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.upgrade-modal__tier-btn:hover:not(:disabled) {
+  background: var(--studio-border);
+}
+
+.upgrade-modal__tier-btn--primary {
+  background: var(--studio-accent);
+  border-color: var(--studio-accent);
+  color: white;
+}
+
+.upgrade-modal__tier-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  background: var(--studio-accent);
+}
+
+.upgrade-modal__tier-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Footer */
+.upgrade-modal__footer {
+  padding-top: 1rem;
+  border-top: 1px solid var(--studio-border);
+  text-align: center;
+}
+
+.upgrade-modal__footer-text {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  margin: 0;
+}
+
+/* Dark mode adjustments */
+[data-theme='dark'] .upgrade-modal__usage {
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+[data-theme='dark'] .upgrade-modal__usage-label {
+  color: #f87171;
+}
+
+[data-theme='dark'] .upgrade-modal__error {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+[data-theme='dark'] .upgrade-modal__tier-features li::before {
+  color: #4ade80;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .upgrade-modal {
+    padding-top: 1rem;
+  }
+
+  .upgrade-modal__content {
+    margin: 0.5rem;
+    padding: 1rem;
+  }
+
+  .upgrade-modal__tiers {
+    grid-template-columns: 1fr;
+  }
+
+  .upgrade-modal__usage {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}

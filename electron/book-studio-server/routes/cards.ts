@@ -2,14 +2,29 @@
  * Cards API Routes
  *
  * Handles harvest cards - the building blocks of books.
+ * All routes require authentication and verify book ownership.
  */
 
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateId, now, DbCard } from '../database';
+import { getDatabase, generateId, now, DbCard, DbBook } from '../database';
 import { broadcastEvent } from '../server';
+import { requireAuth, getUserId, isOwner } from '../middleware/auth';
 
 export function createCardsRouter(): Router {
   const router = Router();
+
+  // Apply auth middleware to all routes
+  router.use(requireAuth());
+
+  // Helper to verify book ownership
+  function verifyBookOwnership(bookId: string, req: Request): DbBook | null {
+    const db = getDatabase();
+    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as DbBook | undefined;
+    if (!book || !isOwner(req, book.user_id)) {
+      return null;
+    }
+    return book;
+  }
 
   // GET /api/cards?bookId=xxx&status=staging - List cards
   router.get('/', (req: Request, res: Response) => {
@@ -18,6 +33,11 @@ export function createCardsRouter(): Router {
 
       if (!bookId) {
         return res.status(400).json({ error: 'bookId is required' });
+      }
+
+      // Verify book ownership
+      if (!verifyBookOwnership(bookId as string, req)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       const db = getDatabase();
@@ -67,6 +87,11 @@ export function createCardsRouter(): Router {
         return res.status(404).json({ error: 'Card not found' });
       }
 
+      // Verify book ownership
+      if (!verifyBookOwnership(card.book_id, req)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
       res.json({ card: parseCardJsonFields(card) });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
@@ -76,6 +101,7 @@ export function createCardsRouter(): Router {
   // POST /api/cards - Create a new card (harvest)
   router.post('/', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const {
         bookId,
         sourceId,
@@ -106,14 +132,13 @@ export function createCardsRouter(): Router {
         return res.status(400).json({ error: 'bookId, sourceId, sourceType, source, and content are required' });
       }
 
-      const db = getDatabase();
-
-      // Verify book exists
-      const book = db.prepare('SELECT id FROM books WHERE id = ?').get(bookId);
+      // Verify book ownership
+      const book = verifyBookOwnership(bookId, req);
       if (!book) {
-        return res.status(404).json({ error: 'Book not found' });
+        return res.status(403).json({ error: 'Access denied' });
       }
 
+      const db = getDatabase();
       const id = generateId();
       const timestamp = now();
 
@@ -123,8 +148,8 @@ export function createCardsRouter(): Router {
           title, author_name, similarity, source_created_at, source_created_at_status,
           harvested_at, source_url, conversation_id, conversation_title,
           user_notes, ai_context, ai_summary, tags, canvas_position, status,
-          metadata, grade, is_outline, outline_structure, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          metadata, grade, is_outline, outline_structure, user_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, bookId, sourceId, sourceType, source, contentOrigin, content,
         title || null, authorName || null, similarity || null,
@@ -135,7 +160,7 @@ export function createCardsRouter(): Router {
         'staging', metadata ? JSON.stringify(metadata) : null,
         grade ? JSON.stringify(grade) : null, isOutline ? 1 : 0,
         outlineStructure ? JSON.stringify(outlineStructure) : null,
-        timestamp, timestamp
+        userId, timestamp, timestamp
       );
 
       // Update book's updated_at
@@ -162,20 +187,20 @@ export function createCardsRouter(): Router {
   // POST /api/cards/batch - Harvest multiple cards
   router.post('/batch', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { bookId, cards: cardsData } = req.body;
 
       if (!bookId || !Array.isArray(cardsData) || cardsData.length === 0) {
         return res.status(400).json({ error: 'bookId and cards array are required' });
       }
 
-      const db = getDatabase();
-
-      // Verify book exists
-      const book = db.prepare('SELECT id FROM books WHERE id = ?').get(bookId);
+      // Verify book ownership
+      const book = verifyBookOwnership(bookId, req);
       if (!book) {
-        return res.status(404).json({ error: 'Book not found' });
+        return res.status(403).json({ error: 'Access denied' });
       }
 
+      const db = getDatabase();
       const timestamp = now();
       const createdCards: DbCard[] = [];
 
@@ -185,8 +210,8 @@ export function createCardsRouter(): Router {
           title, author_name, similarity, source_created_at, source_created_at_status,
           harvested_at, source_url, conversation_id, conversation_title,
           user_notes, ai_context, ai_summary, tags, canvas_position, status,
-          metadata, grade, is_outline, outline_structure, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          metadata, grade, is_outline, outline_structure, user_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const insertMany = db.transaction((items: typeof cardsData) => {
@@ -206,7 +231,7 @@ export function createCardsRouter(): Router {
             item.grade ? JSON.stringify(item.grade) : null,
             item.isOutline ? 1 : 0,
             item.outlineStructure ? JSON.stringify(item.outlineStructure) : null,
-            timestamp, timestamp
+            userId, timestamp, timestamp
           );
           const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(id) as DbCard;
           createdCards.push(card);
@@ -241,6 +266,11 @@ export function createCardsRouter(): Router {
       const existing = db.prepare('SELECT * FROM cards WHERE id = ?').get(req.params.id) as DbCard | undefined;
       if (!existing) {
         return res.status(404).json({ error: 'Card not found' });
+      }
+
+      // Verify book ownership
+      if (!verifyBookOwnership(existing.book_id, req)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       const {
@@ -334,6 +364,11 @@ export function createCardsRouter(): Router {
         return res.status(404).json({ error: 'Card not found' });
       }
 
+      // Verify book ownership
+      if (!verifyBookOwnership(existing.book_id, req)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
       db.prepare('DELETE FROM cards WHERE id = ?').run(req.params.id);
 
       // Update book's updated_at
@@ -363,6 +398,11 @@ export function createCardsRouter(): Router {
       const existing = db.prepare('SELECT * FROM cards WHERE id = ?').get(req.params.id) as DbCard | undefined;
       if (!existing) {
         return res.status(404).json({ error: 'Card not found' });
+      }
+
+      // Verify book ownership
+      if (!verifyBookOwnership(existing.book_id, req)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       const timestamp = now();

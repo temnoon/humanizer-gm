@@ -433,6 +433,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
       },
     },
   },
+
+  // AI Configuration (API keys, model config, usage)
+  aiConfig: {
+    // Provider management
+    getProviders: () => ipcRenderer.invoke('ai-config:get-providers'),
+    setApiKey: (provider: string, apiKey: string) =>
+      ipcRenderer.invoke('ai-config:set-api-key', provider, apiKey),
+    removeKey: (provider: string) =>
+      ipcRenderer.invoke('ai-config:remove-key', provider),
+    validateKey: (provider: string) =>
+      ipcRenderer.invoke('ai-config:validate-key', provider),
+
+    // Usage statistics
+    getUsage: () => ipcRenderer.invoke('ai-config:get-usage'),
+    getUsageStats: () => ipcRenderer.invoke('ai-config:get-usage-stats'),
+
+    // Usage tracking & sync
+    syncUsage: (authToken: string) =>
+      ipcRenderer.invoke('ai-config:sync-usage', authToken),
+    getRemoteMetrics: (authToken: string) =>
+      ipcRenderer.invoke('ai-config:get-remote-metrics', authToken),
+    clearLocalUsage: () => ipcRenderer.invoke('ai-config:clear-local-usage'),
+    exportUsage: () => ipcRenderer.invoke('ai-config:export-usage'),
+    importUsage: (data: { records: unknown[] }) =>
+      ipcRenderer.invoke('ai-config:import-usage', data),
+
+    // Model configuration
+    getModelConfig: () => ipcRenderer.invoke('ai-config:get-model-config'),
+    setModelConfig: (updates: Record<string, unknown>) =>
+      ipcRenderer.invoke('ai-config:set-model-config', updates),
+
+    // Provider health
+    getHealth: () => ipcRenderer.invoke('ai-config:get-health'),
+  },
 } as ElectronAPI);
 
 // Flag to detect Electron environment

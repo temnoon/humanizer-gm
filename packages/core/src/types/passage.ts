@@ -82,6 +82,20 @@ export interface SourcePassage {
   threadRefs?: EntityURI[];
 
   // ─────────────────────────────────────────────────────────────────
+  // Media attachments (for visual content)
+  // ─────────────────────────────────────────────────────────────────
+
+  /** Associated media for visual passages */
+  media?: {
+    /** Path to thumbnail image (first/representative image) */
+    thumbnail?: string;
+    /** All image paths associated with this passage */
+    images?: string[];
+    /** Total image count */
+    imageCount?: number;
+  };
+
+  // ─────────────────────────────────────────────────────────────────
   // Legacy aliases (for backward compatibility)
   // TODO: Remove after migration
   // ─────────────────────────────────────────────────────────────────

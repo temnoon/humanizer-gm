@@ -177,6 +177,38 @@ const MIGRATIONS = [
 
   INSERT OR IGNORE INTO schema_version (version) VALUES (1);
   `,
+
+  // Migration 2: Add user_id columns for multi-tenant support
+  `
+  -- Add user_id to books
+  ALTER TABLE books ADD COLUMN user_id TEXT;
+
+  -- Add user_id to chapters
+  ALTER TABLE chapters ADD COLUMN user_id TEXT;
+
+  -- Add user_id to cards
+  ALTER TABLE cards ADD COLUMN user_id TEXT;
+
+  -- Add user_id to clusters
+  ALTER TABLE clusters ADD COLUMN user_id TEXT;
+
+  -- Add user_id to outlines
+  ALTER TABLE outlines ADD COLUMN user_id TEXT;
+
+  -- Add user_id to events
+  ALTER TABLE events ADD COLUMN user_id TEXT;
+
+  -- Create indexes for user_id columns
+  CREATE INDEX IF NOT EXISTS idx_books_user_id ON books(user_id);
+  CREATE INDEX IF NOT EXISTS idx_chapters_user_id ON chapters(user_id);
+  CREATE INDEX IF NOT EXISTS idx_cards_user_id ON cards(user_id);
+  CREATE INDEX IF NOT EXISTS idx_clusters_user_id ON clusters(user_id);
+  CREATE INDEX IF NOT EXISTS idx_outlines_user_id ON outlines(user_id);
+  CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
+
+  -- Update schema version
+  INSERT OR IGNORE INTO schema_version (version) VALUES (2);
+  `,
 ];
 
 /**
@@ -212,6 +244,7 @@ export interface DbBook {
   description: string | null;
   author_id: string | null;
   target_word_count: number | null;
+  user_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -224,6 +257,7 @@ export interface DbChapter {
   content: string | null;
   draft_instructions: string | null;
   word_count: number;
+  user_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -256,6 +290,7 @@ export interface DbCard {
   grade: string | null; // JSON object
   is_outline: number;
   outline_structure: string | null; // JSON object
+  user_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -268,6 +303,7 @@ export interface DbCluster {
   locked: number;
   seed_card_id: string | null;
   centroid: string | null; // JSON array
+  user_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -279,6 +315,7 @@ export interface DbOutline {
   generated_at: number;
   source: string | null;
   confidence: number | null;
+  user_id: string | null;
   created_at: number;
 }
 
@@ -289,6 +326,7 @@ export interface DbEvent {
   entity_type: string | null;
   entity_id: string | null;
   payload: string | null;
+  user_id: string | null;
   created_at: number;
 }
 

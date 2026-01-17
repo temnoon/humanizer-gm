@@ -71,11 +71,13 @@ export async function initializeEmbedding(): Promise<void> {
   await initPromise;
 }
 
-// Maximum characters to embed (nomic-embed-text has ~8k token context)
-const MAX_TEXT_LENGTH = 24000;
+// Target ~1000 tokens per chunk (pyramid L0 spec), ~4 chars per token
+const MAX_CHUNK_CHARS = 4000;
 
 /**
- * Generate embedding for a single text using Ollama API
+ * Generate embedding for a single text using Ollama API.
+ * NEVER truncates - if text is too long, caller must pre-chunk.
+ * Throws error if text exceeds safe limit to catch missing chunking.
  */
 export async function embed(text: string): Promise<number[]> {
   await initializeEmbedding();
@@ -85,10 +87,12 @@ export async function embed(text: string): Promise<number[]> {
     return new Array(EMBEDDING_DIM).fill(0);
   }
 
-  // Truncate very long texts to avoid API errors
-  let inputText = text;
-  if (text.length > MAX_TEXT_LENGTH) {
-    inputText = text.slice(0, MAX_TEXT_LENGTH);
+  // Warn if content is longer than recommended (caller should pre-chunk)
+  if (text.length > MAX_CHUNK_CHARS) {
+    console.warn(
+      `[embeddings] Content is ${text.length} chars (recommended max: ${MAX_CHUNK_CHARS}). ` +
+      `Consider pre-chunking with chunkForEmbedding().`
+    );
   }
 
   // Call Ollama embedding API
@@ -97,7 +101,7 @@ export async function embed(text: string): Promise<number[]> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: EMBEDDING_MODEL,
-      input: inputText
+      input: text
     })
   });
 
@@ -291,4 +295,128 @@ export function findFurthest(
   distances.sort((a, b) => b.distance - a.distance);
 
   return distances.slice(0, k);
+}
+
+// ============================================================================
+// Chunking for Embeddings (Pyramid L0 spec)
+// ============================================================================
+
+/**
+ * Export chunk size for use by callers
+ */
+export { MAX_CHUNK_CHARS };
+
+/**
+ * Chunk text for embedding following pyramid L0 spec:
+ * - Target ~1000 tokens (~4000 chars) per chunk
+ * - Never split mid-sentence
+ * - Prefer paragraph boundaries
+ */
+export function chunkForEmbedding(text: string): string[] {
+  if (text.length <= MAX_CHUNK_CHARS) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+
+  // First try splitting on paragraph boundaries (double newline)
+  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+
+  if (paragraphs.length > 1) {
+    let currentChunk = '';
+
+    for (const para of paragraphs) {
+      if (currentChunk.length + para.length + 2 <= MAX_CHUNK_CHARS) {
+        currentChunk += (currentChunk ? '\n\n' : '') + para;
+      } else {
+        if (currentChunk.length > 0) {
+          chunks.push(currentChunk);
+        }
+        // If paragraph itself is too long, chunk it by sentences
+        if (para.length > MAX_CHUNK_CHARS) {
+          chunks.push(...chunkBySentences(para));
+          currentChunk = '';
+        } else {
+          currentChunk = para;
+        }
+      }
+    }
+
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+
+    return chunks;
+  }
+
+  // No paragraph breaks - fall back to sentence splitting
+  return chunkBySentences(text);
+}
+
+/**
+ * Chunk by sentence boundaries (never split mid-sentence)
+ */
+function chunkBySentences(text: string): string[] {
+  // Split on sentence endings: . ! ? followed by space/newline
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length + 1 <= MAX_CHUNK_CHARS) {
+      currentChunk += (currentChunk ? ' ' : '') + sentence;
+    } else {
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+      }
+      // If single sentence is too long, split on clause boundaries
+      if (sentence.length > MAX_CHUNK_CHARS) {
+        chunks.push(...chunkByClauses(sentence));
+        currentChunk = '';
+      } else {
+        currentChunk = sentence;
+      }
+    }
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+/**
+ * Last resort: chunk on clause boundaries (commas, semicolons)
+ * Still try to avoid hard splits
+ */
+function chunkByClauses(text: string): string[] {
+  const clauses = text.split(/(?<=[,;:])\s+/);
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const clause of clauses) {
+    if (currentChunk.length + clause.length + 1 <= MAX_CHUNK_CHARS) {
+      currentChunk += (currentChunk ? ' ' : '') + clause;
+    } else {
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+      }
+      // If even a clause is too long, we must hard split (rare)
+      if (clause.length > MAX_CHUNK_CHARS) {
+        for (let i = 0; i < clause.length; i += MAX_CHUNK_CHARS) {
+          chunks.push(clause.slice(i, i + MAX_CHUNK_CHARS));
+        }
+        currentChunk = '';
+      } else {
+        currentChunk = clause;
+      }
+    }
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
 }

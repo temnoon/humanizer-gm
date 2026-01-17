@@ -138,6 +138,68 @@ export function createEmbeddingsRouter(): Router {
     }
   });
 
+  // Extract content blocks only (skip message embedding phase)
+  router.post('/extract-blocks', async (req: Request, res: Response) => {
+    try {
+      // Check if already indexing
+      if (indexingProgress?.status === 'indexing') {
+        res.status(409).json({
+          status: 'already_running',
+          message: 'Indexing is already in progress',
+          progress: indexingProgress,
+        });
+        return;
+      }
+
+      const indexer = getOrCreateIndexer();
+
+      // Set initial progress
+      indexingProgress = {
+        status: 'indexing',
+        phase: 'extracting_content_blocks',
+        current: 0,
+        total: 0,
+        startedAt: Date.now(),
+      };
+
+      // Respond immediately
+      res.json({
+        status: 'started',
+        message: 'Content block extraction started (skipping message embedding)',
+      });
+
+      // Run extraction in background
+      indexer.extractAndEmbedContentBlocks({
+        onProgress: (progress: IndexingProgress) => {
+          indexingProgress = progress;
+          console.log(`[embeddings] Content blocks: ${progress.current} extracted`);
+        },
+      })
+        .then(() => {
+          console.log('[embeddings] Content block extraction complete');
+          indexingProgress = {
+            status: 'idle',
+            phase: 'done',
+            current: 0,
+            total: 0,
+          };
+        })
+        .catch((err: Error) => {
+          console.error('[embeddings] Content block extraction failed:', err);
+          indexingProgress = {
+            status: 'error',
+            phase: 'failed',
+            current: 0,
+            total: 0,
+            error: err.message,
+          };
+        });
+
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // Archive health check - what's missing?
   router.get('/health', async (_req: Request, res: Response) => {
     try {
@@ -720,6 +782,52 @@ export function createEmbeddingsRouter(): Router {
         needsEmbedding: needsEmbedding.length,
       });
     } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // CLEANUP - Remove junk embeddings
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Preview what would be cleaned up (dry run)
+   * GET /api/embeddings/cleanup/preview
+   */
+  router.get('/cleanup/preview', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDb();
+      const result = db.cleanupJunkEmbeddings(true); // dry run
+
+      res.json({
+        dryRun: true,
+        ...result,
+        message: `Would remove ${result.removed} junk embeddings from ${result.totalBefore} total`,
+      });
+    } catch (err) {
+      console.error('[embeddings] Cleanup preview error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * Actually perform the cleanup
+   * POST /api/embeddings/cleanup
+   */
+  router.post('/cleanup', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDb();
+      const result = db.cleanupJunkEmbeddings(false); // actual delete
+
+      console.log(`[embeddings] Cleanup complete: removed ${result.removed} junk embeddings`);
+
+      res.json({
+        dryRun: false,
+        ...result,
+        message: `Removed ${result.removed} junk embeddings. ${result.totalBefore - result.removed} embeddings remain.`,
+      });
+    } catch (err) {
+      console.error('[embeddings] Cleanup error:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });

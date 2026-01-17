@@ -100,6 +100,9 @@ export interface ElectronAPI {
 
   // Xanadu Unified Storage (books, personas, styles, passages, chapters)
   xanadu: XanaduAPI;
+
+  // AI Configuration (API keys, model config, usage)
+  aiConfig: AIConfigAPI;
 }
 
 export interface CloudDrive {
@@ -175,4 +178,68 @@ export interface TranscribeProgress {
   status: 'loading' | 'transcribing' | 'complete' | 'error';
   progress: number;
   message?: string;
+}
+
+// AI Configuration types
+export interface AIConfigAPI {
+  // Provider management
+  getProviders: () => Promise<ProviderStatus[]>;
+  setApiKey: (provider: string, apiKey: string) => Promise<{ success: boolean; error?: string }>;
+  removeKey: (provider: string) => Promise<{ success: boolean; error?: string }>;
+  validateKey: (provider: string) => Promise<{ valid: boolean; error?: string }>;
+
+  // Usage statistics
+  getUsage: () => Promise<UsageStats>;
+
+  // Model configuration
+  getModelConfig: () => Promise<{
+    defaultModel: string;
+    ollamaUrl: string;
+    preferLocal: boolean;
+    cloudflareAccountId?: string;
+  }>;
+  setModelConfig: (updates: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
+
+  // Provider health
+  getHealth: () => Promise<Record<string, { available: boolean; failCount: number; cooldownRemaining: number }>>;
+}
+
+export interface ProviderStatus {
+  provider: string;
+  configured: boolean;
+  encrypted: boolean;
+  enabled: boolean;
+  endpoint?: string;
+  health?: {
+    available: boolean;
+    failCount: number;
+    cooldownRemaining: number;
+  };
+}
+
+export interface UsageStats {
+  daily: {
+    totalTokens: number;
+    totalCost: number;
+    requestCount: number;
+    successRate: number;
+    formatted: {
+      tokens: string;
+      cost: string;
+    };
+  };
+  monthly: {
+    totalTokens: number;
+    totalCost: number;
+    requestCount: number;
+    successRate: number;
+    formatted: {
+      tokens: string;
+      cost: string;
+    };
+  };
+  projected: {
+    monthlyCost: number;
+    formatted: string;
+  };
 }

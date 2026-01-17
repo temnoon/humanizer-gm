@@ -8,7 +8,7 @@
 
 import type Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = 16;  // Added fb_groups tables for group data
+export const SCHEMA_VERSION = 17;  // Added content_blocks for granular content extraction
 export const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 export class EmbeddingMigrations {
@@ -1565,6 +1565,67 @@ export class EmbeddingMigrations {
         CREATE INDEX IF NOT EXISTS idx_fb_group_content_type ON fb_group_content(type);
       `);
       console.log('[migration] v16 complete: fb_groups tables created');
+    }
+
+    // Migration from version 16 to 17: Add content_blocks for granular content extraction
+    if (fromVersion < 17) {
+      this.db.exec(`
+        -- Content blocks extracted from messages (code, prompts, artifacts, etc.)
+        CREATE TABLE IF NOT EXISTS content_blocks (
+          id TEXT PRIMARY KEY,
+          parent_message_id TEXT NOT NULL,
+          parent_conversation_id TEXT NOT NULL,
+
+          -- Block metadata
+          block_type TEXT NOT NULL,  -- code, image_prompt, artifact, canvas, transcription, prose, json_data
+          language TEXT,             -- For code blocks: python, typescript, etc.
+          content TEXT NOT NULL,
+
+          -- Position in source message
+          start_offset INTEGER,
+          end_offset INTEGER,
+
+          -- Context from parent conversation
+          conversation_title TEXT,
+          gizmo_id TEXT,             -- Custom GPT identifier (e.g., Journal Recognizer)
+          created_at REAL,           -- Unix timestamp from conversation/message
+
+          -- Additional metadata (JSON)
+          metadata TEXT,
+
+          -- Embedding reference
+          embedding_id TEXT,
+
+          -- Timestamps
+          extracted_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+
+          FOREIGN KEY (parent_message_id) REFERENCES messages(id) ON DELETE CASCADE
+        );
+
+        -- Indexes for efficient queries
+        CREATE INDEX IF NOT EXISTS idx_content_blocks_message ON content_blocks(parent_message_id);
+        CREATE INDEX IF NOT EXISTS idx_content_blocks_conversation ON content_blocks(parent_conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_content_blocks_type ON content_blocks(block_type);
+        CREATE INDEX IF NOT EXISTS idx_content_blocks_gizmo ON content_blocks(gizmo_id);
+        CREATE INDEX IF NOT EXISTS idx_content_blocks_created ON content_blocks(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_content_blocks_language ON content_blocks(language);
+      `);
+
+      // Create vector table for content block embeddings
+      if (this.vecLoaded) {
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS vec_content_blocks USING vec0(
+            id TEXT PRIMARY KEY,
+            block_id TEXT,
+            block_type TEXT,
+            gizmo_id TEXT,
+            embedding float[${EMBEDDING_DIM}]
+          );
+        `);
+        console.log('[migration] Created vec_content_blocks vector table');
+      }
+
+      console.log('[migration] v17 complete: content_blocks table created for granular extraction');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);

@@ -19,6 +19,7 @@ export interface Conversation {
   isInteresting: boolean;
   summary: string | null;
   summaryEmbeddingId: string | null;
+  metadata?: string | Record<string, unknown>;  // Optional metadata (gizmo_id, etc.)
 }
 
 export interface Message {

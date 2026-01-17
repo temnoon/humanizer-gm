@@ -26,8 +26,15 @@ export {
   getWss as getBookStudioWss,
   broadcastEvent,
   getConfig,
+  initAuth as initBookStudioAuth,
   type BookEvent,
 } from './server';
+
+// Re-export auth types and utilities
+export {
+  type AuthContext,
+  type AuthenticatedRequest,
+} from './middleware/auth';
 
 // Re-export database utilities
 export {

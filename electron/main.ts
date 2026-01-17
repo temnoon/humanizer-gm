@@ -34,7 +34,8 @@ import {
 import { startNpeLocalServer, stopNpeLocalServer, isNpeLocalServerRunning, getNpeLocalPort } from './npe-local';
 
 // Embedded Book Studio Server (Books, Chapters, Cards)
-import { startBookStudioServer, stopBookStudioServer, isBookStudioServerRunning } from './book-studio-server';
+import { startBookStudioServer, stopBookStudioServer, isBookStudioServerRunning, initBookStudioAuth } from './book-studio-server';
+import * as crypto from 'crypto';
 
 // Whisper (local speech-to-text)
 import { initWhisper, registerWhisperHandlers } from './whisper/whisper-manager';
@@ -45,6 +46,10 @@ import { registerAgentHandlers } from './ipc/agents';
 import { registerChatHandlers } from './ipc/chat';
 import { registerQueueHandlers } from './ipc/queue';
 import { registerAgentMasterHandlers } from './ipc/agent-master';
+import { registerAIConfigHandlers } from './ipc/ai-config';
+
+// Usage tracking (persistence)
+import { initUsageTracker, shutdownUsageTracker } from './services/usage-tracker';
 
 // Set app name for macOS menu bar (development mode)
 // In production, this comes from electron-builder.json productName
@@ -270,6 +275,27 @@ async function startBookStudio(): Promise<number | null> {
   console.log(`Starting embedded book-studio server on port ${port}...`);
 
   try {
+    // Initialize JWT auth for production builds
+    // In development, auth is optional (dev mode with admin access)
+    if (app.isPackaged) {
+      // Get or generate JWT secret
+      let jwtSecret = store.get('jwtSecret') as string | undefined;
+      if (!jwtSecret) {
+        // Generate a new 64-character hex secret (256 bits)
+        jwtSecret = crypto.randomBytes(32).toString('hex');
+        store.set('jwtSecret', jwtSecret);
+        console.log('[book-studio] Generated new JWT secret');
+      }
+      initBookStudioAuth(jwtSecret);
+      console.log('[book-studio] JWT auth enabled');
+    } else if (process.env.JWT_SECRET) {
+      // Dev mode with explicit JWT_SECRET env var
+      initBookStudioAuth(process.env.JWT_SECRET);
+      console.log('[book-studio] JWT auth enabled (from env)');
+    } else {
+      console.log('[book-studio] Dev mode - auth disabled (admin access)');
+    }
+
     const serverUrl = await startBookStudioServer(port);
     console.log('Book Studio server ready:', serverUrl);
     bookStudioPort = port;
@@ -695,6 +721,7 @@ app.whenReady().then(async () => {
   registerIPCHandlers();
   registerAgentMasterHandlers();
   registerAgentHandlers(() => mainWindow);
+  registerAIConfigHandlers();
   registerChatHandlers({
     getMainWindow: () => mainWindow,
     getStore: () => store,
@@ -736,6 +763,9 @@ app.whenReady().then(async () => {
   // Always start npe-local server for AI detection and transformations
   await startNpeLocal();
 
+  // Initialize usage tracker (persist LLM usage to disk)
+  initUsageTracker();
+
   // Start Book Studio server for books, chapters, cards
   await startBookStudio();
 
@@ -769,6 +799,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   console.log('Shutting down...');
+  shutdownUsageTracker();
   stopArchiveServer();
   stopNpeLocal();
   stopBookStudio();

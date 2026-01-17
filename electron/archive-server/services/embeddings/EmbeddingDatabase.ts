@@ -1174,6 +1174,76 @@ export class EmbeddingDatabase {
   }
 
   // ===========================================================================
+  // Content Blocks - Delegated to ContentOperations and VectorOperations
+  // ===========================================================================
+
+  insertContentBlock(block: {
+    id: string;
+    parentMessageId: string;
+    parentConversationId: string;
+    blockType: string;
+    language?: string;
+    content: string;
+    startOffset?: number;
+    endOffset?: number;
+    conversationTitle?: string;
+    gizmoId?: string;
+    createdAt?: number;
+    metadata?: string;
+    embeddingId?: string;
+  }): void {
+    return this.contentOps.insertContentBlock(block);
+  }
+
+  insertContentBlockEmbedding(
+    id: string,
+    blockId: string,
+    blockType: string,
+    gizmoId: string | undefined,
+    embedding: number[]
+  ): void {
+    return this.vectorOps.insertContentBlockEmbedding(id, blockId, blockType, gizmoId, embedding);
+  }
+
+  searchContentBlocks(
+    queryEmbedding: number[],
+    limit: number = 20,
+    blockType?: string,
+    gizmoId?: string
+  ): Array<{
+    id: string;
+    blockId: string;
+    blockType: string;
+    content: string;
+    language?: string;
+    conversationTitle?: string;
+    similarity: number;
+  }> {
+    return this.vectorOps.searchContentBlocks(queryEmbedding, limit, blockType, gizmoId);
+  }
+
+  getContentBlocksByType(blockType: string, limit: number = 100): Array<{
+    id: string;
+    parentConversationId: string;
+    content: string;
+    language?: string;
+    conversationTitle?: string;
+    createdAt?: number;
+  }> {
+    return this.contentOps.getContentBlocksByType(blockType, limit);
+  }
+
+  getContentBlocksByGizmo(gizmoId: string, limit: number = 100): Array<{
+    id: string;
+    blockType: string;
+    content: string;
+    conversationTitle?: string;
+    createdAt?: number;
+  }> {
+    return this.contentOps.getContentBlocksByGizmo(gizmoId, limit);
+  }
+
+  // ===========================================================================
   // Import Tracking - Delegated to ContentOperations
   // ===========================================================================
 
@@ -2202,6 +2272,73 @@ export class EmbeddingDatabase {
   // ===========================================================================
   // Cleanup
   // ===========================================================================
+
+  /**
+   * Remove junk embeddings from vec_messages
+   * Targets: tool outputs, short content, image placeholders, error tracebacks
+   * Returns stats about what was removed
+   */
+  cleanupJunkEmbeddings(dryRun: boolean = false): {
+    totalBefore: number;
+    removed: number;
+    patterns: Record<string, number>;
+  } {
+    if (!this.vecLoaded) {
+      throw new Error('Vector operations not available');
+    }
+
+    // Get total before cleanup
+    const totalBefore = (this.db.prepare('SELECT COUNT(*) as count FROM vec_messages').get() as { count: number }).count;
+
+    // Define junk patterns and their SQL conditions
+    const patterns: Array<{ name: string; condition: string }> = [
+      { name: 'tool_role', condition: "role = 'tool'" },
+      { name: 'very_short', condition: 'LENGTH(content) < 30' },
+      { name: 'image_placeholder', condition: "content LIKE '%<<ImageDisplay%'" },
+      { name: 'error_traceback', condition: "content LIKE '%Traceback%'" },
+      { name: 'click_commands', condition: "content LIKE 'click(%' OR content LIKE 'mclick(%'" },
+      { name: 'scroll_commands', condition: "content LIKE 'scroll(%'" },
+      { name: 'search_calls', condition: "content LIKE 'search(\"%'" },
+      { name: 'json_objects', condition: "content LIKE '{\"query\":%' OR content LIKE '{\"type\":%'" },
+      { name: 'error_messages', condition: "content LIKE 'Error %' AND LENGTH(content) < 200" },
+      { name: 'fetch_errors', condition: "content LIKE '%Failed to fetch%' OR content LIKE '%Timeout fetching%'" },
+    ];
+
+    const patternCounts: Record<string, number> = {};
+    let totalRemoved = 0;
+
+    for (const pattern of patterns) {
+      // Count matches for this pattern
+      const countSql = `
+        SELECT COUNT(*) as count FROM vec_messages v
+        JOIN messages m ON v.message_id = m.id
+        WHERE ${pattern.condition}
+      `;
+      const countResult = this.db.prepare(countSql).get() as { count: number };
+      patternCounts[pattern.name] = countResult.count;
+
+      if (!dryRun && countResult.count > 0) {
+        // Delete matching embeddings
+        const deleteSql = `
+          DELETE FROM vec_messages WHERE id IN (
+            SELECT v.id FROM vec_messages v
+            JOIN messages m ON v.message_id = m.id
+            WHERE ${pattern.condition}
+          )
+        `;
+        const result = this.db.prepare(deleteSql).run();
+        totalRemoved += result.changes;
+      } else if (dryRun) {
+        totalRemoved += countResult.count;
+      }
+    }
+
+    return {
+      totalBefore,
+      removed: totalRemoved,
+      patterns: patternCounts,
+    };
+  }
 
   close(): void {
     this.db.close();

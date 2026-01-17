@@ -15,6 +15,9 @@ export type {
   TranscribeResult,
   DownloadProgress,
   TranscribeProgress,
+  AIConfigAPI,
+  ProviderStatus,
+  UsageStats,
 } from './core';
 
 // Queue types

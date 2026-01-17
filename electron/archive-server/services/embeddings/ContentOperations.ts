@@ -200,6 +200,95 @@ export class ContentOperations extends DatabaseOperations {
   }
 
   // ===========================================================================
+  // Content Blocks (extracted code, prompts, artifacts, etc.)
+  // ===========================================================================
+
+  insertContentBlock(block: {
+    id: string;
+    parentMessageId: string;
+    parentConversationId: string;
+    blockType: string;
+    language?: string;
+    content: string;
+    startOffset?: number;
+    endOffset?: number;
+    conversationTitle?: string;
+    gizmoId?: string;
+    createdAt?: number;
+    metadata?: string;
+    embeddingId?: string;
+  }): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO content_blocks (
+        id, parent_message_id, parent_conversation_id, block_type, language,
+        content, start_offset, end_offset, conversation_title, gizmo_id,
+        created_at, metadata, embedding_id, extracted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      block.id,
+      block.parentMessageId,
+      block.parentConversationId,
+      block.blockType,
+      block.language || null,
+      block.content,
+      block.startOffset ?? null,
+      block.endOffset ?? null,
+      block.conversationTitle || null,
+      block.gizmoId || null,
+      block.createdAt ?? null,
+      block.metadata || null,
+      block.embeddingId || null,
+      Date.now() / 1000  // Unix timestamp for extracted_at
+    );
+  }
+
+  getContentBlocksByType(blockType: string, limit: number = 100): Array<{
+    id: string;
+    parentConversationId: string;
+    content: string;
+    language?: string;
+    conversationTitle?: string;
+    createdAt?: number;
+  }> {
+    return this.db.prepare(`
+      SELECT id, parent_conversation_id, content, language, conversation_title, created_at
+      FROM content_blocks
+      WHERE block_type = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(blockType, limit) as Array<{
+      id: string;
+      parentConversationId: string;
+      content: string;
+      language?: string;
+      conversationTitle?: string;
+      createdAt?: number;
+    }>;
+  }
+
+  getContentBlocksByGizmo(gizmoId: string, limit: number = 100): Array<{
+    id: string;
+    blockType: string;
+    content: string;
+    conversationTitle?: string;
+    createdAt?: number;
+  }> {
+    return this.db.prepare(`
+      SELECT id, block_type, content, conversation_title, created_at
+      FROM content_blocks
+      WHERE gizmo_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(gizmoId, limit) as Array<{
+      id: string;
+      blockType: string;
+      content: string;
+      conversationTitle?: string;
+      createdAt?: number;
+    }>;
+  }
+
+  // ===========================================================================
   // Import Tracking
   // ===========================================================================
 

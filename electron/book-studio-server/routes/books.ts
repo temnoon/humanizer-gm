@@ -1,21 +1,32 @@
 /**
  * Books API Routes
+ *
+ * All routes require authentication and filter by user_id.
  */
 
 import { Router, Request, Response } from 'express';
 import { getDatabase, generateId, now, DbBook } from '../database';
 import { broadcastEvent } from '../server';
+import { requireAuth, getUserId, isOwner, AuthenticatedRequest } from '../middleware/auth';
 
 export function createBooksRouter(): Router {
   const router = Router();
 
-  // GET /api/books - List all books
-  router.get('/', (_req: Request, res: Response) => {
+  // Apply auth middleware to all routes
+  router.use(requireAuth());
+
+  // GET /api/books - List all books for current user
+  router.get('/', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const db = getDatabase();
+
+      // Filter by user_id, also include legacy books without user_id
       const books = db.prepare(`
-        SELECT * FROM books ORDER BY updated_at DESC
-      `).all() as DbBook[];
+        SELECT * FROM books
+        WHERE user_id = ? OR user_id IS NULL
+        ORDER BY updated_at DESC
+      `).all(userId) as DbBook[];
 
       res.json({ books });
     } catch (err) {
@@ -26,13 +37,20 @@ export function createBooksRouter(): Router {
   // GET /api/books/:id - Get a single book with chapters and card counts
   router.get('/:id', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const db = getDatabase();
+
       const book = db.prepare(`
         SELECT * FROM books WHERE id = ?
       `).get(req.params.id) as DbBook | undefined;
 
       if (!book) {
         return res.status(404).json({ error: 'Book not found' });
+      }
+
+      // Check ownership
+      if (!isOwner(req, book.user_id)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       // Get chapters
@@ -67,6 +85,7 @@ export function createBooksRouter(): Router {
   // POST /api/books - Create a new book
   router.post('/', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { title, description, targetWordCount } = req.body;
 
       if (!title) {
@@ -78,9 +97,9 @@ export function createBooksRouter(): Router {
       const timestamp = now();
 
       db.prepare(`
-        INSERT INTO books (id, title, description, target_word_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, title, description || null, targetWordCount || null, timestamp, timestamp);
+        INSERT INTO books (id, title, description, target_word_count, user_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, title, description || null, targetWordCount || null, userId, timestamp, timestamp);
 
       const book = db.prepare('SELECT * FROM books WHERE id = ?').get(id) as DbBook;
 
@@ -103,13 +122,18 @@ export function createBooksRouter(): Router {
   // PATCH /api/books/:id - Update a book
   router.patch('/:id', (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
       const { title, description, targetWordCount } = req.body;
       const db = getDatabase();
 
-      // Check if book exists
-      const existing = db.prepare('SELECT id FROM books WHERE id = ?').get(req.params.id);
+      // Check if book exists and verify ownership
+      const existing = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as DbBook | undefined;
       if (!existing) {
         return res.status(404).json({ error: 'Book not found' });
+      }
+
+      if (!isOwner(req, existing.user_id)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       // Build update query
@@ -127,6 +151,12 @@ export function createBooksRouter(): Router {
       if (targetWordCount !== undefined) {
         updates.push('target_word_count = ?');
         values.push(targetWordCount);
+      }
+
+      // Claim ownership if book has no user_id (legacy data migration)
+      if (!existing.user_id) {
+        updates.push('user_id = ?');
+        values.push(userId);
       }
 
       values.push(req.params.id);
@@ -158,10 +188,14 @@ export function createBooksRouter(): Router {
     try {
       const db = getDatabase();
 
-      // Check if book exists
-      const existing = db.prepare('SELECT id FROM books WHERE id = ?').get(req.params.id);
+      // Check if book exists and verify ownership
+      const existing = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as DbBook | undefined;
       if (!existing) {
         return res.status(404).json({ error: 'Book not found' });
+      }
+
+      if (!isOwner(req, existing.user_id)) {
+        return res.status(403).json({ error: 'Access denied' });
       }
 
       // Delete book (cascades to chapters, cards, clusters, outlines)

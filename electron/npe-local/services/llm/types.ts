@@ -48,7 +48,20 @@ export interface LLMProvider {
   generateText(prompt: string, options: { max_tokens: number; temperature: number }): Promise<string>;
 }
 
-export type ProviderType = 'ollama' | 'openai' | 'anthropic' | 'google' | 'groq';
+export type ProviderType =
+  | 'ollama'
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'groq'
+  | 'cloudflare'
+  | 'openrouter'
+  | 'together'
+  | 'cohere'
+  | 'mistral'
+  | 'deepseek'
+  | 'local'
+  | 'custom';
 
 /**
  * API key configuration stored locally
@@ -58,6 +71,9 @@ export interface APIKeyConfig {
   anthropic?: string;
   google?: string;
   groq?: string;
+  cloudflare?: string;      // Cloudflare Workers AI
+  openrouter?: string;      // OpenRouter aggregator
+  together?: string;        // Together.ai
 }
 
 /**
@@ -68,25 +84,42 @@ export interface ModelConfig {
   ollamaUrl: string;
   preferLocal: boolean;
   apiKeys: APIKeyConfig;
+  cloudflareAccountId?: string;  // Required for Cloudflare Workers AI
 }
 
 /**
  * Determine which provider to use based on model ID
  */
 export function getProviderType(modelId: string): ProviderType {
+  // OpenAI models
   if (modelId.startsWith('gpt-') || modelId.startsWith('o1-') || modelId.startsWith('o3-')) {
     return 'openai';
   }
+  // Anthropic models
   if (modelId.startsWith('claude-')) {
     return 'anthropic';
   }
+  // Google models
   if (modelId.startsWith('gemini-')) {
     return 'google';
   }
-  if (modelId.startsWith('llama-') || modelId.startsWith('mixtral-') || modelId.startsWith('groq/')) {
+  // Groq models
+  if (modelId.startsWith('groq/')) {
     return 'groq';
   }
-  // Default to Ollama for local models
+  // Cloudflare Workers AI (e.g., @cf/meta/llama-3.1-8b-instruct)
+  if (modelId.startsWith('@cf/')) {
+    return 'cloudflare';
+  }
+  // OpenRouter models (e.g., openrouter/anthropic/claude-3.5-sonnet)
+  if (modelId.startsWith('openrouter/') || modelId.includes('/') && !modelId.includes(':')) {
+    return 'openrouter';
+  }
+  // Together.ai models (e.g., together/meta-llama/Llama-3.2-3B-Instruct)
+  if (modelId.startsWith('together/') || modelId.startsWith('togethercomputer/')) {
+    return 'together';
+  }
+  // Default to Ollama for local models (e.g., llama3.2:3b, qwen3:14b)
   return 'ollama';
 }
 

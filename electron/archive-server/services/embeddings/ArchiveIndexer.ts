@@ -20,8 +20,15 @@ import {
   initializeEmbedding,
   embed,
   embedBatch,
+  chunkForEmbedding,
+  MAX_CHUNK_CHARS,
 } from './EmbeddingGenerator.js';
 import { ContentChunker, type ChunkResult } from './ContentChunker.js';
+import {
+  ContentBlockExtractor,
+  type ExtractedBlock,
+  type ExtractionContext,
+} from './ContentBlockExtractor.js';
 import type { IndexingProgress, Chunk, EnhancedChunk } from './types.js';
 
 export interface IndexingOptions {
@@ -33,6 +40,8 @@ export interface IndexingOptions {
   includeSentences?: boolean;
   /** Use content-aware chunking (detects code, math, tables) */
   useContentAwareChunking?: boolean;
+  /** Extract and embed content blocks (code, prompts, artifacts) separately */
+  extractContentBlocks?: boolean;
   /** Batch size for embedding generation */
   batchSize?: number;
   /** Progress callback */
@@ -44,8 +53,234 @@ const DEFAULT_OPTIONS: IndexingOptions = {
   includeParagraphs: false,
   includeSentences: false,
   useContentAwareChunking: false,
+  extractContentBlocks: true, // Enable by default for granular search
   batchSize: 32,
 };
+
+// ============================================================================
+// Junk Content Filter
+// ============================================================================
+
+/**
+ * Check if a message contains junk content that shouldn't be embedded.
+ * Filters out tool outputs, error tracebacks, command outputs, etc.
+ */
+function isJunkContent(message: { role: string; content: string }): boolean {
+  const content = message.content;
+
+  // Skip tool role messages entirely
+  if (message.role === 'tool') return true;
+
+  // Skip very short content
+  if (content.length < 30) return true;
+
+  // Skip image placeholders
+  if (content.includes('<<ImageDisplay')) return true;
+
+  // Skip error tracebacks
+  if (content.includes('Traceback (most recent call last)')) return true;
+
+  // Skip click/scroll/mclick commands (browser automation)
+  if (/^(click|mclick|scroll)\s*\(/.test(content)) return true;
+
+  // Skip search() tool calls
+  if (content.startsWith('search("')) return true;
+
+  // Skip JSON tool outputs
+  if (content.startsWith('{"query":') || content.startsWith('{"type":')) return true;
+
+  // Skip fetch/timeout errors
+  if (content.includes('Failed to fetch') || content.includes('Timeout fetching')) return true;
+
+  // Skip short error messages
+  if (content.startsWith('Error ') && content.length < 200) return true;
+
+  // Skip quote() failures
+  if (content.startsWith('quote failed')) return true;
+
+  return false;
+}
+
+// ============================================================================
+// Smart Block Chunking (uses pyramid L0 spec from EmbeddingGenerator)
+// ============================================================================
+
+interface BlockChunk {
+  content: string;
+  chunkIndex: number;
+  totalChunks: number;
+}
+
+/**
+ * Split a large block into chunks for embedding.
+ * Uses chunkForEmbedding from EmbeddingGenerator which follows pyramid L0 spec:
+ * - Target ~1000 tokens (~4000 chars) per chunk
+ * - Never split mid-sentence
+ * - Prefer paragraph boundaries
+ *
+ * For code blocks, adds additional logic to split on function/class boundaries.
+ */
+function chunkBlock(content: string, blockType: string): BlockChunk[] {
+  // If content fits in one chunk, return as-is
+  if (content.length <= MAX_CHUNK_CHARS) {
+    return [{ content, chunkIndex: 0, totalChunks: 1 }];
+  }
+
+  let chunks: string[];
+
+  if (blockType === 'code') {
+    // Split code on function/class definitions first, then use standard chunking
+    chunks = chunkCode(content);
+  } else if (blockType === 'json_data') {
+    // For JSON arrays, try to split by elements
+    chunks = chunkJson(content);
+  } else {
+    // Prose, transcription, artifact, etc: use standard pyramid chunking
+    chunks = chunkForEmbedding(content);
+  }
+
+  return chunks.map((c, i) => ({
+    content: c,
+    chunkIndex: i,
+    totalChunks: chunks.length,
+  }));
+}
+
+/**
+ * Chunk code on logical boundaries (functions, classes, blank line groups)
+ * then apply standard chunking to any oversized pieces
+ */
+function chunkCode(content: string): string[] {
+  // Try to split on function/class definitions
+  const funcPattern = /\n(?=(?:async\s+)?(?:function|def|class|const\s+\w+\s*=\s*(?:async\s+)?(?:function|\())|(?:export\s+)?(?:async\s+)?function|(?:public|private|protected)?\s*(?:async\s+)?(?:static\s+)?\w+\s*\()/g;
+
+  let parts = content.split(funcPattern);
+
+  if (parts.length <= 1) {
+    // Fall back to splitting on double blank lines
+    parts = content.split(/\n\n\n+/);
+  }
+
+  if (parts.length <= 1) {
+    // Last resort: split on single blank lines
+    parts = content.split(/\n\n/);
+  }
+
+  // Combine small parts and chunk large ones
+  const result: string[] = [];
+  let currentChunk = '';
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+
+    if (currentChunk.length + trimmed.length + 2 <= MAX_CHUNK_CHARS) {
+      currentChunk += (currentChunk ? '\n\n' : '') + trimmed;
+    } else {
+      if (currentChunk.length > 0) {
+        result.push(currentChunk);
+      }
+      // If part itself is too long, use standard chunking
+      if (trimmed.length > MAX_CHUNK_CHARS) {
+        result.push(...chunkForEmbedding(trimmed));
+        currentChunk = '';
+      } else {
+        currentChunk = trimmed;
+      }
+    }
+  }
+
+  if (currentChunk.length > 0) {
+    result.push(currentChunk);
+  }
+
+  return result.length > 0 ? result : chunkForEmbedding(content);
+}
+
+/**
+ * Chunk JSON by trying to keep structure intact
+ */
+/**
+ * Embed with automatic retry using smaller chunks if needed.
+ * Returns embedding or null if all attempts fail.
+ */
+async function embedWithRetry(content: string, blockId: string): Promise<number[] | null> {
+  // Try direct embed first
+  try {
+    return await embed(content);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+
+    // If context length error, try smaller chunks
+    if (errMsg.includes('context length') || errMsg.includes('too long')) {
+      console.warn(`[ContentBlocks] Chunk too large (${content.length} chars), splitting smaller for ${blockId}`);
+
+      // Split into smaller pieces (half size)
+      const halfSize = Math.floor(content.length / 2);
+      const firstHalf = content.slice(0, halfSize);
+      const secondHalf = content.slice(halfSize);
+
+      try {
+        // Just embed first half - better than nothing
+        // The second half will be in the stored content
+        return await embed(firstHalf);
+      } catch (retryErr) {
+        // Try even smaller
+        const quarterSize = Math.floor(content.length / 4);
+        try {
+          return await embed(content.slice(0, quarterSize));
+        } catch {
+          console.error(`[ContentBlocks] Failed to embed even quarter chunk for ${blockId}, skipping embedding`);
+          return null;
+        }
+      }
+    }
+
+    console.error(`[ContentBlocks] Embed error for ${blockId}: ${errMsg}`);
+    return null;
+  }
+}
+
+function chunkJson(content: string): string[] {
+  const trimmed = content.trim();
+
+  // If it's a JSON array, try to split by elements
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed) && parsed.length > 1) {
+        const chunks: string[] = [];
+        let currentBatch: unknown[] = [];
+        let currentSize = 2; // for []
+
+        for (const item of parsed) {
+          const itemStr = JSON.stringify(item);
+          if (currentSize + itemStr.length + 1 <= MAX_CHUNK_CHARS) {
+            currentBatch.push(item);
+            currentSize += itemStr.length + 1;
+          } else {
+            if (currentBatch.length > 0) {
+              chunks.push(JSON.stringify(currentBatch, null, 2));
+            }
+            currentBatch = [item];
+            currentSize = 2 + itemStr.length;
+          }
+        }
+
+        if (currentBatch.length > 0) {
+          chunks.push(JSON.stringify(currentBatch, null, 2));
+        }
+
+        return chunks.length > 0 ? chunks : chunkForEmbedding(content);
+      }
+    } catch {
+      // Not valid JSON array, fall through
+    }
+  }
+
+  // Fall back to standard chunking for non-array JSON
+  return chunkForEmbedding(content);
+}
 
 export class ArchiveIndexer {
   private db: EmbeddingDatabase;
@@ -109,6 +344,11 @@ export class ArchiveIndexer {
         await this.embedParagraphs(opts);
       }
 
+      // Phase 4: Extract and embed content blocks (code, prompts, artifacts)
+      if (opts.extractContentBlocks) {
+        await this.extractAndEmbedContentBlocks(opts);
+      }
+
       this.progress = {
         status: 'complete',
         phase: 'done',
@@ -168,11 +408,16 @@ export class ArchiveIndexer {
     this.notifyProgress(opts.onProgress);
 
     // Get messages without embeddings
-    const messages = this.db.getMessagesWithoutEmbeddings();
+    const allMessages = this.db.getMessagesWithoutEmbeddings();
+
+    // Filter out junk content before embedding
+    const messages = allMessages.filter(m => !isJunkContent(m));
+    const skipped = allMessages.length - messages.length;
+
     this.progress.total = messages.length;
     this.progress.current = 0;
 
-    console.log(`Generating embeddings for ${messages.length} messages...`);
+    console.log(`Generating embeddings for ${messages.length} messages (skipped ${skipped} junk)...`);
 
     const batchSize = opts.batchSize || 32;
 
@@ -394,6 +639,182 @@ export class ArchiveIndexer {
     }
 
     return count;
+  }
+
+  /**
+   * Phase 4: Extract and embed content blocks (code, prompts, artifacts, transcriptions)
+   *
+   * This creates granular, searchable units from messages:
+   * - Code blocks with language detection
+   * - Image generation prompts (DALL-E)
+   * - Claude artifacts
+   * - ChatGPT canvas
+   * - Journal/notebook transcriptions (via gizmo_id detection)
+   */
+  async extractAndEmbedContentBlocks(opts: IndexingOptions): Promise<void> {
+    this.progress.phase = 'extracting_content_blocks';
+    this.notifyProgress(opts.onProgress);
+
+    const extractor = new ContentBlockExtractor();
+    const conversations = this.db.getAllConversations();
+
+    let totalBlocks = 0;
+    let totalSkipped = 0;
+
+    const stats = {
+      code: 0,
+      image_prompt: 0,
+      artifact: 0,
+      canvas: 0,
+      transcription: 0,
+      json_data: 0,
+      prose: 0,
+    };
+
+    console.log(`[ContentBlocks] Extracting from ${conversations.length} conversations...`);
+
+    for (const conv of conversations) {
+      const messages = this.db.getMessagesForConversation(conv.id);
+
+      // Get gizmo_id from conversation metadata if available
+      let gizmoId: string | undefined;
+      if (conv.metadata) {
+        try {
+          const meta = typeof conv.metadata === 'string'
+            ? JSON.parse(conv.metadata)
+            : conv.metadata;
+          gizmoId = meta.gizmo_id;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      for (const message of messages) {
+        // Skip junk content
+        if (isJunkContent(message)) {
+          totalSkipped++;
+          continue;
+        }
+
+        // Build extraction context
+        const context: ExtractionContext = {
+          messageId: message.id,
+          conversationId: conv.id,
+          conversationTitle: conv.title,
+          gizmoId,
+          createdAt: message.createdAt || conv.createdAt,
+          role: message.role,
+        };
+
+        // Extract blocks
+        const result = extractor.extract(message.content, context);
+
+        // Process each extracted block
+        for (const block of result.blocks) {
+          // Skip very short blocks
+          if (block.content.length < 30) continue;
+
+          // Chunk large blocks instead of truncating - preserves all content
+          const chunks = chunkBlock(block.content, block.blockType);
+
+          // Store the parent content block (full content, first chunk's embedding)
+          const firstChunkEmbedding = await embedWithRetry(chunks[0].content, block.id);
+          const parentEmbeddingId = firstChunkEmbedding ? uuidv4() : undefined;
+
+          // Build metadata including chunk info if multi-chunk
+          const blockMetadata = {
+            ...block.metadata,
+            ...(chunks.length > 1 ? { totalChunks: chunks.length } : {}),
+            ...(firstChunkEmbedding === null ? { embeddingFailed: true } : {}),
+          };
+
+          this.db.insertContentBlock({
+            id: block.id,
+            parentMessageId: block.parentMessageId,
+            parentConversationId: block.parentConversationId,
+            blockType: block.blockType,
+            language: block.language,
+            content: block.content, // Store FULL content always
+            startOffset: block.startOffset,
+            endOffset: block.endOffset,
+            conversationTitle: block.conversationTitle,
+            gizmoId: block.gizmoId,
+            createdAt: block.createdAt,
+            metadata: Object.keys(blockMetadata).length > 0 ? JSON.stringify(blockMetadata) : undefined,
+            embeddingId: parentEmbeddingId,
+          });
+
+          // Store embedding for first chunk (if successful)
+          if (firstChunkEmbedding && parentEmbeddingId) {
+            this.db.insertContentBlockEmbedding(
+              parentEmbeddingId,
+              block.id,
+              block.blockType,
+              block.gizmoId,
+              firstChunkEmbedding
+            );
+          }
+
+          totalBlocks++;
+          stats[block.blockType as keyof typeof stats]++;
+
+          // For multi-chunk blocks, embed remaining chunks with links to parent
+          if (chunks.length > 1) {
+            for (let i = 1; i < chunks.length; i++) {
+              const chunk = chunks[i];
+              const chunkBlockId = `${block.id}-chunk-${i}`;
+              const chunkEmbedding = await embedWithRetry(chunk.content, chunkBlockId);
+              const chunkEmbeddingId = chunkEmbedding ? uuidv4() : undefined;
+
+              // Store chunk as separate content block with parent reference
+              this.db.insertContentBlock({
+                id: chunkBlockId,
+                parentMessageId: block.parentMessageId,
+                parentConversationId: block.parentConversationId,
+                blockType: block.blockType,
+                language: block.language,
+                content: chunk.content, // Store chunk content always
+                startOffset: block.startOffset,
+                endOffset: block.endOffset,
+                conversationTitle: block.conversationTitle,
+                gizmoId: block.gizmoId,
+                createdAt: block.createdAt,
+                metadata: JSON.stringify({
+                  parentBlockId: block.id,
+                  chunkIndex: chunk.chunkIndex,
+                  totalChunks: chunk.totalChunks,
+                  ...(chunkEmbedding === null ? { embeddingFailed: true } : {}),
+                }),
+                embeddingId: chunkEmbeddingId,
+              });
+
+              // Store chunk embedding (if successful)
+              if (chunkEmbedding && chunkEmbeddingId) {
+                this.db.insertContentBlockEmbedding(
+                  chunkEmbeddingId,
+                  chunkBlockId,
+                  block.blockType,
+                  block.gizmoId,
+                  chunkEmbedding
+                );
+              }
+
+              totalBlocks++;
+            }
+          }
+
+          // Update progress
+          if (totalBlocks % 100 === 0) {
+            this.progress.current = totalBlocks;
+            this.progress.currentItem = `${block.blockType}: ${block.content.slice(0, 50)}...`;
+            this.notifyProgress(opts.onProgress);
+          }
+        }
+      }
+    }
+
+    console.log(`[ContentBlocks] Extracted ${totalBlocks} blocks (skipped ${totalSkipped} junk messages)`);
+    console.log(`[ContentBlocks] Stats: code=${stats.code}, prompts=${stats.image_prompt}, artifacts=${stats.artifact}, transcriptions=${stats.transcription}, prose=${stats.prose}`);
   }
 
   /**

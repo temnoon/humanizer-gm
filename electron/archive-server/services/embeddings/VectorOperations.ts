@@ -117,6 +117,122 @@ export class VectorOperations extends DatabaseOperations {
     `).run(id, clusterId, this.embeddingToJson(embedding));
   }
 
+  insertContentBlockEmbedding(
+    id: string,
+    blockId: string,
+    blockType: string,
+    gizmoId: string | undefined,
+    embedding: number[]
+  ): void {
+    if (!this.vecLoaded) throw new Error('Vector operations not available');
+    this.db.prepare(`
+      INSERT INTO vec_content_blocks (id, block_id, block_type, gizmo_id, embedding)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, blockId, blockType, gizmoId || '', this.embeddingToJson(embedding));  // vec0 doesn't accept NULL for TEXT
+  }
+
+  searchContentBlocks(
+    queryEmbedding: number[],
+    limit: number = 20,
+    blockType?: string,
+    gizmoId?: string
+  ): Array<{
+    id: string;
+    blockId: string;
+    blockType: string;
+    content: string;
+    language?: string;
+    conversationTitle?: string;
+    similarity: number;
+  }> {
+    if (!this.vecLoaded) throw new Error('Vector operations not available');
+
+    let sql: string;
+    let params: unknown[];
+
+    if (blockType && gizmoId) {
+      sql = `
+        SELECT
+          v.id,
+          v.block_id,
+          v.block_type,
+          v.distance,
+          cb.content,
+          cb.language,
+          cb.conversation_title
+        FROM vec_content_blocks v
+        JOIN content_blocks cb ON cb.id = v.block_id
+        WHERE v.embedding MATCH ? AND k = ?
+          AND v.block_type = ?
+          AND v.gizmo_id = ?
+        ORDER BY v.distance
+      `;
+      params = [this.embeddingToJson(queryEmbedding), limit, blockType, gizmoId];
+    } else if (blockType) {
+      sql = `
+        SELECT
+          v.id,
+          v.block_id,
+          v.block_type,
+          v.distance,
+          cb.content,
+          cb.language,
+          cb.conversation_title
+        FROM vec_content_blocks v
+        JOIN content_blocks cb ON cb.id = v.block_id
+        WHERE v.embedding MATCH ? AND k = ?
+          AND v.block_type = ?
+        ORDER BY v.distance
+      `;
+      params = [this.embeddingToJson(queryEmbedding), limit, blockType];
+    } else if (gizmoId) {
+      sql = `
+        SELECT
+          v.id,
+          v.block_id,
+          v.block_type,
+          v.distance,
+          cb.content,
+          cb.language,
+          cb.conversation_title
+        FROM vec_content_blocks v
+        JOIN content_blocks cb ON cb.id = v.block_id
+        WHERE v.embedding MATCH ? AND k = ?
+          AND v.gizmo_id = ?
+        ORDER BY v.distance
+      `;
+      params = [this.embeddingToJson(queryEmbedding), limit, gizmoId];
+    } else {
+      sql = `
+        SELECT
+          v.id,
+          v.block_id,
+          v.block_type,
+          v.distance,
+          cb.content,
+          cb.language,
+          cb.conversation_title
+        FROM vec_content_blocks v
+        JOIN content_blocks cb ON cb.id = v.block_id
+        WHERE v.embedding MATCH ? AND k = ?
+        ORDER BY v.distance
+      `;
+      params = [this.embeddingToJson(queryEmbedding), limit];
+    }
+
+    const results = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+
+    return results.map(row => ({
+      id: row.id as string,
+      blockId: row.block_id as string,
+      blockType: row.block_type as string,
+      content: row.content as string,
+      language: row.language as string | undefined,
+      conversationTitle: row.conversation_title as string | undefined,
+      similarity: 1 - (row.distance as number),
+    }));
+  }
+
   // ===========================================================================
   // Search Operations
   // ===========================================================================
