@@ -33,6 +33,9 @@ import {
 // Embedded NPE-Local Server (AI Detection, Transformations)
 import { startNpeLocalServer, stopNpeLocalServer, isNpeLocalServerRunning, getNpeLocalPort } from './npe-local';
 
+// Embedded Book Studio Server (Books, Chapters, Cards)
+import { startBookStudioServer, stopBookStudioServer, isBookStudioServerRunning } from './book-studio-server';
+
 // Whisper (local speech-to-text)
 import { initWhisper, registerWhisperHandlers } from './whisper/whisper-manager';
 
@@ -70,6 +73,7 @@ const store = new Store({
 let mainWindow: BrowserWindow | null = null;
 let archiveServerPort: number | null = null;
 let npeLocalPort: number | null = null;
+let bookStudioPort: number | null = null;
 
 // ============================================================
 // WINDOW MANAGEMENT
@@ -247,6 +251,43 @@ async function stopNpeLocal() {
 }
 
 // ============================================================
+// BOOK STUDIO SERVER (Books, Chapters, Cards)
+// ============================================================
+
+async function startBookStudio(): Promise<number | null> {
+  const port = 3004;
+
+  // In development, check if external server is already running
+  if (!app.isPackaged) {
+    const externalRunning = await checkServerRunning(port);
+    if (externalRunning) {
+      console.log(`Using external book-studio server on port ${port}`);
+      bookStudioPort = port;
+      return port;
+    }
+  }
+
+  console.log(`Starting embedded book-studio server on port ${port}...`);
+
+  try {
+    const serverUrl = await startBookStudioServer(port);
+    console.log('Book Studio server ready:', serverUrl);
+    bookStudioPort = port;
+    return port;
+  } catch (err) {
+    console.error('Failed to start embedded book-studio server:', err);
+    return null;
+  }
+}
+
+async function stopBookStudio() {
+  if (isBookStudioServerRunning()) {
+    await stopBookStudioServer();
+    bookStudioPort = null;
+  }
+}
+
+// ============================================================
 // IPC HANDLERS
 // ============================================================
 
@@ -342,6 +383,24 @@ function registerIPCHandlers() {
       // Server not responding
     }
     return { running: false, port: npeLocalPort };
+  });
+
+  // Book Studio (Books, Chapters, Cards)
+  ipcMain.handle('book-studio:port', () => bookStudioPort);
+  ipcMain.handle('book-studio:status', async () => {
+    if (!bookStudioPort) {
+      return { running: false, port: null };
+    }
+    try {
+      const response = await fetch(`http://localhost:${bookStudioPort}/health`);
+      if (response.ok) {
+        const data = await response.json();
+        return { running: true, port: bookStudioPort, ...data };
+      }
+    } catch {
+      // Server not responding
+    }
+    return { running: false, port: bookStudioPort };
   });
 
   // Ollama
@@ -677,6 +736,9 @@ app.whenReady().then(async () => {
   // Always start npe-local server for AI detection and transformations
   await startNpeLocal();
 
+  // Start Book Studio server for books, chapters, cards
+  await startBookStudio();
+
   await createWindow();
 
   // Process any pending deep link URL that arrived before window was ready
@@ -709,6 +771,7 @@ app.on('before-quit', () => {
   console.log('Shutting down...');
   stopArchiveServer();
   stopNpeLocal();
+  stopBookStudio();
   closeChatService();
 });
 
