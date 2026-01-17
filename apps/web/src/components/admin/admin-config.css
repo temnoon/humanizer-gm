@@ -1,0 +1,813 @@
+/**
+ * Admin Config Panel Styles
+ *
+ * Follows BEM naming convention and uses design tokens.
+ * NEVER hardcode colors - always use CSS variables.
+ */
+
+/* Modal Overlay */
+.admin-config-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 2rem;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  overflow-y: auto;
+}
+
+.admin-config-modal__content {
+  width: 100%;
+  max-width: 900px;
+  max-height: calc(100vh - 4rem);
+  margin: 1rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-config-modal__content--small {
+  max-width: 400px;
+}
+
+/* Header */
+.admin-config__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--studio-border);
+  background: var(--studio-bg);
+}
+
+.admin-config__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.admin-config__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.admin-config__encryption-badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: var(--studio-hover);
+}
+
+.admin-config__encryption-badge--ok {
+  color: var(--studio-success);
+}
+
+.admin-config__encryption-badge--error {
+  color: var(--studio-error);
+}
+
+.admin-config__close-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: var(--studio-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-config__close-btn:hover {
+  color: var(--studio-text);
+  background: var(--studio-hover);
+}
+
+/* Tabs */
+.admin-config__tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 1rem;
+  background: var(--studio-bg);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.admin-config__tab {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--studio-text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-config__tab:hover {
+  color: var(--studio-text);
+}
+
+.admin-config__tab--active {
+  color: var(--studio-accent-text);
+  border-bottom-color: var(--studio-accent);
+}
+
+/* Error Display */
+.admin-config__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  margin: 1rem;
+  background: rgba(198, 40, 40, 0.1);
+  border: 1px solid var(--studio-error);
+  border-radius: 6px;
+  color: var(--studio-error);
+}
+
+.admin-config__error button {
+  background: transparent;
+  border: none;
+  color: var(--studio-error);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.admin-config__error-inline {
+  padding: 2rem;
+  text-align: center;
+  color: var(--studio-error);
+}
+
+.admin-config__error-state {
+  padding: 2rem;
+  text-align: center;
+}
+
+.admin-config__error-state h2 {
+  color: var(--studio-error);
+  margin-bottom: 0.5rem;
+}
+
+.admin-config__error-state p {
+  color: var(--studio-text-secondary);
+  margin-bottom: 1.5rem;
+}
+
+/* Content Area */
+.admin-config__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+}
+
+.admin-config__loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--studio-text-secondary);
+}
+
+.admin-config__empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--studio-text-tertiary);
+}
+
+/* Category Selector */
+.admin-config__categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.admin-config__category-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--studio-text-secondary);
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-config__category-btn:hover {
+  color: var(--studio-text);
+  border-color: var(--studio-accent);
+}
+
+.admin-config__category-btn--active {
+  color: var(--studio-accent-text);
+  background: var(--studio-accent);
+  border-color: var(--studio-accent);
+}
+
+.admin-config__category-icon {
+  font-size: 1rem;
+}
+
+/* List Header */
+.admin-config__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.admin-config__list-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+/* Config List */
+.admin-config__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-config__item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+}
+
+.admin-config__item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-config__item-key {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--studio-text);
+  margin-bottom: 0.25rem;
+}
+
+.admin-config__item-value {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.8125rem;
+  color: var(--studio-accent-text);
+  word-break: break-all;
+  margin-bottom: 0.25rem;
+}
+
+.admin-config__item-description {
+  font-size: 0.8125rem;
+  color: var(--studio-text-tertiary);
+}
+
+.admin-config__item-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Badges */
+.admin-config__badge {
+  display: inline-block;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 4px;
+  background: var(--studio-hover);
+  color: var(--studio-text-secondary);
+}
+
+.admin-config__badge--secret {
+  background: rgba(198, 40, 40, 0.15);
+  color: var(--studio-error);
+}
+
+.admin-config__badge--encrypted {
+  background: rgba(21, 101, 192, 0.15);
+  color: var(--studio-info);
+}
+
+.admin-config__badge--default {
+  background: rgba(46, 125, 50, 0.15);
+  color: var(--studio-success);
+}
+
+.admin-config__badge--inactive {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--studio-text-tertiary);
+}
+
+/* Buttons */
+.admin-config__btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--studio-text);
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-config__btn:hover:not(:disabled) {
+  border-color: var(--studio-accent);
+}
+
+.admin-config__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-config__btn--small {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.admin-config__btn--full {
+  width: 100%;
+}
+
+.admin-config__btn--primary {
+  color: white;
+  background: var(--studio-accent);
+  border-color: var(--studio-accent);
+}
+
+.admin-config__btn--primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.admin-config__btn--danger {
+  color: var(--studio-error);
+  border-color: var(--studio-error);
+}
+
+.admin-config__btn--danger:hover:not(:disabled) {
+  background: var(--studio-error);
+  color: white;
+}
+
+/* Edit Modal Overlay */
+.admin-config__edit-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1100;
+}
+
+.admin-config__edit-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  margin: 1rem;
+  padding: 1.5rem;
+  background: var(--studio-panel-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  overflow-y: auto;
+}
+
+.admin-config__edit-modal--wide {
+  max-width: 640px;
+}
+
+.admin-config__edit-modal h3 {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.125rem;
+  color: var(--studio-text);
+}
+
+/* Form Groups */
+.admin-config__form-group {
+  margin-bottom: 1rem;
+}
+
+.admin-config__form-group label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--studio-text-secondary);
+}
+
+.admin-config__form-group input,
+.admin-config__form-group select,
+.admin-config__form-group textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--studio-text);
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  transition: border-color 0.15s ease;
+}
+
+.admin-config__form-group input:focus,
+.admin-config__form-group select:focus,
+.admin-config__form-group textarea:focus {
+  outline: none;
+  border-color: var(--studio-accent);
+}
+
+.admin-config__form-group input[type="color"] {
+  width: 60px;
+  height: 36px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.admin-config__form-group input[type="checkbox"] {
+  width: auto;
+  margin-right: 0.5rem;
+}
+
+.admin-config__form-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--studio-text-tertiary);
+}
+
+.admin-config__textarea--code {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.8125rem;
+}
+
+.admin-config__form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.admin-config__form-group--full {
+  grid-column: 1 / -1;
+}
+
+.admin-config__form-group--checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  grid-column: 1 / -1;
+}
+
+.admin-config__checkbox-label {
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--studio-text);
+  cursor: pointer;
+}
+
+.admin-config__edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--studio-border);
+}
+
+/* Pricing Tiers Grid */
+.admin-config__tiers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.admin-config__tier-card {
+  padding: 1rem;
+  background: var(--studio-bg);
+  border: 2px solid var(--studio-border);
+  border-radius: 10px;
+  transition: all 0.15s ease;
+}
+
+.admin-config__tier-card:hover {
+  border-color: var(--studio-accent);
+}
+
+.admin-config__tier-card--inactive {
+  opacity: 0.6;
+}
+
+.admin-config__tier-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.admin-config__tier-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.admin-config__tier-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: var(--studio-accent);
+  color: white;
+  border-radius: 3px;
+}
+
+.admin-config__tier-key {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.75rem;
+  color: var(--studio-text-tertiary);
+}
+
+.admin-config__tier-price {
+  margin-bottom: 0.75rem;
+}
+
+.admin-config__tier-price-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--studio-accent-text);
+}
+
+.admin-config__tier-price-period {
+  font-size: 0.875rem;
+  color: var(--studio-text-secondary);
+}
+
+.admin-config__tier-description {
+  font-size: 0.8125rem;
+  color: var(--studio-text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.admin-config__tier-limits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-config__tier-limit {
+  padding: 0.375rem;
+  background: var(--studio-panel-bg);
+  border-radius: 4px;
+}
+
+.admin-config__tier-limit-label {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--studio-text-tertiary);
+  text-transform: uppercase;
+}
+
+.admin-config__tier-limit-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.admin-config__tier-features {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-config__tier-feature {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.375rem;
+  background: var(--studio-hover);
+  border-radius: 4px;
+}
+
+.admin-config__tier-status {
+  display: flex;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Audit Log */
+.admin-config__audit-filters {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.admin-config__select {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--studio-text);
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.admin-config__audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-config__audit-entry {
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-config__audit-entry--expanded {
+  border-color: var(--studio-accent);
+}
+
+.admin-config__audit-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.admin-config__audit-entry-header:hover {
+  background: var(--studio-hover);
+}
+
+.admin-config__audit-entry-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-config__audit-action {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 4px;
+  background: var(--studio-hover);
+}
+
+.admin-config__action--create {
+  background: rgba(46, 125, 50, 0.15);
+  color: var(--studio-success);
+}
+
+.admin-config__action--update {
+  background: rgba(21, 101, 192, 0.15);
+  color: var(--studio-info);
+}
+
+.admin-config__action--delete {
+  background: rgba(198, 40, 40, 0.15);
+  color: var(--studio-error);
+}
+
+.admin-config__audit-key {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--studio-text);
+}
+
+.admin-config__audit-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.admin-config__audit-user {
+  font-size: 0.8125rem;
+  color: var(--studio-text-secondary);
+}
+
+.admin-config__audit-time {
+  font-size: 0.75rem;
+  color: var(--studio-text-tertiary);
+}
+
+.admin-config__audit-expand {
+  font-size: 0.75rem;
+  color: var(--studio-text-tertiary);
+}
+
+.admin-config__audit-entry-details {
+  padding: 1rem;
+  background: var(--studio-panel-bg);
+  border-top: 1px solid var(--studio-border);
+}
+
+.admin-config__audit-detail {
+  margin-bottom: 0.75rem;
+}
+
+.admin-config__audit-detail:last-child {
+  margin-bottom: 0;
+}
+
+.admin-config__audit-detail-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--studio-text-tertiary);
+  margin-bottom: 0.25rem;
+}
+
+.admin-config__audit-detail-value {
+  font-size: 0.875rem;
+  color: var(--studio-text);
+}
+
+.admin-config__audit-detail-value--mono {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.8125rem;
+}
+
+.admin-config__audit-detail-code {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 0.75rem;
+  background: var(--studio-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Dark Mode Adjustments */
+[data-theme='dark'] .admin-config-modal {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+[data-theme='dark'] .admin-config__btn--primary {
+  color: var(--studio-text);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .admin-config-modal__content {
+    max-height: calc(100vh - 2rem);
+    margin: 0.5rem;
+    border-radius: 8px;
+  }
+
+  .admin-config__form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-config__tiers-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-config__audit-entry-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .admin-config__audit-entry-meta {
+    flex-wrap: wrap;
+  }
+
+  .admin-config__list-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+}

@@ -387,6 +387,15 @@
   background: rgba(220, 38, 38, 0.1);
 }
 
+.user-dropdown__item--admin {
+  color: var(--studio-accent-text, #8b6914);
+  font-weight: 500;
+}
+
+.user-dropdown__item--admin:hover {
+  background: rgba(139, 105, 20, 0.1);
+}
+
 .auth-callback {
   display: flex;
   align-items: center;
@@ -430,5 +439,13 @@
 
 [data-theme='dark'] .user-dropdown__item--danger:hover {
   background: rgba(239, 68, 68, 0.15);
+}
+
+[data-theme='dark'] .user-dropdown__item--admin {
+  color: var(--studio-accent, #6b9ed9);
+}
+
+[data-theme='dark'] .user-dropdown__item--admin:hover {
+  background: rgba(107, 158, 217, 0.15);
 }
 

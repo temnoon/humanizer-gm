@@ -4,6 +4,7 @@
  * Features:
  * - Click to toggle dropdown menu
  * - Theme settings access
+ * - Admin config access (admin users only)
  * - Sign out functionality
  *
  * Extracted from Studio.tsx during modularization
@@ -11,16 +12,20 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { ThemeSettingsModal } from '../theme/ThemeSettingsModal';
+import { AdminConfigPanel } from '../admin';
 
 export interface UserDropdownProps {
-  user: { email?: string; name?: string } | null;
+  user: { email?: string; name?: string; role?: string } | null;
   onSignOut: () => void;
 }
 
 export function UserDropdown({ user, onSignOut }: UserDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAdminConfig, setShowAdminConfig] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isAdmin = user?.role === 'admin';
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -63,6 +68,18 @@ export function UserDropdown({ user, onSignOut }: UserDropdownProps) {
           >
             Settings
           </button>
+          {isAdmin && (
+            <button
+              className="user-dropdown__item user-dropdown__item--admin"
+              onClick={() => {
+                setShowAdminConfig(true);
+                setIsOpen(false);
+              }}
+              role="menuitem"
+            >
+              Admin Config
+            </button>
+          )}
           <button
             className="user-dropdown__item user-dropdown__item--danger"
             onClick={() => {
@@ -78,6 +95,10 @@ export function UserDropdown({ user, onSignOut }: UserDropdownProps) {
 
       {showSettings && (
         <ThemeSettingsModal onClose={() => setShowSettings(false)} />
+      )}
+
+      {showAdminConfig && (
+        <AdminConfigPanel onClose={() => setShowAdminConfig(false)} />
       )}
     </div>
   );
