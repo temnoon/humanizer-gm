@@ -294,10 +294,141 @@ hr.workspace__divider {
 @media (prefers-reduced-motion: reduce) {
   .welcome-screen__drag-overlay,
   .welcome-screen__drag-icon,
-  .welcome-screen__progress-fill {
+  .welcome-screen__progress-fill,
+  .welcome-screen__quote,
+  .welcome-screen__keyword {
     animation: none;
     transition: none;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WELCOME SCREEN - Hero Text
+   Multi-line hero with emphasis on "Humanize Yourself"
+   ═══════════════════════════════════════════════════════════════════ */
+
+.welcome-screen__hero {
+  font-family: var(--font-family-display, Georgia, serif);
+  font-size: clamp(1.75rem, 5vw, 2.75rem);
+  font-weight: normal;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--color-text-primary, var(--studio-text));
+  margin-bottom: var(--space-medium, 16px);
+  text-align: center;
+}
+
+.welcome-screen__hero-line {
+  display: block;
+}
+
+.welcome-screen__hero-line--emphasis {
+  font-style: italic;
+  color: var(--color-accent, var(--studio-accent));
+  font-size: 1.1em;
+  margin-top: 0.1em;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WELCOME SCREEN - Historical Quote Rotation
+   Tasteful quote display with fade transitions
+   ═══════════════════════════════════════════════════════════════════ */
+
+.welcome-screen__quote {
+  /* Fixed height container to prevent layout shift */
+  margin-top: var(--space-xlarge, 32px);
+  width: 100%;
+  max-width: 600px;
+  height: 140px; /* Fixed height accommodates longest quotes */
+
+  /* Center content within fixed container */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+
+  padding: var(--space-medium, 16px) var(--space-xlarge, 32px);
+  opacity: 1;
+  transition: opacity 1.2s ease-in-out; /* Slow fade in/out */
+}
+
+.welcome-screen__quote--fading {
+  opacity: 0;
+}
+
+.welcome-screen__quote-text {
+  font-family: var(--font-family-display, Georgia, serif);
+  font-size: var(--text-size-body, 1rem);
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--color-text-secondary, var(--studio-text-secondary));
+  margin: 0 0 var(--space-small, 8px) 0;
+  padding: 0;
+  border: none;
+  background: none;
+  quotes: none;
+  text-align: center;
+}
+
+.welcome-screen__quote-attribution {
+  display: block;
+  font-family: var(--font-family-body, -apple-system, BlinkMacSystemFont, sans-serif);
+  font-size: var(--text-size-small, 0.875rem);
+  font-style: normal;
+  color: var(--color-text-tertiary);
+  opacity: 0.8;
+  text-align: center;
+}
+
+/* Keyword animation phases */
+.welcome-screen__keyword {
+  transition: all 1.5s ease-in-out; /* Slow style transitions */
+}
+
+/* Phase 1: italic (inherits from quote-text) */
+.welcome-screen__keyword--italic {
+  font-style: italic;
+  font-weight: normal;
+  text-decoration: none;
+}
+
+/* Phase 2: italic bold */
+.welcome-screen__keyword--italic-bold {
+  font-style: italic;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Phase 3: bold underlined (no italic) */
+.welcome-screen__keyword--bold-underline {
+  font-style: normal;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+/* Sepia mode quote styling */
+[data-theme='sepia'] .welcome-screen__quote-text {
+  color: var(--sepia-text-secondary, #5c4a3a);
+}
+
+[data-theme='sepia'] .welcome-screen__quote-attribution {
+  color: var(--sepia-text-tertiary, #7a6a5a);
+}
+
+[data-theme='sepia'] .welcome-screen__hero-line--emphasis {
+  color: var(--sepia-accent, #8b5a2b);
+}
+
+/* Dark mode quote styling */
+[data-theme='dark'] .welcome-screen__quote-text {
+  color: var(--color-text-secondary, #a0a0a0);
+}
+
+[data-theme='dark'] .welcome-screen__quote-attribution {
+  color: var(--color-text-tertiary, #707070);
 }
 
 .workspace__breadcrumb {

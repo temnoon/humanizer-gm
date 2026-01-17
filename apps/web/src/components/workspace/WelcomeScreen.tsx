@@ -11,6 +11,7 @@ import type { IndexEvent, FilesystemIndex } from '../../lib/filesystem/types';
 import type { ArchiveSource } from '../../lib/buffer/types';
 import { useBuffers } from '../../lib/buffer';
 import { isElectron, getElectronAPI } from '../../lib/platform';
+import { HISTORICAL_QUOTES, type HistoricalQuote } from '../../data/historical-quotes';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPE DECLARATIONS
@@ -43,12 +44,86 @@ interface IndexingProgress {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════
 
+// Quote timing configuration
+const QUOTE_DURATION_MS = 30000; // Total time each quote is shown
+const FADE_DURATION_MS = 1200;   // Fade in/out transition (matches CSS)
+const BOLD_DELAY_MS = 2500;      // Delay before keyword goes bold
+const UNDERLINE_DELAY_MS = 8000; // Delay before keyword gets underlined
+
+// Keyword patterns to highlight
+const KEYWORD_PATTERN = /\b(humaniz\w*|humanis\w*|human)\b/gi;
+
+// Animation phases for keyword
+type KeywordPhase = 'italic' | 'italic-bold' | 'bold-underline';
+
 export function WelcomeScreen() {
   const { importText } = useBuffers();
   const [dragActive, setDragActive] = useState(false);
   const [progress, setProgress] = useState<IndexingProgress>({ status: 'idle', progress: 0 });
   const indexerRef = useRef<FilesystemIndexer | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Quote rotation state
+  const [currentQuoteIndex, setCurrentQuoteIndex] = useState(() =>
+    Math.floor(Math.random() * HISTORICAL_QUOTES.length)
+  );
+  const [isQuoteFading, setIsQuoteFading] = useState(false);
+  const [keywordPhase, setKeywordPhase] = useState<KeywordPhase>('italic');
+  const currentQuote: HistoricalQuote = HISTORICAL_QUOTES[currentQuoteIndex];
+
+  // Rotate quotes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsQuoteFading(true);
+      setTimeout(() => {
+        setCurrentQuoteIndex((prev) => (prev + 1) % HISTORICAL_QUOTES.length);
+        setKeywordPhase('italic'); // Reset keyword phase for new quote
+        setIsQuoteFading(false);
+      }, FADE_DURATION_MS);
+    }, QUOTE_DURATION_MS);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Keyword animation phases
+  useEffect(() => {
+    if (isQuoteFading) return;
+
+    // Phase 1 -> 2: italic to italic-bold
+    const boldTimer = setTimeout(() => {
+      setKeywordPhase('italic-bold');
+    }, BOLD_DELAY_MS);
+
+    // Phase 2 -> 3: italic-bold to bold-underline
+    const underlineTimer = setTimeout(() => {
+      setKeywordPhase('bold-underline');
+    }, UNDERLINE_DELAY_MS);
+
+    return () => {
+      clearTimeout(boldTimer);
+      clearTimeout(underlineTimer);
+    };
+  }, [currentQuoteIndex, isQuoteFading]);
+
+  // Render quote text with highlighted keywords
+  const renderQuoteWithKeywords = (text: string) => {
+    const parts = text.split(KEYWORD_PATTERN);
+    return parts.map((part, index) => {
+      if (KEYWORD_PATTERN.test(part)) {
+        // Reset regex lastIndex after test
+        KEYWORD_PATTERN.lastIndex = 0;
+        return (
+          <span
+            key={index}
+            className={`welcome-screen__keyword welcome-screen__keyword--${keywordPhase}`}
+          >
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
 
   // Cleanup on unmount
   useEffect(() => {
@@ -322,10 +397,29 @@ export function WelcomeScreen() {
       aria-label="File drop zone. Drag files or folders here to index, or use the button to choose a folder."
     >
       <div className="workspace__placeholder">
-        <h1>humanizer</h1>
+        {/* Hero text */}
+        <h1 className="welcome-screen__hero">
+          <span className="welcome-screen__hero-line">Give Yourself Enough</span>
+          <span className="welcome-screen__hero-line">Respect to</span>
+          <span className="welcome-screen__hero-line welcome-screen__hero-line--emphasis">Humanize Yourself</span>
+        </h1>
         <p className="workspace__tagline">
-          *Infrastructure for reclaiming subjective agency*
+          A Tool for Reclaiming Your Life's Stories
         </p>
+
+        {/* Historical quote rotation */}
+        <div
+          className={`welcome-screen__quote ${isQuoteFading ? 'welcome-screen__quote--fading' : ''}`}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <blockquote className="welcome-screen__quote-text">
+            "{renderQuoteWithKeywords(currentQuote.quote)}"
+          </blockquote>
+          <cite className="welcome-screen__quote-attribution">
+            — {currentQuote.author}, {currentQuote.year}
+          </cite>
+        </div>
 
         {progress.status === 'idle' && (
           <>
