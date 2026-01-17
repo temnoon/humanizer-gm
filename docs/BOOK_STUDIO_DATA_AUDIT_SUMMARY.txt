@@ -1,0 +1,313 @@
+================================================================================
+BOOK STUDIO DATA SCHEMA AUDIT - EXECUTIVE SUMMARY
+================================================================================
+
+DATE: January 16, 2026
+AUDITOR: House of Data (Data Agent)
+SCOPE: Book Studio API, Archive Server, Frontend Types
+STATUS: CONDITIONAL PASS - Mandatory fixes required before merge
+
+================================================================================
+CRITICAL FINDINGS
+================================================================================
+
+ISSUE #1: TEMPORAL METADATA INCONSISTENCY [CRITICAL]
+────────────────────────────────────────────────────
+Impact: User data dates may be lost or misinterpreted
+Severity: CRITICAL - Affects data integrity across entire system
+
+Problem:
+  - Archive returns createdAt (unclear if seconds, milliseconds, or ISO)
+  - HarvestCard has createdAt + harvestedAt (semantic conflict)
+  - Book DB schema uses created_at (ISO string)
+  - No way to distinguish "original date" from "import date"
+
+Example:
+  A message created on ChatGPT: 2024-01-02 (original date)
+  Exported in Facebook backup: 2024-12-15 (export date)
+  Harvested into Book Studio: 2026-01-16 (harvest date)
+  
+  Current system: Only createdAt stored, which one is it?
+  Result: Original date lost, impossible to recover.
+
+Solution:
+  - sourceCreatedAt: Unix seconds (from original platform)
+  - sourceCreatedAtStatus: 'known'|'approximate'|'unknown'
+  - harvestedAt: ISO string (when we imported it)
+  - importedAt: ISO string (when moved from staging to book, optional)
+  - sourceMetadata: Full preservation of original metadata
+
+Files affected:
+  - Archive Server: /electron/archive-server/routes/embeddings.ts
+  - Book Studio: /electron/book-studio/services/HarvestService.ts
+  - Frontend: /humanizer-sandbox/src/book-studio/types.ts
+
+
+ISSUE #2: ZERO-DATE SILENT LOSS [CRITICAL]
+───────────────────────────────────────────
+Impact: Metadata completely lost without notification
+Severity: CRITICAL - Data is silently discarded
+
+Problem:
+  Export/import processes often set dates to epoch zero (0, 1970-01-01)
+  System has no detection mechanism
+  User has no way to know data was lost
+
+Solution:
+  - isZeroDate() function detects all zero-date patterns
+  - sourceCreatedAtStatus field explains missing dates
+  - Migration script recovers dates from metadata when possible
+  - API includes date_quality indicators
+
+Detection patterns:
+  - createdAt == 0
+  - createdAt < 157680000 (before Jan 1, 1975)
+  - createdAt == '1970-01-01T00:00:00Z'
+  - createdAt == null || undefined
+  - createdAt == '' (empty string)
+
+
+ISSUE #3: TYPE DUPLICATION [HIGH]
+─────────────────────────────────
+Impact: Type definitions can diverge, causing data mismatches
+Severity: HIGH - Schema coherence at risk
+
+Problem:
+  humanizer-sandbox/src/book-studio/types.ts defines HarvestCard locally
+  humanizer-gm/packages/core/src/types/book.ts defines BookProject
+  
+  Two competing type systems with no synchronization mechanism
+  Frontend and API can drift out of sync
+
+Solution:
+  - Create unified /packages/core/src/types/book-studio.ts
+  - Frontend imports from @humanizer/core (not local)
+  - Archive reader types also in core
+  - Single source of truth for all types
+
+
+ISSUE #4: METADATA PRESERVATION UNCLEAR [MEDIUM]
+─────────────────────────────────────────────────
+Impact: Original platform metadata may be lost during transformations
+Severity: MEDIUM - Audit trail broken
+
+Problem:
+  No explicit contract to preserve sourceMetadata
+  Metadata fields from platforms (created_time, timestamp, etc.)
+  not tracked through pipeline
+
+Solution:
+  - sourceMetadata: Record<string, unknown> always preserved
+  - original_created_at, original_timestamp, etc. kept as-is
+  - Migration guide for date recovery from metadata
+  - Audit trail shows what was recovered and from where
+
+
+================================================================================
+MANDATORY FIXES (BLOCKERS FOR MERGE)
+================================================================================
+
+BEFORE MERGE TO MAIN, MUST HAVE:
+
+1. Archive Server (searchResult/types)
+   ✓ createdAt type clarified (number = Unix seconds)
+   ✓ exportedAt?: number field added
+   ✓ metadata.date_source and date_confidence fields
+   ✓ All original metadata preserved
+
+2. Book Studio API (HarvestCard storage & API)
+   ✓ sourceCreatedAt (Unix seconds from Archive)
+   ✓ sourceCreatedAtStatus ('known'|'approximate'|'unknown')
+   ✓ harvestedAt (ISO string, when harvested)
+   ✓ importedAt (ISO string, when moved to book, optional)
+   ✓ sourceMetadata always preserved
+   ✓ Zero-date detection active
+
+3. Frontend (type imports)
+   ✓ Import from @humanizer/core, not local definitions
+   ✓ No HarvestCard type duplication
+   ✓ UI state types separated from data types
+
+4. Type System Unification
+   ✓ HarvestCard defined once in @humanizer/core
+   ✓ All packages import from core
+   ✓ No type conflicts or divergence possible
+
+5. Database Schema (Book Studio :3004)
+   ✓ source_created_at INTEGER (Unix seconds)
+   ✓ source_created_at_status TEXT
+   ✓ source_metadata TEXT (JSON preserved)
+   ✓ created_at TEXT (Book Studio timestamp)
+   ✓ harvested_at TEXT (Harvest operation timestamp)
+
+6. Testing & Validation
+   ✓ Zero-date detection tested
+   ✓ Date normalization tested (seconds, ms, ISO)
+   ✓ Metadata recovery tested
+   ✓ API contracts tested
+   ✓ Backward compatibility verified
+
+
+================================================================================
+RECOMMENDED IMPLEMENTATION ORDER
+================================================================================
+
+Week 1:
+  [ ] Create /packages/core/src/types/book-studio.ts
+  [ ] Update SearchResult in archive-reader (types)
+  [ ] Update HarvestCard interface with date fields
+
+Week 2:
+  [ ] Implement HarvestService (normalization logic)
+  [ ] Create database migrations
+  [ ] Update API responses to use ISO dates
+
+Week 3:
+  [ ] Update frontend imports from @humanizer/core
+  [ ] Create migration script for existing data
+  [ ] Comprehensive testing
+
+Week 4:
+  [ ] Code review & sign-off
+  [ ] Merge to main
+
+
+================================================================================
+DATA INTEGRITY GUARANTEES
+================================================================================
+
+After fixes, the system GUARANTEES:
+
+1. TEMPORAL LINEAGE
+   - Can trace any passage back to original source date
+   - Knows when it was exported, imported, harvested
+   - Can detect and handle lost dates
+
+2. METADATA PRESERVATION
+   - All original platform metadata preserved
+   - Recovery attempts logged for audit
+   - Date confidence indicated in all responses
+
+3. TYPE SAFETY
+   - Single source of truth for all types
+   - No duplication between packages
+   - API contracts strictly enforced
+
+4. BACKWARD COMPATIBILITY
+   - Existing data migrates cleanly
+   - No data loss during migration
+   - Old API calls continue to work
+
+5. AUDIT TRAIL
+   - Every transformation logged
+   - Date recovery attempts recorded
+   - Full lineage traceable
+
+
+================================================================================
+SIGN-OFF REQUIREMENTS
+================================================================================
+
+BEFORE MERGE, REQUIRES SIGN-OFF FROM:
+
+[_] Architect Agent
+    Verify schema design aligns with system architecture
+    Confirm no conflicts with other components
+
+[_] Data Agent
+    Verify temporal integrity and metadata preservation
+    Confirm backward compatibility
+
+[_] Security Agent
+    Verify no data exposure through metadata
+    Confirm access controls appropriate
+
+[_] Accessibility Agent
+    Verify date displays accessible to users
+    Confirm date formats clear and understandable
+
+
+================================================================================
+DOCUMENTS DELIVERED
+================================================================================
+
+1. /humanizer-gm/docs/BOOK_STUDIO_DATA_SCHEMA.md
+   - Full specification of all date fields
+   - Migration guide for existing data
+   - API contract specifications
+   - Type system alignment
+   - ~400 lines of detailed requirements
+
+2. /humanizer-gm/docs/BOOK_STUDIO_DATA_IMPLEMENTATION.md
+   - Specific files to create/modify
+   - Database schema (SQL)
+   - Testing checklist
+   - Implementation path
+   - ~150 lines of actionable items
+
+3. This file (BOOK_STUDIO_DATA_AUDIT_SUMMARY.txt)
+   - Executive overview
+   - Critical issues highlighted
+   - Mandatory fixes listed
+   - Implementation order
+
+
+================================================================================
+CRITICAL COMMANDMENTS
+================================================================================
+
+1. NEVER discard sourceMetadata
+   Every card must preserve original platform metadata as-is
+
+2. ALWAYS clarify date semantics
+   Every date field must have documented meaning
+
+3. DETECT zero-dates immediately
+   Unknown dates must be marked as 'unknown', never silently lost
+
+4. IMPORT types from @humanizer/core
+   No type definitions outside core for domain models
+
+5. PRESERVE lineage always
+   User can trace any passage back through import chain
+
+6. ISO in APIs, Unix in storage
+   REST responses use ISO 8601, databases use Unix seconds
+
+7. BACKWARD compatible migrations
+   Old data must upgrade cleanly without loss
+
+8. Audit trail everything
+   Date recovery attempts, transformations, status changes logged
+
+
+================================================================================
+VERDICT
+================================================================================
+
+CONDITIONAL PASS - Approve with mandatory fixes
+
+The Book Studio architecture is sound, but temporal metadata handling
+needs strengthening before handling user data. With the fixes above,
+the system will have strong data integrity guarantees.
+
+Estimated effort: 2-3 weeks for full implementation + testing
+Risk level: MEDIUM (temporal fields are critical, but fixes are straightforward)
+Data impact: HIGH (affects every passage in the system)
+
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Review this audit with Architect
+2. Confirm fix priorities with product
+3. Create GitHub issues for each fix
+4. Begin Week 1 implementation (core types)
+5. Parallel: Start migration script development
+6. Weekly sign-offs from agents during implementation
+
+
+Questions? Consult the full schema document:
+/humanizer-gm/docs/BOOK_STUDIO_DATA_SCHEMA.md
+

@@ -1,0 +1,320 @@
+================================================================================
+BOOK STUDIO API - ARCHITECTURE LAYERS & DATA FLOW
+================================================================================
+
+LAYER 1: PRESENTATION (Browser/Electron)
+├── BookStudio.tsx                 # Main UI component
+├── StagingArea.tsx                # Card harvesting interface
+├── OutlinePreview.tsx             # Outline research/review/generation
+├── WritingView.tsx                # Draft generation & editing
+├── BookContext.tsx                # UI state ONLY (selectedCard, view mode)
+└── WebSocket Listener             # Tool event handler
+    └── Events: card-harvested, draft-progress, outline-complete, etc
+
+LAYER 2: API ROUTES (Express on :3004)
+├── /api/books/*                   # CRUD for books & chapters
+├── /api/harvest/*                 # Card management
+├── /api/outlines/*                # Research, review, generation
+├── /api/drafts/*                  # Generation & streaming
+├── /api/sessions/*                # Long-running operation tracking
+└── /ws                            # WebSocket for events
+
+LAYER 3: SERVICES (Business Logic)
+├── BookService
+│   ├─ createBook()
+│   ├─ addChapter()
+│   ├─ listBooks()
+│   └─ getCurrentBook()
+│
+├── HarvestService
+│   ├─ harvestCard()
+│   ├─ gradeCard()
+│   ├─ deduplicateCards()
+│   └─ getCards()
+│
+├── OutlineService
+│   ├─ researchCards()          # Extract themes, arcs, gaps
+│   ├─ reviewOutline()          # Map cards to outline items
+│   ├─ generateOutline()        # Merge + order for narrative flow
+│   └─ orderCardsForOutline()   # Build OrderedSection[]
+│
+├── DraftService
+│   ├─ generateDraft()          # Call NPE-Local LLM
+│   ├─ generateDraftStreaming() # Stream progress to WebSocket
+│   ├─ expandSection()          # Expand selected text
+│   └─ saveDraft()
+│
+└── ClusteringService
+    ├─ clusterCards()           # Group cards by similarity
+    ├─ suggestGrouping()
+    └─ getClusteringState()
+
+LAYER 4: UTILITIES
+├── deduplication.ts            # Jaccard similarity, duplicate detection
+├── prompts.ts                  # Draft prompt builder
+├── constants.ts                # Default models, thresholds
+└── harvest-review-agent.ts     # quickGradeCard(), classifyStub()
+
+LAYER 5: DATA ACCESS
+├── BookRepository
+├── CardRepository
+├── OutlineRepository
+├── SessionRepository
+└── Database (SQLite)
+    ├── books
+    ├── chapters
+    ├── harvest_cards
+    ├── placements
+    ├── outlines
+    └── sessions
+
+LAYER 6: EXTERNAL SERVICES
+├── :3002 Archive (Embeddings, Search)
+├── :3003 NPE-Local (SIC, Quantum, LLM)
+└── :11434 Ollama (LLM inference)
+
+================================================================================
+REQUEST/RESPONSE FLOW - Research → Outline → Draft
+================================================================================
+
+USER CLICKS "ANALYZE OUTLINE"
+│
+├─ Frontend: POST /api/books/{id}/chapters/{cid}/research
+│  │
+│  └─ Backend: OutlineService.researchCards()
+│     ├─ extractThemes()          → { name, keywords, cardIds, strength }
+│     ├─ detectNarrativeArcs()    → { type, phases, completeness }
+│     ├─ mapSourcesToThemes()     → { cardId, themes, relevanceScores }
+│     └─ analyzeCoverage()        → { gaps, strongAreas }
+│     
+│     Returns: OutlineResearch
+│     ├─ themes[]
+│     ├─ arcs[]
+│     ├─ sourceMappings[]
+│     ├─ coverageGaps[]
+│     ├─ strongAreas[]
+│     └─ suggestedSections[]
+│
+├─ Frontend: Display research results panel
+│  User either:
+│  (A) Accepts suggested outline, or
+│  (B) Proposes custom outline
+│
+├─ Frontend: POST /api/books/{id}/chapters/{cid}/review-outline
+│  Payload: { outline: OutlineStructure }
+│  │
+│  └─ Backend: OutlineService.reviewOutline()
+│     ├─ findMatchingCards()      → for each outline item
+│     ├─ calculateCoverage()      → strong|partial|weak|none
+│     └─ suggestAdditions()       → unrepresented themes
+│     
+│     Returns: OutlineReview
+│     ├─ itemReviews[]            → per-item analysis
+│     ├─ overallCoverage          → 0-1 score
+│     ├─ feasibility              → can write from harvest?
+│     ├─ uncoveredItems[]
+│     └─ suggestedAdditions[]
+│
+├─ Frontend: Display coverage analysis
+│  User reviews and confirms
+│
+├─ Frontend: POST /api/books/{id}/chapters/{cid}/generate-outline
+│  Payload: { proposedOutline, config }
+│  │
+│  └─ Backend: OutlineService.generateOutline()
+│     ├─ mergeOutlines()          → proposed + research + review
+│     ├─ orderForNarrativeFlow()  → setup before payoff
+│     └─ buildCardAssignments()   → path → cardIds map
+│     
+│     Returns: GeneratedOutline
+│     ├─ structure               → hierarchical items
+│     ├─ itemCardAssignments     → path → cardIds[]
+│     └─ confidence              → 0-1
+│
+├─ Frontend: Display final outline
+│  User clicks "Generate Draft"
+│
+└─ CONTINUE TO DRAFT GENERATION...
+
+================================================================================
+DRAFT GENERATION - STREAMING VIA WEBSOCKET
+================================================================================
+
+Frontend: WebSocket connect to /ws
+          Subscribe to { bookId, chapterId }
+
+Frontend: POST /api/books/{id}/chapters/{cid}/draft
+          { strategy: 'outline-based', config: { model, temperature, ... } }
+
+Backend: DraftService.generateDraftStreaming()
+│
+├─ phase: "preparing"
+│  └─ WS event: { phase: 'preparing', progress: 0 }
+│
+├─ Fetch cards for chapter
+│  └─ OutlineService.orderCardsForOutline() → OrderedSection[]
+│
+├─ phase: "deduplicating"
+│  ├─ deduplicateCards()
+│  └─ WS event: { phase: 'deduplicating', removed: 5, kept: 45 }
+│
+├─ phase: "generating"
+│  ├─ Build prompt (voice, key passages, transitions)
+│  ├─ POST http://localhost:3003/transformations/generate
+│  ├─ Stream LLM response chunks
+│  ├─ WS event per chunk: { phase: 'generating', partialContent: '...', tokens: 42 }
+│  └─ Aggregate full text
+│
+└─ phase: "complete"
+   └─ WS event: { phase: 'complete', content: '...', wordCount: 1240 }
+
+Frontend listens to WebSocket:
+├─ "preparing"       → Show loading
+├─ "deduplicating"   → Show dedup stats
+├─ "generating"      → Update progress bar, stream text to preview
+└─ "complete"        → Enable "Save Draft" button
+
+================================================================================
+CARD GRADING - QUICK + BACKGROUND
+================================================================================
+
+Frontend: POST /api/books/{id}/harvest
+          { searchResult: SearchResult }
+
+Backend: HarvestService.harvestCard()
+│
+├─ Create card in DB (status='staging')
+├─ quickGradeCard() - SYNCHRONOUS, <10ms
+│  ├─ classifyStub()           → 'stub-sentence', 'optimal', etc
+│  ├─ analyzeNecessity()       → local Chekhov analysis
+│  └─ grade.confidence = 0.5
+│
+├─ Store card + quick grade
+├─ WS event: { type: 'card-harvested', card, grade }
+│
+└─ Background queue: gradeCardFull() - ASYNC
+   ├─ Fetch SIC score from NPE-Local
+   │  └─ POST :3003/transformations/analyze
+   │     Returns: { score, category, signals }
+   │
+   ├─ Fetch Quantum analysis from NPE-Local
+   │  └─ POST :3003/quantum-analysis/start|step
+   │     Returns: { dominantModality, isInflectionPoint, modalityShift }
+   │
+   ├─ Merge: authenticity from SIC + necessity from Chekhov + ...
+   ├─ Store full grade in DB
+   │
+   └─ WS event: { type: 'card-graded', cardId, grade }
+
+Frontend:
+├─ Receives 'card-harvested'  → Add card with spinner
+├─ Later receives 'card-graded' → Update grade, remove spinner
+└─ User sees: quick feedback + progressive enhancement
+
+================================================================================
+SERVICE BOUNDARIES & INTEGRATION POINTS
+================================================================================
+
+BOOK STUDIO API (:3004)
+│
+├─ READS FROM:
+│  ├─ Archive :3002
+│  │  ├─ POST /api/embeddings/search/unified    (harvest search)
+│  │  ├─ GET /api/conversations/*               (full messages)
+│  │  └─ GET /api/embeddings/stats              (health check)
+│  │
+│  └─ NPE-Local :3003
+│     ├─ POST /transformations/analyze          (SIC score)
+│     ├─ POST /quantum-analysis/start|step      (Quantum)
+│     ├─ POST /transformations/generate         (LLM draft)
+│     └─ GET /health                            (health check)
+│
+└─ OWNS:
+   ├─ books.db (SQLite)
+   │  ├─ Books
+   │  ├─ Chapters
+   │  ├─ Harvest Cards
+   │  ├─ Outlines
+   │  └─ Sessions
+   │
+   └─ WebSocket connections
+      ├─ Progress streaming
+      ├─ Event signaling
+      └─ Subscription management
+
+================================================================================
+DATABASE SCHEMA (SIMPLIFIED)
+================================================================================
+
+books
+├── id (PK)
+├── title
+├── status (draft|reviewing|published|archived)
+├── created_at
+└── metadata (JSONB)
+
+chapters
+├── id (PK)
+├── book_id (FK)
+├── title
+├── order
+├── status
+└── created_at
+
+harvest_cards
+├── id (PK)
+├── book_id (FK)
+├── content
+├── status (staging|placed|archived)
+├── grade (JSONB - CardGrade)
+├── is_outline
+├── tags
+├── user_notes
+└── harvested_at
+
+outlines
+├── id (PK)
+├── book_id (FK)
+├── chapter_id (FK)
+├── research_data (JSONB - OutlineResearch)
+├── generated_outline (JSONB - GeneratedOutline)
+├── status
+└── created_at
+
+sessions
+├── id (PK)
+├── book_id (FK)
+├── operation (research|outline-gen|draft-gen)
+├── status (active|completed|failed)
+├── progress (JSONB)
+├── error
+└── created_at
+
+================================================================================
+MIGRATION PHASES
+================================================================================
+
+Phase 1 (Week 1): Skeleton
+├─ Create Express server on :3004
+├─ Create database layer
+├─ Create service stubs
+└─ All logic still in frontend (no breaking changes)
+
+Phase 2 (Weeks 2-3): Port Services
+├─ BookService      (Move: book CRUD)
+├─ HarvestService   (Move: harvest card operations)
+├─ ClusteringService (Move: card clustering)
+├─ OutlineService   (Move: research/review/generate)
+└─ DraftService     (Move: LLM orchestration)
+
+Phase 3 (Week 4): Events
+├─ Add WebSocket layer
+├─ Emit events from background operations
+└─ Frontend subscribes to WebSocket
+
+Phase 4 (Week 5): Persistence
+├─ Enable session recovery
+├─ All books live in DB
+└─ User experience: "Open app → continue where left off"
+
+================================================================================

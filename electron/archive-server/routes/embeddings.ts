@@ -430,6 +430,7 @@ export function createEmbeddingsRouter(): Router {
         createdAt?: number;
         parentId?: string;
         isOwnContent?: boolean;
+        metadata?: Record<string, unknown>; // Full metadata including external_url
       }> = [];
 
       // Search messages (AI conversations)
@@ -473,6 +474,16 @@ export function createEmbeddingsRouter(): Router {
           const contentItem = db.getContentItem(r.content_item_id) as Record<string, unknown> | null;
           if (!contentItem) continue;
 
+          // Parse metadata JSON if present
+          let metadata: Record<string, unknown> | undefined;
+          if (contentItem.metadata) {
+            try {
+              metadata = JSON.parse(contentItem.metadata as string);
+            } catch {
+              // Invalid JSON, skip
+            }
+          }
+
           allResults.push({
             id: r.content_item_id,
             type: contentItem.type as 'post' | 'comment' | 'document' | 'note',
@@ -484,13 +495,24 @@ export function createEmbeddingsRouter(): Router {
             createdAt: contentItem.created_at as number | undefined,
             parentId: contentItem.parent_id as string | undefined,
             isOwnContent: contentItem.is_own_content === 1,
+            metadata, // Include parsed metadata with external_url etc
           });
         }
       }
 
+      // Deduplicate by ID, keeping the highest similarity score for each
+      const seenIds = new Map<string, typeof allResults[0]>();
+      for (const result of allResults) {
+        const existing = seenIds.get(result.id);
+        if (!existing || result.similarity > existing.similarity) {
+          seenIds.set(result.id, result);
+        }
+      }
+      const dedupedResults = Array.from(seenIds.values());
+
       // Sort by similarity (descending) and limit
-      allResults.sort((a, b) => b.similarity - a.similarity);
-      const limitedResults = allResults.slice(0, limit);
+      dedupedResults.sort((a, b) => b.similarity - a.similarity);
+      const limitedResults = dedupedResults.slice(0, limit);
 
       // Compute stats
       const stats = {

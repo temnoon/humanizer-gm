@@ -21,6 +21,7 @@ import { createGalleryRouter } from './routes/gallery';
 import { createImportRouter } from './routes/import';
 import { createLinksRouter } from './routes/links';
 import { createDraftRouter } from './routes/draft';
+import { createWebSearchRouter } from './routes/web-search';
 
 // Service registry for cleanup on archive switch
 import { resetServices, getEmbeddingDatabase } from './services/registry';
@@ -99,6 +100,7 @@ function createApp(): Express {
   app.use('/api/import', createImportRouter());
   app.use('/api/links', createLinksRouter());
   app.use('/api/draft', createDraftRouter());
+  app.use('/api/web', createWebSearchRouter());
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
