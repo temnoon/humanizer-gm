@@ -47,6 +47,45 @@ export * from './container.js';
 // Draft generation types (iterative chapter generation)
 export * from './draft.js';
 
+// Universal Content Graph types (UCG)
+// Import explicitly to handle SourceType conflict
+export type {
+  ContentNode,
+  ContentLink,
+  ContentBlob,
+  ContentAnchor,
+  LinkAnchor,
+  ContentFormat,
+  LinkType,
+  CreateContentNodeOptions,
+  CreateContentLinkOptions,
+  ContentNodeQuery,
+  ContentLinkQuery,
+  ContentVersion,
+  ContentLineage,
+  ContentSourceType,
+  // Re-export as UCGSourceType to avoid conflict with entity SourceType
+  SourceType as UCGSourceType,
+} from './content-graph.js';
+
+export {
+  generateContentURI,
+  isValidContentURI,
+} from './content-graph.js';
+
+// Content Adapter types (UCG adapters)
+export type {
+  ContentAdapter,
+  AdapterOptions,
+  DetectionResult,
+  ParseResult,
+  ParseError,
+  AdapterMetadata,
+  AdapterFactory,
+} from './content-adapter.js';
+
+export { BaseContentAdapter } from './content-adapter.js';
+
 // ═══════════════════════════════════════════════════════════════════
 // CORE ANALYSIS TYPES (Original)
 // ═══════════════════════════════════════════════════════════════════

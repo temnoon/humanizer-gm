@@ -23,6 +23,7 @@ import { createLinksRouter } from './routes/links';
 import { createDraftRouter } from './routes/draft';
 import { createWebSearchRouter } from './routes/web-search';
 import { createBooksRouter } from './routes/books';
+import { createContentGraphRouter } from './routes/content-graph';
 
 // Service registry for cleanup on archive switch
 import { resetServices, getEmbeddingDatabase } from './services/registry';
@@ -103,6 +104,7 @@ function createApp(): Express {
   app.use('/api/draft', createDraftRouter());
   app.use('/api/web', createWebSearchRouter());
   app.use('/api/books', createBooksRouter());
+  app.use('/api/ucg', createContentGraphRouter());
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

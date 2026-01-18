@@ -2278,6 +2278,13 @@ export class EmbeddingDatabase {
     return this.db;
   }
 
+  /**
+   * Check if vec0 extension is loaded and available
+   */
+  isVecLoaded(): boolean {
+    return this.vecLoaded;
+  }
+
   // ===========================================================================
   // Cleanup
   // ===========================================================================
