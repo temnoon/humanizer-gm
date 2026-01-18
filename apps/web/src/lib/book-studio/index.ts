@@ -81,6 +81,19 @@ export { apiClient, wsManager } from './api-client'
 // React Hook
 export { useBookStudioApi } from './useBookStudioApi'
 
+// React Context Provider
+export {
+  BookStudioProvider,
+  useBookStudio,
+  useBookStudioOptional,
+  type BookStudioContextValue,
+  type HarvestAgentState,
+  type OutlineAgentState,
+  type DraftAgentState,
+  type DraftProgress,
+  type DraftGenerationConfig,
+} from './BookStudioProvider'
+
 // Persistence Adapter (abstracts localStorage vs API backend)
 export {
   loadLibrary,

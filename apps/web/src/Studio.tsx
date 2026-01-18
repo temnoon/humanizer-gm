@@ -13,6 +13,7 @@ import {
   facebookContentToContainer,
 } from './lib/archive';
 import { BookshelfProvider } from './lib/bookshelf';
+import { BookStudioProvider } from './lib/book-studio/BookStudioProvider';
 import { AUIProvider, useAUI, type WorkspaceState } from './lib/aui';
 import { ThemeProvider } from './lib/theme/ThemeContext';
 import { type SelectedFacebookMedia, type SelectedFacebookContent, type ArchiveTabId, type SearchResult } from './components/archive';
@@ -524,9 +525,11 @@ export function Studio() {
       <BufferProvider>
         <BookshelfProvider>
           {/* BookProvider removed - consolidated into BookshelfProvider (Phase 4.2) */}
-          <AUIProvider>
-            <StudioContent />
-          </AUIProvider>
+          <BookStudioProvider>
+            <AUIProvider>
+              <StudioContent />
+            </AUIProvider>
+          </BookStudioProvider>
         </BookshelfProvider>
       </BufferProvider>
     </ThemeProvider>

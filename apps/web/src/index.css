@@ -70,6 +70,7 @@
 @import './styles/features/analysis.css';
 @import './styles/features/workspace-enhancements.css';
 @import './styles/features/archive-tabs.css';
+@import './styles/features/book-studio.css';
 /* Modularized component styles */
 @import './styles/components/buttons.css';
 @import './styles/components/profile-cards.css';

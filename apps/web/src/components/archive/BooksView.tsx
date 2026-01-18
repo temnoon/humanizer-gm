@@ -13,6 +13,7 @@ import { useBuffers } from '../../lib/buffer/BufferContext';
 import { useAuthenticatedFetch } from '../../lib/auth';
 // useBook removed - consolidated into useBookshelf (Phase 4.2)
 import { useBookshelf, type BookProject as BookshelfBookProject } from '../../lib/bookshelf';
+import { useBookStudioOptional } from '../../lib/book-studio/BookStudioProvider';
 import { usePromptDialog, PromptDialog } from '../dialogs/PromptDialog';
 import { FillChapterDialog, type FillChapterOptions } from '../dialogs/FillChapterDialog';
 import {
@@ -22,6 +23,10 @@ import {
   DEMO_BOOK_PROJECT,
 } from './book-project/types';
 import type { BookContent } from '../workspace/BookContentView';
+import { CardCanvas } from './CardCanvas';
+import { OutlinePanel } from './OutlinePanel';
+import { DraftPanel } from './DraftPanel';
+import type { HarvestCard, Chapter } from '../../lib/book-studio/types';
 
 // Legacy Book interface for API compatibility
 interface Book {
@@ -86,7 +91,7 @@ Science arose *from* the lifeworld. From bodies in space, hands on instruments, 
 };
 
 type ViewMode = 'list' | 'navigation';
-type ProjectTab = 'sources' | 'thinking' | 'drafts';
+type ProjectTab = 'sources' | 'staging' | 'outline' | 'thinking' | 'drafts';
 
 interface BooksViewProps {
   onSelectBookContent?: (content: BookContent, project: BookProject) => void;
@@ -113,6 +118,14 @@ export function BooksView({ onSelectBookContent }: BooksViewProps) {
   // Bookshelf context - unified storage for books, personas, styles
   // (BookContext removed - consolidated in Phase 4.2)
   const bookshelf = useBookshelf();
+
+  // Book Studio context - optional, for smart harvest and card management
+  const bookStudio = useBookStudioOptional();
+
+  // Harvest query state
+  const [harvestQuery, setHarvestQuery] = useState('');
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+  const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
 
   // Prompt dialog hook (window.prompt() not supported in Electron)
   const { prompt, dialogProps } = usePromptDialog();
@@ -506,16 +519,51 @@ Start writing here...
     }
   }, [fillDialogChapter, selectedProjectId, bookProjects, bookshelf, onSelectBookContent]);
 
-  // Start a harvest for the current project - runs semantic search immediately
-  const handleStartHarvest = useCallback(async () => {
+  // Start a harvest for the current project - uses smart harvest when Book Studio is connected
+  const handleStartHarvest = useCallback(async (query?: string) => {
     if (!selectedProjectId) return;
 
     const project = bookProjects.find(p => p.id === selectedProjectId);
     if (!project) return;
 
+    // Use provided query or project name
+    const searchQuery = query || harvestQuery || project.name;
+    if (!searchQuery.trim()) {
+      alert('Please enter a search query');
+      return;
+    }
+
+    // If Book Studio is connected and active book is selected, use smart harvest
+    if (bookStudio?.isConnected && bookStudio.activeBookId) {
+      console.log('[BooksView] Using smart harvest via Book Studio');
+      try {
+        const result = await bookStudio.harvest.run(searchQuery, {
+          target: 40,
+          expandBreadcrumbs: true,
+        });
+
+        if (result.results.length > 0) {
+          // Commit results to Book Studio
+          await bookStudio.harvest.commitResults();
+
+          alert(`Smart harvest complete!\n\n${result.results.length} quality cards harvested.\n\nSwitch to the Staging tab to view them.`);
+          setActiveTab('staging');
+        } else {
+          alert(`No quality results found for: ${searchQuery}\n\nTry a different query or check that embeddings are built.`);
+        }
+      } catch (err) {
+        console.error('[BooksView] Smart harvest failed:', err);
+        alert(`Harvest failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+      return;
+    }
+
+    // Fallback to legacy harvest system
+    console.log('[BooksView] Using legacy harvest (Book Studio not connected)');
+
     // Create a harvest bucket with queries based on project name
-    const queries = [project.name];
-    if (project.subtitle) {
+    const queries = [searchQuery];
+    if (project.subtitle && !query) {
       queries.push(project.subtitle);
     }
 
@@ -568,19 +616,19 @@ Start writing here...
       const archiveServer = await getArchiveServerUrl();
       let totalResults = 0;
 
-      for (const query of queries) {
+      for (const q of queries) {
         try {
           const response = await fetch(`${archiveServer}/api/embeddings/search/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             // Filter to assistant messages only for substantive content
-            body: JSON.stringify({ query, limit: 40, role: 'assistant' }),
+            body: JSON.stringify({ query: q, limit: 40, role: 'assistant' }),
           });
 
           if (response.ok) {
             const data = await response.json();
             if (data.results && data.results.length > 0) {
-              console.log(`[BooksView] Got ${data.results.length} results for query "${query}"`);
+              console.log(`[BooksView] Got ${data.results.length} results for query "${q}"`);
               for (const result of data.results) {
                 // SQL already filters for: role=assistant, length>200, no tool calls
                 const wordCount = result.content?.split(/\s+/).length || 0;
@@ -607,11 +655,11 @@ Start writing here...
                 totalResults++;
               }
             } else {
-              console.log(`[BooksView] No results for query "${query}"`);
+              console.log(`[BooksView] No results for query "${q}"`);
             }
           }
         } catch (err) {
-          console.warn(`[BooksView] Search failed for query "${query}":`, err);
+          console.warn(`[BooksView] Search failed for query "${q}":`, err);
         }
       }
 
@@ -631,7 +679,7 @@ Start writing here...
       console.error('[BooksView] Harvest failed:', err);
       alert('Harvest failed. Make sure the archive server is running and embeddings are built.');
     }
-  }, [selectedProjectId, bookProjects, bookshelf]);
+  }, [selectedProjectId, bookProjects, bookshelf, bookStudio, harvestQuery]);
 
   // Handle thinking click - send to main workspace
   const handleThinkingClick = useCallback(() => {
@@ -734,19 +782,35 @@ Start writing here...
             className={`book-nav__tab ${activeTab === 'sources' ? 'book-nav__tab--active' : ''}`}
             onClick={() => setActiveTab('sources')}
           >
-            📚 Sources
+            Sources
           </button>
+          {bookStudio?.isConnected && (
+            <>
+              <button
+                className={`book-nav__tab ${activeTab === 'staging' ? 'book-nav__tab--active' : ''}`}
+                onClick={() => setActiveTab('staging')}
+              >
+                Staging {bookStudio.activeBook?.stagingCards?.length ? `(${bookStudio.activeBook.stagingCards.length})` : ''}
+              </button>
+              <button
+                className={`book-nav__tab ${activeTab === 'outline' ? 'book-nav__tab--active' : ''}`}
+                onClick={() => setActiveTab('outline')}
+              >
+                Outline
+              </button>
+            </>
+          )}
           <button
             className={`book-nav__tab ${activeTab === 'thinking' ? 'book-nav__tab--active' : ''}`}
             onClick={() => setActiveTab('thinking')}
           >
-            🧠 Thinking
+            Thinking
           </button>
           <button
             className={`book-nav__tab ${activeTab === 'drafts' ? 'book-nav__tab--active' : ''}`}
             onClick={() => setActiveTab('drafts')}
           >
-            📝 Drafts
+            Drafts
           </button>
         </nav>
 
@@ -754,13 +818,55 @@ Start writing here...
         <div className="book-nav__content">
           {activeTab === 'sources' && (
             <div className="book-nav__sources">
-              {/* Start Harvest button */}
-              <button
-                className="book-nav__harvest-btn"
-                onClick={handleStartHarvest}
-              >
-                🌾 Start Harvest
-              </button>
+              {/* Smart Harvest with query input */}
+              <div className="harvest-panel__search">
+                <input
+                  type="text"
+                  className="harvest-panel__search-input"
+                  placeholder="Search query for harvest..."
+                  value={harvestQuery}
+                  onChange={(e) => setHarvestQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleStartHarvest(harvestQuery);
+                    }
+                  }}
+                />
+                <button
+                  className="harvest-panel__search-btn"
+                  onClick={() => handleStartHarvest(harvestQuery)}
+                  disabled={bookStudio?.harvest.state.isRunning}
+                >
+                  {bookStudio?.harvest.state.isRunning ? 'Harvesting...' : 'Harvest'}
+                </button>
+              </div>
+
+              {/* Harvest progress */}
+              {bookStudio?.harvest.state.isRunning && bookStudio.harvest.state.progress && (
+                <div className="operation-status operation-status--active">
+                  <div className="operation-status__header">
+                    <span className="operation-status__title">
+                      {bookStudio.harvest.state.progress.message}
+                    </span>
+                    <span className="operation-status__badge operation-status__badge--running">
+                      {bookStudio.harvest.state.progress.phase}
+                    </span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-bar__track">
+                      <div
+                        className="progress-bar__fill"
+                        style={{
+                          width: `${(bookStudio.harvest.state.progress.found / bookStudio.harvest.state.progress.target) * 100}%`
+                        }}
+                      />
+                    </div>
+                    <span className="progress-bar__text">
+                      {bookStudio.harvest.state.progress.found}/{bookStudio.harvest.state.progress.target}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Gems */}
               {passagesByStatus.gems.length > 0 && (
@@ -913,8 +1019,83 @@ Start writing here...
             </div>
           )}
 
+          {/* Staging tab - Card Canvas for harvested cards */}
+          {activeTab === 'staging' && bookStudio?.isConnected && (
+            <div className="book-nav__staging">
+              {bookStudio.activeBook ? (
+                <CardCanvas
+                  cards={bookStudio.activeBook.stagingCards || []}
+                  selectedCardIds={selectedCardIds}
+                  showGrades={true}
+                  isLoading={bookStudio.isLoading}
+                  onCardClick={(card) => {
+                    // Toggle selection
+                    setSelectedCardIds(prev =>
+                      prev.includes(card.id)
+                        ? prev.filter(id => id !== card.id)
+                        : [...prev, card.id]
+                    );
+                  }}
+                  onCardDoubleClick={(card) => {
+                    // Load card content into workspace
+                    importText(card.content, card.title || 'Harvest Card', {
+                      type: 'book-card',
+                      bookProjectId: bookStudio.activeBookId || undefined,
+                      cardId: card.id,
+                    });
+                  }}
+                  onSelectionChange={setSelectedCardIds}
+                  emptyState={
+                    <div className="card-canvas__empty">
+                      <span className="card-canvas__empty-icon">📭</span>
+                      <p className="card-canvas__empty-text">No staging cards</p>
+                      <span className="card-canvas__empty-hint">
+                        Run a harvest from the Sources tab to collect cards
+                      </span>
+                    </div>
+                  }
+                />
+              ) : (
+                <div className="card-canvas__empty">
+                  <span className="card-canvas__empty-icon">📚</span>
+                  <p className="card-canvas__empty-text">No active book</p>
+                  <span className="card-canvas__empty-hint">
+                    Select a book to view staging cards
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Outline tab - Outline generation and review */}
+          {activeTab === 'outline' && bookStudio?.isConnected && (
+            <div className="book-nav__outline">
+              <OutlinePanel
+                onOutlineGenerated={(outline) => {
+                  console.log('[BooksView] Outline generated:', outline);
+                }}
+                onSectionSelect={(index, cardIds) => {
+                  setSelectedCardIds(cardIds);
+                  // Switch to staging to show selected cards
+                  setActiveTab('staging');
+                }}
+              />
+            </div>
+          )}
+
           {activeTab === 'drafts' && (
             <div className="book-nav__drafts">
+              {/* Draft panel when Book Studio is connected and chapter is selected */}
+              {bookStudio?.isConnected && selectedChapter && (
+                <DraftPanel
+                  chapter={selectedChapter}
+                  onDraftComplete={(content) => {
+                    console.log('[BooksView] Draft complete:', content.length, 'chars');
+                    setSelectedChapter(null);
+                  }}
+                />
+              )}
+
               {/* New Chapter button */}
               <button
                 className="book-nav__new-chapter"
