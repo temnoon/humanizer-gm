@@ -23,15 +23,57 @@ export { getConfig, useConfig, setUserConfig } from './config'
 export type { BookStudioConfig } from './config'
 
 // Agents
-export { smartHarvest, type SmartHarvestConfig, type HarvestResult } from './smart-harvest-agent'
-export { OutlineAgent } from './outline-agent'
-export { generateDraft, generateOutlineDraft, listOllamaModels } from './draft-generator'
-export { classifyStub, quickGradeCard, fullGradeCard } from './harvest-review-agent'
+export { smartHarvest, type HarvestConfig, type HarvestResult, type HarvestProgress } from './smart-harvest-agent'
+export {
+  researchHarvest,
+  reviewOutline,
+  generateOutline,
+  orderCardsForOutline,
+  extractThemes,
+  detectNarrativeArcs,
+  type OutlineResearch,
+  type ExtractedTheme,
+  type NarrativeArc,
+  type GeneratedOutline,
+  type OutlineReview,
+} from './outline-agent'
+export {
+  generateDraft,
+  generateOutlineDraft,
+  generateDraftWithOutline,
+  getAvailableModels,
+  checkOllamaAvailable,
+  deduplicateCards,
+} from './draft-generator'
+export {
+  classifyStub,
+  quickGradeCard,
+  gradeCardFull,
+  requestFullGrade,
+  processCardOnHarvest,
+  gradingQueue,
+} from './harvest-review-agent'
 
 // Services
-export { computeClusters, type ClusterResult } from './clustering'
-export { detectOutline, extractOutlineStructure } from './outline-detector'
-export { analyzeLocally as chekhovAnalyze } from './chekhov-local'
+export {
+  clusterCardsSemantically,
+  quickClusterByContent,
+  type SemanticCluster,
+  type ClusteringConfig,
+} from './clustering'
+export {
+  detectOutline,
+  isLikelyOutline,
+  extractOutlineTexts,
+  countOutlineItems,
+} from './outline-detector'
+export {
+  analyzeNecessity as chekhovAnalyze,
+  analyzeNecessityBatch,
+  quickNecessityScore,
+  isSetup,
+  isPayoff,
+} from './chekhov-local'
 
 // API Client (for direct server access)
 export { apiClient, wsManager } from './api-client'
@@ -39,5 +81,25 @@ export { apiClient, wsManager } from './api-client'
 // React Hook
 export { useBookStudioApi } from './useBookStudioApi'
 
-// Persistence
-export { getPersistenceAdapter } from './persistence-adapter'
+// Persistence Adapter (abstracts localStorage vs API backend)
+export {
+  loadLibrary,
+  loadBook,
+  saveLibrary,
+  setActiveBookId,
+  createBook,
+  updateBookTitle,
+  deleteBook,
+  createChapter,
+  createChaptersBatch,
+  harvestCard,
+  harvestCardsBatch,
+  updateCard,
+  moveCardToChapter,
+  deleteCard,
+  onBookEvent,
+  connectWebSocket,
+  disconnectWebSocket,
+  isApiAvailable,
+  resetApiCheck,
+} from './persistence-adapter'
