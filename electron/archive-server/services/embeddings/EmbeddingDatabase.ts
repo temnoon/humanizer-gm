@@ -26,6 +26,7 @@ import type {
   TargetType,
   AnchorType,
   SearchResult,
+  FilterSpec,
 } from './types.js';
 
 import { EmbeddingMigrations, SCHEMA_VERSION, EMBEDDING_DIM } from './EmbeddingMigrations.js';
@@ -34,6 +35,8 @@ import { VectorOperations } from './VectorOperations.js';
 import { ContentOperations } from './ContentOperations.js';
 import { FacebookOperations } from './FacebookOperations.js';
 import { BookOperations } from './BookOperations.js';
+import { MetadataDiscoveryService } from './MetadataDiscoveryService.js';
+import type { DiscoveryResult, FacetDefinition, TopValue } from './MetadataDiscoveryService.js';
 
 /**
  * Find sqlite-vec extension path - handles both dev and packaged Electron environments
@@ -81,6 +84,7 @@ export class EmbeddingDatabase {
   private contentOps!: ContentOperations;
   private facebookOps!: FacebookOperations;
   private bookOps!: BookOperations;
+  private discoveryService!: MetadataDiscoveryService;
 
   constructor(archivePath: string) {
     this.archivePath = archivePath;
@@ -123,6 +127,7 @@ export class EmbeddingDatabase {
     this.contentOps = new ContentOperations(this.db, this.vecLoaded);
     this.facebookOps = new FacebookOperations(this.db, this.vecLoaded);
     this.bookOps = new BookOperations(this.db, this.vecLoaded);
+    this.discoveryService = new MetadataDiscoveryService(this.db, this.vecLoaded);
   }
 
   private initSchema(): void {
@@ -976,6 +981,10 @@ export class EmbeddingDatabase {
 
   searchMessages(queryEmbedding: number[], limit: number = 20, role?: string): SearchResult[] {
     return this.vectorOps.searchMessages(queryEmbedding, limit, role);
+  }
+
+  searchMessagesFiltered(queryEmbedding: number[], filters: FilterSpec[], limit: number = 20): SearchResult[] {
+    return this.vectorOps.searchMessagesFiltered(queryEmbedding, filters, limit);
   }
 
   searchSummaries(queryEmbedding: number[], limit: number = 20): SearchResult[] {
@@ -2338,6 +2347,32 @@ export class EmbeddingDatabase {
       removed: totalRemoved,
       patterns: patternCounts,
     };
+  }
+
+  // =========================================================================
+  // METADATA DISCOVERY (Delegation to MetadataDiscoveryService)
+  // =========================================================================
+
+  /**
+   * Discover available facets for adaptive filtering
+   * Returns facet definitions based on actual data in the archive
+   */
+  discoverFacets(forceRefresh = false): DiscoveryResult {
+    return this.discoveryService.discoverFacets(forceRefresh);
+  }
+
+  /**
+   * Get values for a specific facet (for refreshing a single filter)
+   */
+  getFacetValues(field: string): TopValue[] | null {
+    return this.discoveryService.getFacetValues(field);
+  }
+
+  /**
+   * Invalidate the facet discovery cache (call after imports)
+   */
+  invalidateFacetCache(): void {
+    this.discoveryService.invalidateCache();
   }
 
   close(): void {

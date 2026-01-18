@@ -24,7 +24,11 @@ export type GUIActionType =
   | 'highlight_items'
   | 'open_panel'
   | 'navigate_to'
-  | 'set_active_tab';
+  | 'set_active_tab'
+  // Facet/Filter events
+  | 'set_available_facets'
+  | 'apply_filter'
+  | 'clear_filters';
 
 export type GUIActionTarget = 'archive' | 'tools' | 'workspace' | 'explore';
 
@@ -62,6 +66,27 @@ export interface NavigatePayload {
   conversationId?: string;
   messageId?: string;
   tab?: string;
+}
+
+// Facet types (imported here for convenience, defined in FilterContext)
+export interface FacetDefinition {
+  field: string;
+  label: string;
+  type: 'enum' | 'date_range' | 'numeric_range' | 'boolean';
+  source: string;
+  distinctCount: number;
+  topValues?: Array<{ value: string; count: number }>;
+  range?: { min: number; max: number };
+  coverage: number;
+}
+
+export interface SetFacetsPayload {
+  facets: FacetDefinition[];
+}
+
+export interface ApplyFilterPayload {
+  field: string;
+  value: unknown;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -146,6 +171,48 @@ export function dispatchNavigate(payload: NavigatePayload): void {
     type: 'navigate_to',
     target: 'archive',
     data: payload,
+  });
+}
+
+/**
+ * Dispatch available facets to FilterContext
+ */
+export function dispatchSetFacets(
+  payload: SetFacetsPayload,
+  source: string = 'discover_filters'
+): void {
+  dispatchGUIAction({
+    type: 'set_available_facets',
+    target: 'explore',
+    data: payload,
+    source,
+  });
+}
+
+/**
+ * Dispatch a filter application
+ */
+export function dispatchApplyFilter(
+  payload: ApplyFilterPayload,
+  source: string = 'aui'
+): void {
+  dispatchGUIAction({
+    type: 'apply_filter',
+    target: 'explore',
+    data: payload,
+    source,
+  });
+}
+
+/**
+ * Dispatch filter clear request
+ */
+export function dispatchClearFilters(source: string = 'aui'): void {
+  dispatchGUIAction({
+    type: 'clear_filters',
+    target: 'explore',
+    data: {},
+    source,
   });
 }
 

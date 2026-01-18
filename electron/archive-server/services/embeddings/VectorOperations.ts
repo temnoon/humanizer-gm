@@ -6,7 +6,7 @@
  */
 
 import { DatabaseOperations } from './DatabaseOperations.js';
-import type { SearchResult, AnchorType } from './types.js';
+import type { SearchResult, AnchorType, FilterSpec, FilterValue } from './types.js';
 
 export class VectorOperations extends DatabaseOperations {
   // ===========================================================================
@@ -305,6 +305,156 @@ export class VectorOperations extends DatabaseOperations {
       conversationTitle: row.conversation_title as string,
       messageRole: row.role as string,
     }));
+  }
+
+  /**
+   * Search messages with dynamic filter specs from adaptive filters.
+   * Filters can apply to conversations, messages, or content_blocks tables.
+   */
+  searchMessagesFiltered(
+    queryEmbedding: number[],
+    filters: FilterSpec[],
+    limit: number = 20
+  ): SearchResult[] {
+    if (!this.vecLoaded) throw new Error('Vector operations not available');
+
+    // Build dynamic WHERE clauses based on filters
+    const whereClauses: string[] = [];
+    const params: unknown[] = [this.embeddingToJson(queryEmbedding), limit * 3]; // Over-fetch to filter later
+
+    // Map filters to SQL conditions
+    for (const filter of filters) {
+      const clause = this.buildFilterClause(filter);
+      if (clause) {
+        whereClauses.push(clause.sql);
+        params.push(...clause.params);
+      }
+    }
+
+    // Build the SQL query with optional filter clauses
+    const filterSql = whereClauses.length > 0
+      ? `AND ${whereClauses.join(' AND ')}`
+      : '';
+
+    const sql = `
+      SELECT * FROM (
+        SELECT
+          vec_messages.id,
+          vec_messages.conversation_id,
+          vec_messages.message_id,
+          vec_messages.role,
+          vec_messages.distance,
+          messages.content,
+          messages.created_at as message_created_at,
+          conversations.title as conversation_title,
+          conversations.folder as conversation_folder,
+          conversations.created_at as conversation_created_at,
+          conversations.message_count as conversation_message_count
+        FROM vec_messages
+        JOIN messages ON messages.id = vec_messages.message_id
+        JOIN conversations ON conversations.id = vec_messages.conversation_id
+        WHERE embedding MATCH ? AND k = ?
+        ORDER BY distance
+      )
+      WHERE LENGTH(content) > 50
+        AND content NOT LIKE 'search("%'
+        AND content NOT LIKE '{"query":%'
+        ${filterSql}
+      LIMIT ?
+    `;
+
+    params.push(limit);
+
+    const results = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+
+    return results.map(row => ({
+      id: row.id as string,
+      content: row.content as string,
+      similarity: 1 - (row.distance as number),
+      metadata: {
+        conversationId: row.conversation_id,
+        messageId: row.message_id,
+        role: row.role,
+        createdAt: row.message_created_at,
+      },
+      conversationId: row.conversation_id as string,
+      conversationFolder: row.conversation_folder as string,
+      conversationTitle: row.conversation_title as string,
+      messageRole: row.role as string,
+    }));
+  }
+
+  /**
+   * Build a SQL WHERE clause from a FilterSpec.
+   * Returns null if the filter can't be applied to the current query context.
+   */
+  private buildFilterClause(filter: FilterSpec): { sql: string; params: unknown[] } | null {
+    const { field, source, value } = filter;
+
+    // Map field names to their actual table.column references
+    const fieldMap: Record<string, Record<string, string>> = {
+      conversations: {
+        created_at: 'conversation_created_at',
+        message_count: 'conversation_message_count',
+        folder: 'conversation_folder',
+      },
+      messages: {
+        role: 'role',
+        created_at: 'message_created_at',
+      },
+    };
+
+    // Get the mapped column name or use the field directly
+    const column = fieldMap[source]?.[field] || field;
+
+    switch (value.type) {
+      case 'enum':
+        if (value.values.length === 0) return null;
+        const placeholders = value.values.map(() => '?').join(', ');
+        return {
+          sql: `${column} IN (${placeholders})`,
+          params: value.values,
+        };
+
+      case 'date_range': {
+        const parts: string[] = [];
+        const params: unknown[] = [];
+        if (value.min !== undefined) {
+          parts.push(`${column} >= ?`);
+          params.push(value.min);
+        }
+        if (value.max !== undefined) {
+          parts.push(`${column} <= ?`);
+          params.push(value.max);
+        }
+        if (parts.length === 0) return null;
+        return { sql: `(${parts.join(' AND ')})`, params };
+      }
+
+      case 'numeric_range': {
+        const parts: string[] = [];
+        const params: unknown[] = [];
+        if (value.min !== undefined) {
+          parts.push(`${column} >= ?`);
+          params.push(value.min);
+        }
+        if (value.max !== undefined) {
+          parts.push(`${column} <= ?`);
+          params.push(value.max);
+        }
+        if (parts.length === 0) return null;
+        return { sql: `(${parts.join(' AND ')})`, params };
+      }
+
+      case 'boolean':
+        return {
+          sql: `${column} = ?`,
+          params: [value.value ? 1 : 0],
+        };
+
+      default:
+        return null;
+    }
   }
 
   searchSummaries(queryEmbedding: number[], limit: number = 20): SearchResult[] {

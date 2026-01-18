@@ -191,6 +191,15 @@ export async function executeTool(
     case 'build_embeddings':
       return executeBuildEmbeddings(params);
 
+    case 'discover_filters':
+      return executeDiscoverFilters(params);
+
+    case 'apply_filter':
+      return executeApplyFilter(params);
+
+    case 'clear_filters':
+      return executeClearFilters();
+
     case 'list_conversations':
       return executeListConversations(params);
 
@@ -387,6 +396,9 @@ import {
   executeBuildEmbeddings,
   executeSearchFacebook,
   executeSearchContent,
+  executeDiscoverFilters,
+  executeApplyFilter,
+  executeClearFilters,
 } from './tools/archive';
 
 // ═══════════════════════════════════════════════════════════════════

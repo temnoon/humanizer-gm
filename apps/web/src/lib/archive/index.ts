@@ -43,3 +43,27 @@ export {
   type ArchiveHealthServices,
   type IndexingProgress,
 } from './useArchiveHealth';
+
+// Filter context (adaptive search)
+export {
+  FilterProvider,
+  useFilters,
+  useFacet,
+  useFilterValue,
+  describeFilterValue,
+  isFacetUseful,
+  type FacetDefinition,
+  type FacetType,
+  type FacetSource,
+  type TopValue,
+  type DateRange,
+  type NumericRange,
+  type FilterValue,
+  type EnumFilterValue,
+  type DateRangeFilterValue,
+  type NumericRangeFilterValue,
+  type BooleanFilterValue,
+  type FilterSpec,
+  type FilterContextValue,
+  type DiscoveryResult,
+} from './FilterContext';

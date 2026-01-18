@@ -12,7 +12,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { getArchiveServerUrl } from '../../lib/platform';
 import { useSearchResultsAction } from '../../lib/aui';
 import { useArchiveHealth, needsEmbeddings, isOllamaAvailable } from '../../lib/archive/useArchiveHealth';
+import { useFilters, type FilterSpec } from '../../lib/archive/FilterContext';
 import { useBookshelf, type SourcePassage } from '../../lib/bookshelf';
+import { AdaptiveFilters } from './AdaptiveFilters';
 import type { EntityURI } from '@humanizer/core';
 
 export interface SearchResult {
@@ -61,6 +63,9 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
 
   // Bookshelf for harvest bucket creation
   const { activeBookUri, createHarvestBucket } = useBookshelf();
+
+  // Adaptive filters from FilterContext
+  const { hasActiveFilters, activeFilterCount, buildFilterSpecs } = useFilters();
 
   // Save current search results to a harvest bucket
   const handleSaveToHarvest = useCallback(async () => {
@@ -140,7 +145,7 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
     }
   };
 
-  const search = useCallback(async (searchQuery: string, filters: string[] = []) => {
+  const search = useCallback(async (searchQuery: string, contentTypeFilters: string[] = [], adaptiveFilterSpecs: FilterSpec[] = []) => {
     if (!searchQuery.trim()) {
       setResults([]);
       setHasSearched(false);
@@ -154,19 +159,42 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
     try {
       const archiveServer = await getArchiveServerUrl();
 
-      // Use chunk search if filters active or explicitly enabled
-      const endpoint = (useChunkSearch || filters.length > 0)
-        ? '/api/embeddings/search/chunks'
-        : '/api/embeddings/search/messages';
+      // Determine which endpoint to use:
+      // - Filtered endpoint when adaptive filters are active
+      // - Chunk search when content type filters are active
+      // - Default message search otherwise
+      let endpoint: string;
+      let body: Record<string, unknown>;
+
+      if (adaptiveFilterSpecs.length > 0) {
+        // Use the new filtered search endpoint
+        endpoint = '/api/embeddings/search/filtered';
+        body = {
+          query: searchQuery,
+          filters: adaptiveFilterSpecs,
+          limit: 20,
+        };
+      } else if (useChunkSearch || contentTypeFilters.length > 0) {
+        // Use chunk search for content type filters
+        endpoint = '/api/embeddings/search/chunks';
+        body = {
+          query: searchQuery,
+          limit: 20,
+          contentTypes: contentTypeFilters.length > 0 ? contentTypeFilters : undefined,
+        };
+      } else {
+        // Default message search
+        endpoint = '/api/embeddings/search/messages';
+        body = {
+          query: searchQuery,
+          limit: 20,
+        };
+      }
 
       const response = await fetch(`${archiveServer}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: searchQuery,
-          limit: 20,
-          contentTypes: filters.length > 0 ? filters : undefined,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -202,7 +230,7 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
     return () => window.removeEventListener('explore-search', handleExploreSearch as EventListener);
   }, [search]);
 
-  // Debounced search
+  // Debounced search - triggers on query, content filters, or adaptive filters change
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -210,7 +238,9 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
 
     if (query.trim()) {
       debounceRef.current = setTimeout(() => {
-        search(query, contentFilters);
+        // Build filter specs from adaptive filters
+        const filterSpecs = buildFilterSpecs();
+        search(query, contentFilters, filterSpecs);
       }, 300);
     } else {
       setResults([]);
@@ -222,7 +252,7 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, search, contentFilters]);
+  }, [query, search, contentFilters, activeFilterCount, buildFilterSpecs]);
 
   // Toggle content type filter
   const toggleFilter = (typeId: string) => {
@@ -289,6 +319,15 @@ export function ExploreView({ onSelectResult }: ExploreViewProps) {
           </button>
         )}
       </div>
+
+      {/* Adaptive filters (discovered from database) */}
+      <AdaptiveFilters
+        compact
+        minCoverage={5}
+        onFiltersChange={(count) => {
+          console.log(`[ExploreView] Active filters: ${count}`);
+        }}
+      />
 
       {/* Loading state */}
       {loading && (

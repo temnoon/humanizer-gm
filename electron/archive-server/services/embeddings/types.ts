@@ -576,6 +576,43 @@ export type ImportSourceType =
 /**
  * Import job with enhanced progress tracking
  */
+// =============================================================================
+// Adaptive Search Filter Types
+// =============================================================================
+
+export type FacetType = 'enum' | 'date_range' | 'numeric_range' | 'boolean';
+export type FacetSource = 'conversations' | 'content_items' | 'content_blocks' | 'messages';
+
+export interface EnumFilterValue {
+  type: 'enum';
+  values: string[];
+}
+
+export interface DateRangeFilterValue {
+  type: 'date_range';
+  min?: number;  // Unix timestamp
+  max?: number;
+}
+
+export interface NumericRangeFilterValue {
+  type: 'numeric_range';
+  min?: number;
+  max?: number;
+}
+
+export interface BooleanFilterValue {
+  type: 'boolean';
+  value: boolean;
+}
+
+export type FilterValue = EnumFilterValue | DateRangeFilterValue | NumericRangeFilterValue | BooleanFilterValue;
+
+export interface FilterSpec {
+  field: string;
+  source: FacetSource;
+  value: FilterValue;
+}
+
 export interface ImportJob {
   id: string;
   status: ImportJobStatus;

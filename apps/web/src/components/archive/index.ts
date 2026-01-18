@@ -6,4 +6,5 @@ export { ImportView } from './ImportView';
 export { BooksView } from './BooksView';
 export { FacebookView } from './FacebookView';
 export { ExploreView, type SearchResult } from './ExploreView';
+export { AdaptiveFilters } from './AdaptiveFilters';
 export * from './types';

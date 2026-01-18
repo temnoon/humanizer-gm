@@ -13,6 +13,7 @@ import { FilesView } from './FilesView';
 import { GutenbergView } from './GutenbergView';
 import { AUIChatTab } from '../aui/AUIChatTab';
 import { QueueTab } from '../queue';
+import { FilterProvider } from '../../lib/archive/FilterContext';
 import type { ArchiveTabId, SelectedFacebookMedia, SelectedFacebookContent } from './types';
 import type { BookProject } from './book-project/types';
 import type { BookContent } from '../workspace/BookContentView';
@@ -72,7 +73,11 @@ export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectConten
       case 'facebook':
         return <FacebookView onSelectMedia={onSelectMedia} onSelectContent={onSelectContent} onOpenGraph={onOpenGraph} />;
       case 'explore':
-        return <ExploreView onSelectResult={onSelectSearchResult} />;
+        return (
+          <FilterProvider autoLoad>
+            <ExploreView onSelectResult={onSelectSearchResult} />
+          </FilterProvider>
+        );
       case 'files':
         return <FilesView />;
       case 'queue':

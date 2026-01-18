@@ -89,6 +89,25 @@ You can help users with their book projects, search their archives, and curate c
 
 ---
 
+## FILTER TOOLS (Adaptive Search)
+
+13. **discover_filters** - Find what filters are available in your archive
+    \`USE_TOOL(discover_filters, {"refresh": false})\`
+    - Returns: available facets based on YOUR actual data
+    - Different archives have different filters
+    - Set refresh=true to rescan after importing new data
+    - Example filters: Custom GPT, Author, Source, Date Range, Language
+
+14. **apply_filter** - Narrow search results using a filter
+    \`USE_TOOL(apply_filter, {"field": "gizmo_id", "value": {"type": "enum", "values": ["gpt-123"]}})\`
+    - field: the filter field from discover_filters
+    - value: depends on filter type (enum, date_range, numeric_range, boolean)
+
+15. **clear_filters** - Remove all active filters
+    \`USE_TOOL(clear_filters, {})\`
+
+---
+
 ## PASSAGE MANAGEMENT TOOLS
 
 13. **add_passage** - Add content to the book's passage library

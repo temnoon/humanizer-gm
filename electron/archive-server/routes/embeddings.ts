@@ -441,6 +441,64 @@ export function createEmbeddingsRouter(): Router {
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // FILTERED SEARCH (with adaptive filter specs)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Search messages with adaptive filter specs
+   * POST /api/embeddings/search/filtered
+   *
+   * Body:
+   * - query: string - Search query text
+   * - filters: FilterSpec[] - Array of filter specifications
+   * - limit: number - Max results (default 20)
+   *
+   * Returns filtered search results based on discovered facets.
+   */
+  router.post('/search/filtered', async (req: Request, res: Response) => {
+    try {
+      const { query, filters = [], limit = 20 } = req.body;
+
+      if (!query) {
+        res.status(400).json({ error: 'query required' });
+        return;
+      }
+
+      // Validate filters array
+      if (!Array.isArray(filters)) {
+        res.status(400).json({ error: 'filters must be an array' });
+        return;
+      }
+
+      // Initialize embedding model if needed
+      if (!embeddingModule.isInitialized()) {
+        await embeddingModule.initializeEmbedding();
+      }
+
+      // Generate query embedding
+      const queryEmbedding = await embeddingModule.embed(query);
+
+      // Search with filters
+      const db = getEmbeddingDb();
+      const results = filters.length > 0
+        ? db.searchMessagesFiltered(queryEmbedding, filters, limit)
+        : db.searchMessages(queryEmbedding, limit);
+
+      console.log(`[embeddings] Filtered search: "${query}" with ${filters.length} filters → ${results.length} results`);
+
+      res.json({
+        query,
+        filters,
+        results,
+        total: results.length,
+      });
+    } catch (err) {
+      console.error('[embeddings] Filtered search error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // UNIFIED SEARCH (messages + content items)
   // ─────────────────────────────────────────────────────────────────
 
@@ -828,6 +886,76 @@ export function createEmbeddingsRouter(): Router {
       });
     } catch (err) {
       console.error('[embeddings] Cleanup error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // FACET DISCOVERY (Adaptive Filters)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Discover available facets for adaptive filtering
+   * GET /api/embeddings/discovery/facets
+   *
+   * Returns facet definitions based on actual data in the archive.
+   * Different archives will have different available facets.
+   */
+  router.get('/discovery/facets', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDb();
+      const result = db.discoverFacets();
+
+      console.log(`[embeddings] Discovered ${result.facets.length} facets`);
+
+      res.json(result);
+    } catch (err) {
+      console.error('[embeddings] Facet discovery error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * Force refresh facet discovery
+   * POST /api/embeddings/discovery/refresh
+   *
+   * Invalidates the cache and re-discovers all facets.
+   * Call this after importing new data.
+   */
+  router.post('/discovery/refresh', async (_req: Request, res: Response) => {
+    try {
+      const db = getEmbeddingDb();
+      const result = db.discoverFacets(true); // force refresh
+
+      console.log(`[embeddings] Refreshed facet discovery: ${result.facets.length} facets`);
+
+      res.json(result);
+    } catch (err) {
+      console.error('[embeddings] Facet refresh error:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * Get values for a specific facet
+   * GET /api/embeddings/discovery/facets/:field
+   *
+   * Returns top values for an enum facet (for refreshing a single filter).
+   */
+  router.get('/discovery/facets/:field', async (req: Request, res: Response) => {
+    try {
+      const { field } = req.params;
+      const db = getEmbeddingDb();
+      const values = db.getFacetValues(field);
+
+      if (!values) {
+        res.status(404).json({ error: `Facet '${field}' not found or is not an enum type` });
+        return;
+      }
+
+      res.json({ field, values });
+    } catch (err) {
+      console.error('[embeddings] Facet values error:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });

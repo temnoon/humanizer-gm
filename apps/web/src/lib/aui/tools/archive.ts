@@ -10,7 +10,13 @@
 
 import type { AUIToolResult } from './types';
 import { getArchiveServerUrl } from '../../platform';
-import { dispatchSearchResults, dispatchOpenPanel } from '../gui-bridge';
+import {
+  dispatchSearchResults,
+  dispatchOpenPanel,
+  dispatchSetFacets,
+  dispatchApplyFilter,
+  dispatchClearFilters,
+} from '../gui-bridge';
 
 // ═══════════════════════════════════════════════════════════════════
 // ARCHIVE SEARCH TOOLS
@@ -561,4 +567,203 @@ export async function executeSearchContent(
       error: e instanceof Error ? e.message : 'Content search failed',
     };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FILTER DISCOVERY TOOLS
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Facet definition type (matches backend)
+ */
+interface FacetDefinition {
+  field: string;
+  label: string;
+  type: 'enum' | 'date_range' | 'numeric_range' | 'boolean';
+  source: string;
+  distinctCount: number;
+  topValues?: Array<{ value: string; count: number }>;
+  range?: { min: number; max: number };
+  coverage: number;
+}
+
+interface DiscoveryResult {
+  facets: FacetDefinition[];
+  discoveredAt: number;
+  totalRecords: {
+    conversations: number;
+    contentItems: number;
+    contentBlocks: number;
+    messages: number;
+  };
+}
+
+/**
+ * Discover available filters in the archive
+ *
+ * Introspects the database to find what fields are available for filtering.
+ * Different archives will have different filters based on their actual data.
+ */
+export async function executeDiscoverFilters(
+  params: Record<string, unknown>
+): Promise<AUIToolResult> {
+  const { refresh = false } = params as { refresh?: boolean };
+
+  try {
+    const archiveServer = await getArchiveServerUrl();
+    const endpoint = refresh
+      ? `${archiveServer}/api/embeddings/discovery/refresh`
+      : `${archiveServer}/api/embeddings/discovery/facets`;
+
+    const response = await fetch(endpoint, {
+      method: refresh ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Failed to discover filters: ${response.statusText}`,
+        teaching: {
+          whatHappened: 'Filter discovery failed',
+          guiPath: ['Check that the archive server is running', 'Try refreshing the page'],
+          why: 'Filter discovery requires access to the archive database.',
+        },
+      };
+    }
+
+    const result: DiscoveryResult = await response.json();
+
+    // Dispatch facets to FilterContext via GUI Bridge
+    dispatchSetFacets({ facets: result.facets }, 'discover_filters');
+
+    // Open Archive panel to Explore tab
+    dispatchOpenPanel('archives', 'explore');
+
+    // Build human-readable summary
+    const facetSummary = result.facets.map(f => {
+      switch (f.type) {
+        case 'enum':
+          return `**${f.label}**: ${f.distinctCount} options (${f.topValues?.slice(0, 3).map(v => v.value).join(', ')}${f.distinctCount > 3 ? '...' : ''})`;
+        case 'date_range':
+          if (f.range) {
+            const min = new Date(f.range.min * 1000).toLocaleDateString();
+            const max = new Date(f.range.max * 1000).toLocaleDateString();
+            return `**${f.label}**: ${min} to ${max}`;
+          }
+          return `**${f.label}**: date range`;
+        case 'numeric_range':
+          if (f.range) {
+            return `**${f.label}**: ${f.range.min} to ${f.range.max}`;
+          }
+          return `**${f.label}**: numeric range`;
+        case 'boolean':
+          return `**${f.label}**: yes/no filter`;
+        default:
+          return `**${f.label}**: ${f.type}`;
+      }
+    });
+
+    // Group by source
+    const bySource: Record<string, string[]> = {};
+    for (const facet of result.facets) {
+      const source = facet.source;
+      if (!bySource[source]) bySource[source] = [];
+      bySource[source].push(facet.label);
+    }
+
+    const sourceGroups = Object.entries(bySource)
+      .map(([source, labels]) => `${source}: ${labels.join(', ')}`)
+      .join('\n');
+
+    return {
+      success: true,
+      message: `Discovered ${result.facets.length} filter${result.facets.length !== 1 ? 's' : ''} in your archive`,
+      content: `## Available Filters\n\n${facetSummary.join('\n')}\n\n### Filters by Source\n${sourceGroups}`,
+      data: {
+        facets: result.facets,
+        totalRecords: result.totalRecords,
+        discoveredAt: result.discoveredAt,
+      },
+      teaching: {
+        whatHappened: refresh
+          ? 'Refreshed filter discovery based on current archive data'
+          : 'Discovered available filters based on your archive contents',
+        guiPath: [
+          'Open Archive panel',
+          'Go to Explore tab',
+          'Filter options appear above search results',
+          'Click a filter to narrow your search',
+        ],
+        why: 'Different archives have different data. Filter discovery finds what filters make sense for YOUR archive, not a one-size-fits-all list.',
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Filter discovery failed',
+    };
+  }
+}
+
+/**
+ * Apply a filter to narrow search results
+ */
+export async function executeApplyFilter(
+  params: Record<string, unknown>
+): Promise<AUIToolResult> {
+  const { field, value } = params as { field?: string; value?: unknown };
+
+  if (!field) {
+    return {
+      success: false,
+      error: 'Missing field parameter. Specify which filter to apply.',
+      teaching: {
+        whatHappened: 'No filter field specified',
+        guiPath: ['Run discover_filters first to see available filters'],
+        why: 'You need to specify which field to filter by (e.g., "gizmo_id", "source", "author_name").',
+      },
+    };
+  }
+
+  if (value === undefined || value === null) {
+    return {
+      success: false,
+      error: 'Missing value parameter. Specify the filter value.',
+    };
+  }
+
+  // Dispatch the filter
+  dispatchApplyFilter({ field, value }, 'apply_filter');
+
+  // Open Archive panel
+  dispatchOpenPanel('archives', 'explore');
+
+  return {
+    success: true,
+    message: `Applied filter: ${field} = ${JSON.stringify(value)}`,
+    teaching: {
+      whatHappened: `Set filter on ${field}`,
+      guiPath: ['Archive panel', 'Explore tab', 'Click filter chips to toggle'],
+      why: 'Filters narrow your search to specific subsets of your archive.',
+    },
+  };
+}
+
+/**
+ * Clear all active filters
+ */
+export async function executeClearFilters(): Promise<AUIToolResult> {
+  dispatchClearFilters('clear_filters');
+  dispatchOpenPanel('archives', 'explore');
+
+  return {
+    success: true,
+    message: 'Cleared all active filters',
+    teaching: {
+      whatHappened: 'Removed all filter constraints',
+      guiPath: ['Archive panel', 'Explore tab', 'Click "Clear all" or individual filter X buttons'],
+      why: 'Clearing filters shows all results again.',
+    },
+  };
 }
