@@ -106,6 +106,10 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
             // DEBT-003 FIX: Show error when no messages found
             setLoadError('Conversation has no messages. The indexed text shown above may be all that is available.');
           }
+        } else if (response.status === 404) {
+          // Conversation folder not found - common when using UUID lookup
+          const hint = conversationFolder ? '' : ' The search result may reference a conversation that was not indexed properly. Try rebuilding the embedding index.';
+          setLoadError(`Conversation not found.${hint} The indexed text shown above may be all that is available.`);
         } else {
           // DEBT-003 FIX: Show HTTP error to user
           setLoadError(`Failed to load conversation (HTTP ${response.status}). The indexed text shown above may be all that is available.`);
@@ -113,7 +117,10 @@ function PassageCard({ passage, onAction, onSelect, onOpenSource, onReviewInWork
       } catch (err) {
         // DEBT-003 FIX: Show error to user instead of just logging
         console.warn('[PassageCard] Failed to load full content:', err);
-        setLoadError(`Error loading conversation: ${err instanceof Error ? err.message : 'Unknown error'}. The indexed text shown above may be all that is available.`);
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        // "Load failed" usually means network/CORS issues
+        const hint = errorMsg === 'Load failed' ? ' Check that the archive server is running.' : '';
+        setLoadError(`Error loading conversation: ${errorMsg}.${hint} The indexed text shown above may be all that is available.`);
       } finally {
         setLoadingContent(false);
       }
@@ -547,13 +554,31 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
     }
   }, [bookshelf]);
 
+  // Wait for IPC to become available (handles race condition on startup)
+  const waitForHarvestIpc = useCallback(async (maxWaitMs = 3000): Promise<boolean> => {
+    if (window.isElectron && window.electronAPI?.xanadu?.harvest) {
+      return true;
+    }
+
+    // Poll every 200ms for up to maxWaitMs
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitMs) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      if (window.isElectron && window.electronAPI?.xanadu?.harvest) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
   // Handle passage curation - calls IPC directly, then refreshes from DB
   const handlePassageAction = useCallback(
     async (bucketId: string, passageId: string, action: CurationAction) => {
-      // Check if Xanadu IPC is available
-      if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
-        console.error('[HarvestQueuePanel] Xanadu harvest IPC not available');
-        setHarvestError('Harvest operations not available. Restart the app.');
+      // Wait for Xanadu IPC to become available (handles startup race condition)
+      const ipcAvailable = await waitForHarvestIpc();
+      if (!ipcAvailable) {
+        console.error('[HarvestQueuePanel] Xanadu harvest IPC not available after waiting');
+        setHarvestError('Harvest operations not available. Try again in a moment or restart the app.');
         return;
       }
 
@@ -597,13 +622,14 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
         setHarvestError(`Error during ${action}: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     },
-    [bookshelf]
+    [bookshelf, waitForHarvestIpc]
   );
 
   // Handle bucket lifecycle - calls IPC directly, then refreshes from DB
   const handleStageBucket = useCallback(async (bucketId: string) => {
-    if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
-      setHarvestError('Harvest operations not available. Restart the app.');
+    const ipcAvailable = await waitForHarvestIpc();
+    if (!ipcAvailable) {
+      setHarvestError('Harvest operations not available. Try again in a moment or restart the app.');
       return;
     }
 
@@ -621,11 +647,12 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
       console.error('[HarvestQueuePanel] Stage error:', err);
       setHarvestError(`Error staging bucket: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [bookshelf]);
+  }, [bookshelf, waitForHarvestIpc]);
 
   const handleCommitBucket = useCallback(async (bucketId: string) => {
-    if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
-      setHarvestError('Harvest operations not available. Restart the app.');
+    const ipcAvailable = await waitForHarvestIpc();
+    if (!ipcAvailable) {
+      setHarvestError('Harvest operations not available. Try again in a moment or restart the app.');
       return;
     }
 
@@ -643,15 +670,16 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
       console.error('[HarvestQueuePanel] Commit error:', err);
       setHarvestError(`Error committing bucket: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [bookshelf]);
+  }, [bookshelf, waitForHarvestIpc]);
 
   const handleDiscardBucket = useCallback(async (bucketId: string) => {
     if (!window.confirm('Discard this harvest? All candidates will be lost.')) {
       return;
     }
 
-    if (!window.isElectron || !window.electronAPI?.xanadu?.harvest) {
-      setHarvestError('Harvest operations not available. Restart the app.');
+    const ipcAvailable = await waitForHarvestIpc();
+    if (!ipcAvailable) {
+      setHarvestError('Harvest operations not available. Try again in a moment or restart the app.');
       return;
     }
 
@@ -669,7 +697,7 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
       console.error('[HarvestQueuePanel] Discard error:', err);
       setHarvestError(`Error discarding bucket: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [bookshelf]);
+  }, [bookshelf, waitForHarvestIpc]);
 
   // Empty state
   if (!bookUri) {
