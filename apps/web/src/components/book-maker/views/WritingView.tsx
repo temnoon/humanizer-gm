@@ -22,6 +22,8 @@ export function WritingView() {
   const [showCards, setShowCards] = useState(false)
   const [instructions, setInstructions] = useState('')
   const [showInstructions, setShowInstructions] = useState(false)
+  const [showNoCardsWarning, setShowNoCardsWarning] = useState(false)
+  const [showReplaceConfirm, setShowReplaceConfirm] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const book = bookStudio.activeBook
@@ -64,19 +66,29 @@ export function WritingView() {
     }
   }, [selectedChapterId, instructions, selectedChapter, bookStudio.actions])
 
-  // Generate draft
-  const handleGenerateDraft = useCallback(async () => {
+  // Generate draft - step 1: check preconditions
+  const handleGenerateDraft = useCallback(() => {
     if (!selectedChapter) return
 
     if (chapterCards.length === 0) {
-      alert('No cards assigned to this chapter. Assign cards first.')
+      setShowNoCardsWarning(true)
       return
     }
 
-    if (content.trim() && !confirm('Replace current content with generated draft?')) {
+    if (content.trim()) {
+      setShowReplaceConfirm(true)
       return
     }
 
+    // No content, generate directly
+    doGenerateDraft()
+  }, [selectedChapter, chapterCards, content])
+
+  // Generate draft - step 2: actually generate
+  const doGenerateDraft = useCallback(async () => {
+    if (!selectedChapter) return
+
+    setShowReplaceConfirm(false)
     try {
       const draft = await bookStudio.draft.generate(selectedChapter, {
         targetWordCount: 1500,
@@ -87,7 +99,7 @@ export function WritingView() {
     } catch (error) {
       console.error('Draft generation failed:', error)
     }
-  }, [selectedChapter, chapterCards, content, bookStudio.draft])
+  }, [selectedChapter, bookStudio.draft])
 
   // Insert card content at cursor
   const insertCardContent = useCallback((cardContent: string) => {
@@ -335,6 +347,51 @@ export function WritingView() {
       {draftState.error && (
         <div className="writing-view__error">
           Error: {draftState.error}
+        </div>
+      )}
+
+      {/* No Cards Warning Dialog */}
+      {showNoCardsWarning && (
+        <div className="writing-view__dialog-overlay">
+          <div className="writing-view__dialog">
+            <h3>No Cards Assigned</h3>
+            <p>This chapter has no cards assigned to it.</p>
+            <p className="writing-view__dialog-hint">
+              Go to the Staging view to assign cards to chapters.
+            </p>
+            <div className="writing-view__dialog-actions">
+              <button
+                className="writing-view__dialog-btn"
+                onClick={() => setShowNoCardsWarning(false)}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Replace Content Confirm Dialog */}
+      {showReplaceConfirm && (
+        <div className="writing-view__dialog-overlay">
+          <div className="writing-view__dialog">
+            <h3>Replace Content?</h3>
+            <p>This will replace your current content with a generated draft.</p>
+            <div className="writing-view__dialog-actions">
+              <button
+                className="writing-view__dialog-btn"
+                onClick={() => setShowReplaceConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="writing-view__dialog-btn writing-view__dialog-btn--primary"
+                onClick={doGenerateDraft}
+              >
+                Replace
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
