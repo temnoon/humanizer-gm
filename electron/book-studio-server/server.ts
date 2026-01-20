@@ -30,6 +30,8 @@ import { createCardsRouter } from './routes/cards';
 import { createClustersRouter } from './routes/clusters';
 import { createOutlinesRouter } from './routes/outlines';
 import { createEventsRouter } from './routes/events';
+import { createConfigRouter } from './routes/config';
+import { createGradingRouter } from './routes/grading';
 
 // ============================================================================
 // Server Instance
@@ -200,6 +202,8 @@ function createApp(): Express {
   expressApp.use('/api/clusters', createClustersRouter());
   expressApp.use('/api/outlines', createOutlinesRouter());
   expressApp.use('/api/events', createEventsRouter());
+  expressApp.use('/api/config', createConfigRouter());
+  expressApp.use('/api/grading', createGradingRouter());
 
   // Error handler
   expressApp.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

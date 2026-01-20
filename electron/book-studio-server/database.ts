@@ -209,6 +209,31 @@ const MIGRATIONS = [
   -- Update schema version
   INSERT OR IGNORE INTO schema_version (version) VALUES (2);
   `,
+
+  // Migration 3: Grading queue table
+  `
+  -- Grading queue for background card grading
+  CREATE TABLE IF NOT EXISTS grading_queue (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    priority INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'pending',
+    attempts INTEGER DEFAULT 0,
+    error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_grading_queue_status ON grading_queue(status);
+  CREATE INDEX IF NOT EXISTS idx_grading_queue_book_id ON grading_queue(book_id);
+  CREATE INDEX IF NOT EXISTS idx_grading_queue_priority ON grading_queue(priority DESC, created_at ASC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_grading_queue_card_unique ON grading_queue(card_id);
+
+  INSERT OR IGNORE INTO schema_version (version) VALUES (3);
+  `,
 ];
 
 /**

@@ -27,6 +27,9 @@ import { createDraftRouter } from './routes/draft';
 import { createWebSearchRouter } from './routes/web-search';
 import { createBooksRouter } from './routes/books';
 import { createContentGraphRouter } from './routes/content-graph';
+import { createConfigRouter } from './routes/config';
+import { createPyramidRouter } from './routes/pyramid';
+import { createHarvestRouter } from './routes/harvest';
 
 // Service registry for cleanup on archive switch
 import { resetServices, getEmbeddingDatabase } from './services/registry';
@@ -115,6 +118,9 @@ function createApp(): Express {
   app.use('/api/web', createWebSearchRouter());
   app.use('/api/books', createBooksRouter());
   app.use('/api/ucg', createContentGraphRouter());
+  app.use('/api/config', createConfigRouter());
+  app.use('/api/pyramid', createPyramidRouter());
+  app.use('/api/harvest', createHarvestRouter());
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
