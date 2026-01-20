@@ -19,8 +19,16 @@ export {
   isServerRunning as isNpeLocalServerRunning,
   getPort as getNpeLocalPort,
   getApp as getNpeLocalApp,
+  initAuth as initNpeLocalAuth,
+  isAuthEnabled as isNpeLocalAuthEnabled,
   type NpeLocalConfig,
 } from './server';
+
+// Re-export auth types and utilities
+export {
+  type AuthContext,
+  type AuthenticatedRequest,
+} from './middleware/auth';
 
 // Re-export services for direct use
 export * from './services/llm';

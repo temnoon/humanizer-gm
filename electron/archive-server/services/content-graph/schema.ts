@@ -7,7 +7,7 @@
 
 import type Database from 'better-sqlite3';
 
-export const UCG_SCHEMA_VERSION = 2;
+export const UCG_SCHEMA_VERSION = 4;  // Added user_id for multi-tenant support
 export const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 /**
@@ -436,6 +436,67 @@ export class ContentGraphSchema {
       console.log('[UCG] Migration v1 → v2 complete');
     }
 
+    // v2 → v3: Add multi-resolution embedding support
+    if (fromVersion < 3) {
+      console.log('[UCG] Running migration v2 → v3: adding multi-resolution embedding support...');
+
+      // Add embedding_resolution column to content_nodes for tracking
+      this.safeAddColumn('content_nodes', 'embedding_resolution', 'INTEGER DEFAULT 2');
+
+      // Create index for resolution-filtered queries
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_content_nodes_resolution
+        ON content_nodes(embedding_resolution);
+      `);
+
+      // Create composite index for hierarchical queries
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_content_nodes_hierarchy_parent
+        ON content_nodes(parent_node_id, hierarchy_level);
+      `);
+
+      // Note: content_nodes_vec doesn't support ALTER for vec0 tables,
+      // so we track resolution in the main content_nodes table instead
+
+      console.log('[UCG] Migration v2 → v3 complete');
+    }
+
+    // v3 → v4: Add user_id for multi-tenant support
+    if (fromVersion < 4) {
+      console.log('[UCG] Running migration v3 → v4: adding user_id columns...');
+
+      // Add user_id to content_nodes
+      this.safeAddColumn('content_nodes', 'user_id', 'TEXT');
+
+      // Add user_id to content_links
+      this.safeAddColumn('content_links', 'user_id', 'TEXT');
+
+      // Add user_id to import_batches
+      this.safeAddColumn('import_batches', 'user_id', 'TEXT');
+
+      // Add user_id to content_quality
+      this.safeAddColumn('content_quality', 'user_id', 'TEXT');
+
+      // Create indexes for efficient user filtering
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_content_nodes_user ON content_nodes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_content_links_user ON content_links(user_id);
+        CREATE INDEX IF NOT EXISTS idx_import_batches_user ON import_batches(user_id);
+      `);
+
+      // Create composite indexes for common user-filtered queries
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_content_nodes_user_source
+          ON content_nodes(user_id, source_type);
+        CREATE INDEX IF NOT EXISTS idx_content_nodes_user_created
+          ON content_nodes(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_content_nodes_user_imported
+          ON content_nodes(user_id, imported_at DESC);
+      `);
+
+      console.log('[UCG] Migration v3 → v4 complete: user_id columns added');
+    }
+
     // Update schema version
     this.setMeta('ucg_schema_version', String(UCG_SCHEMA_VERSION));
   }
@@ -523,6 +584,7 @@ export interface ContentNodeRow {
   embedding_model: string | null;      // Model used for embedding
   embedding_at: number | null;         // When embedded
   embedding_text_hash: string | null;  // Hash of embedded text (for staleness)
+  embedding_resolution: number | null; // 0=document, 1=section, 2=chunk (v3)
 
   // Hierarchy columns (v2)
   hierarchy_level: number;             // 0=source/chunk, 1+=summary
@@ -536,6 +598,9 @@ export interface ContentNodeRow {
   anchors: string | null;  // JSON
   created_at: number;
   imported_at: number;
+
+  // Multi-tenant support (v4)
+  user_id: string | null;  // NULL = legacy data, accessible to all authenticated users
 }
 
 /**
@@ -556,6 +621,7 @@ export interface ContentLinkRow {
   created_at: number;
   created_by: string | null;
   metadata: string | null;  // JSON
+  user_id: string | null;   // Multi-tenant support (v4)
 }
 
 /**
@@ -598,6 +664,7 @@ export interface ImportBatchRow {
   started_at: number | null;
   completed_at: number | null;
   created_at: number;
+  user_id: string | null;    // Multi-tenant support (v4)
 }
 
 /**

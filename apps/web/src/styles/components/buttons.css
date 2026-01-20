@@ -44,3 +44,44 @@
   background: var(--color-primary-subtle);
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   DISABLED STATES
+   WCAG 2.1 AA: Disabled controls must be visually distinguishable
+   ───────────────────────────────────────────────────────────────────── */
+
+.button:disabled,
+.button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.button--primary:disabled,
+.button--primary[aria-disabled="true"] {
+  background: var(--studio-text-tertiary, #7a7a8c);
+  color: var(--studio-bg, #ffffff);
+}
+
+.button--secondary:disabled,
+.button--secondary[aria-disabled="true"] {
+  background: transparent;
+  color: var(--studio-text-tertiary, #7a7a8c);
+  border-color: var(--studio-text-tertiary, #7a7a8c);
+}
+
+/* Remove hover effects for disabled buttons */
+.button:disabled:hover,
+.button[aria-disabled="true"]:hover {
+  background: inherit;
+}
+
+.button--primary:disabled:hover,
+.button--primary[aria-disabled="true"]:hover {
+  background: var(--studio-text-tertiary, #7a7a8c);
+}
+
+.button--secondary:disabled:hover,
+.button--secondary[aria-disabled="true"]:hover {
+  background: transparent;
+}
+

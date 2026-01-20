@@ -15,6 +15,7 @@ import path from 'path';
 import { getArchiveRoot } from '../config';
 import { getConversationsFromIndex } from './archives';
 import { getEmbeddingDatabase } from '../services/registry';
+import { requireAuth, getUserId } from '../middleware/auth';
 
 // Security: Maximum batch size for bulk operations
 const MAX_BATCH_SIZE = 1000;
@@ -52,11 +53,13 @@ export function createGalleryRouter(): Router {
   const router = Router();
 
   // List all images from conversations
-  router.get('/', async (req: Request, res: Response) => {
+  // Security: Requires auth
+  router.get('/', requireAuth(), async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
       const searchQuery = (req.query.search as string)?.toLowerCase();
+      const userId = getUserId(req);
 
       const archiveRoot = getArchiveRoot();
 
@@ -146,9 +149,9 @@ export function createGalleryRouter(): Router {
 
   /**
    * Get analysis by file path
-   * Security: Validates path is within allowed directories
+   * Security: Requires auth, validates path is within allowed directories
    */
-  router.get('/analysis/by-path', async (req: Request, res: Response) => {
+  router.get('/analysis/by-path', requireAuth(), async (req: Request, res: Response) => {
     try {
       const filePath = req.query.path as string;
 
@@ -186,9 +189,9 @@ export function createGalleryRouter(): Router {
 
   /**
    * Batch sync analysis results from queue manager
-   * Security: Validates batch size and sanitizes inputs
+   * Security: Requires auth, validates batch size and sanitizes inputs
    */
-  router.post('/analysis/batch', async (req: Request, res: Response) => {
+  router.post('/analysis/batch', requireAuth(), async (req: Request, res: Response) => {
     try {
       const { results } = req.body;
 
@@ -273,8 +276,9 @@ export function createGalleryRouter(): Router {
 
   /**
    * Search images by description using FTS
+   * Security: Requires auth
    */
-  router.get('/analysis/search', async (req: Request, res: Response) => {
+  router.get('/analysis/search', requireAuth(), async (req: Request, res: Response) => {
     try {
       const query = req.query.q as string;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -324,8 +328,9 @@ export function createGalleryRouter(): Router {
 
   /**
    * Get image analysis statistics
+   * Security: Requires auth
    */
-  router.get('/analysis/stats', async (_req: Request, res: Response) => {
+  router.get('/analysis/stats', requireAuth(), async (_req: Request, res: Response) => {
     try {
       const db = getEmbeddingDatabase();
       const stats = db.getImageAnalysisStats();
@@ -343,10 +348,11 @@ export function createGalleryRouter(): Router {
   /**
    * Semantic search for images by description
    * Uses nomic-embed-text to find images with semantically similar descriptions
+   * Security: Requires auth
    *
    * GET /api/gallery/analysis/semantic-search?q=sunset+over+mountains&limit=20
    */
-  router.get('/analysis/semantic-search', async (req: Request, res: Response) => {
+  router.get('/analysis/semantic-search', requireAuth(), async (req: Request, res: Response) => {
     try {
       const query = req.query.q as string;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -403,10 +409,11 @@ export function createGalleryRouter(): Router {
 
   /**
    * Analyze a batch of images using vision model
+   * Security: Requires auth
    * POST body: { images: string[], limit?: number }
    * images can be full paths or relative to archive root
    */
-  router.post('/analyze', async (req: Request, res: Response) => {
+  router.post('/analyze', requireAuth(), async (req: Request, res: Response) => {
     try {
       // Dynamic import to avoid loading vision code on startup
       const VisualModel = await import('../services/vision/VisualModelService.js');
@@ -549,10 +556,10 @@ export function createGalleryRouter(): Router {
 
   /**
    * Get analysis for a specific image by ID
-   * Security: Validates UUID format
+   * Security: Requires auth, validates UUID format
    * Note: This parameterized route MUST come after all specific routes
    */
-  router.get('/analysis/:id', async (req: Request, res: Response) => {
+  router.get('/analysis/:id', requireAuth(), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 

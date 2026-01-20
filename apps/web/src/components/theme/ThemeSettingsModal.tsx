@@ -1,9 +1,17 @@
 /**
  * Theme Settings Modal - Configure appearance
+ *
+ * WCAG 2.1 AA compliant:
+ * - Focus trap (keeps focus within modal)
+ * - Escape key closes modal
+ * - role="dialog" and aria-modal="true"
+ * - Returns focus to trigger on close
  */
 
+import { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../../lib/theme/ThemeContext';
+import { useModalAccessibility } from '../../hooks';
 import type { ThemeMode, ThemeSettings } from '../../lib/theme';
 
 interface ThemeSettingsModalProps {
@@ -12,6 +20,10 @@ interface ThemeSettingsModalProps {
 
 export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
   const { settings, setMode, setFontFamily, setFontSize, setLineHeight, setColorAccent, setEditorWidth } = useTheme();
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Apply accessibility features (focus trap, escape key, focus management)
+  useModalAccessibility(modalRef, true, onClose, { initialFocus: 'close' });
 
   const themeOptions: { mode: ThemeMode; icon: string; label: string }[] = [
     { mode: 'system', icon: '🖥', label: 'System' },
@@ -58,6 +70,7 @@ export function ThemeSettingsModal({ onClose }: ThemeSettingsModalProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="theme-modal-title"
+      ref={modalRef}
     >
       <div className="theme-modal__content" onClick={e => e.stopPropagation()}>
         <div className="theme-modal__header">

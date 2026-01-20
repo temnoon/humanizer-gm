@@ -10,6 +10,9 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { Server } from 'http';
 import { initConfig, getConfig, getArchiveRoot, setArchivePath, PATHS } from './config';
+import { initAuth, isAuthEnabled } from './middleware/auth';
+import { globalRateLimit, searchRateLimit, importRateLimit } from './middleware/rateLimit';
+import { initAuditLog } from './middleware/audit';
 
 // Route modules
 import { createArchivesRouter } from './routes/archives';
@@ -27,6 +30,9 @@ import { createContentGraphRouter } from './routes/content-graph';
 
 // Service registry for cleanup on archive switch
 import { resetServices, getEmbeddingDatabase } from './services/registry';
+
+// Content Graph initialization
+import { registerBuiltinAdapters } from './services/content-graph';
 
 // ═══════════════════════════════════════════════════════════════════
 // SERVER INSTANCE
@@ -71,6 +77,10 @@ function createApp(): Express {
   // Body parsing
   app.use(express.json({ limit: '10mb' }));
 
+  // Global rate limiting (1000 requests per 15 minutes)
+  // Skipped in development mode
+  app.use(globalRateLimit);
+
   // Request logging (development)
   if (process.env.NODE_ENV !== 'production') {
     app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -95,11 +105,11 @@ function createApp(): Express {
   // Mount route modules
   app.use('/api/archives', createArchivesRouter());
   app.use('/api/conversations', createConversationsRouter());
-  app.use('/api/embeddings', createEmbeddingsRouter());
+  app.use('/api/embeddings', searchRateLimit, createEmbeddingsRouter());  // Search rate limit
   app.use('/api/facebook', createFacebookRouter());
   app.use('/api/content', createContentRouter());
   app.use('/api/gallery', createGalleryRouter());
-  app.use('/api/import', createImportRouter());
+  app.use('/api/import', importRateLimit, createImportRouter());  // Import rate limit
   app.use('/api/links', createLinksRouter());
   app.use('/api/draft', createDraftRouter());
   app.use('/api/web', createWebSearchRouter());
@@ -146,10 +156,22 @@ export async function startServer(port?: number): Promise<string> {
       // Initialize EmbeddingDatabase eagerly to ensure Xanadu IPC handlers work
       // This runs migrations and makes areServicesInitialized() return true
       try {
-        getEmbeddingDatabase();
+        const embDb = getEmbeddingDatabase();
         console.log(`[archive-server] EmbeddingDatabase initialized`);
+
+        // Initialize audit logging with the database connection
+        initAuditLog(embDb.getRawDb());
+        console.log(`[archive-server] Audit logging initialized`);
       } catch (err) {
         console.error(`[archive-server] Failed to initialize EmbeddingDatabase:`, err);
+      }
+
+      // Register content adapters for UCG imports
+      try {
+        registerBuiltinAdapters();
+        console.log(`[archive-server] Content adapters registered`);
+      } catch (err) {
+        console.error(`[archive-server] Failed to register adapters:`, err);
       }
 
       resolve(url);
@@ -202,3 +224,6 @@ export function getApp(): Express | null {
 
 // Re-export config utilities
 export { getConfig, getArchiveRoot, setArchivePath, PATHS };
+
+// Re-export auth utilities
+export { initAuth, isAuthEnabled };

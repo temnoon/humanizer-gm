@@ -28,6 +28,7 @@ import type {
   CreateContentLinkOptions,
   ContentNodeQuery,
   ContentLinkQuery,
+  KeywordScore,
   ContentVersion,
   ContentLineage,
 } from '@humanizer/core';
@@ -184,6 +185,16 @@ export class ContentGraphDatabase {
   }
 
   /**
+   * Get raw database row for a content node (includes user_id for ownership checks)
+   */
+  getNodeRow(id: string): ContentNodeRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM content_nodes WHERE id = ?'
+    ).get(id) as ContentNodeRow | undefined;
+    return row || null;
+  }
+
+  /**
    * Get a content node by URI
    */
   getNodeByUri(uri: string): ContentNode | null {
@@ -223,12 +234,26 @@ export class ContentGraphDatabase {
 
   /**
    * Query content nodes with filters
+   * Supports: source types, tags, date range, word count, regex, phrases, wildcards
+   * Security: Filters by user_id when provided (NULL user_id = legacy data, allowed)
    */
-  queryNodes(query: ContentNodeQuery): ContentNode[] {
+  queryNodes(query: ContentNodeQuery & { userId?: string }): ContentNode[] {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
-    // Source type filter
+    // Security: Add user filter if userId is provided
+    // NULL user_id = legacy data, accessible to all authenticated users
+    if (query.userId) {
+      conditions.push('(user_id = ? OR user_id IS NULL)');
+      params.push(query.userId);
+    }
+
+    // If there's a search query, use FTS with title prioritization
+    if (query.searchQuery && query.searchQuery.trim()) {
+      return this.searchNodesWithTitlePriority({ ...query, userId: query.userId });
+    }
+
+    // Source type filter (include)
     if (query.sourceType) {
       if (Array.isArray(query.sourceType)) {
         const placeholders = query.sourceType.map(() => '?').join(',');
@@ -240,10 +265,25 @@ export class ContentGraphDatabase {
       }
     }
 
-    // Tags filter (AND)
+    // Source type filter (exclude)
+    if (query.excludeSourceTypes && query.excludeSourceTypes.length > 0) {
+      const placeholders = query.excludeSourceTypes.map(() => '?').join(',');
+      conditions.push(`source_type NOT IN (${placeholders})`);
+      params.push(...query.excludeSourceTypes);
+    }
+
+    // Tags filter (AND - all must match)
     if (query.tags && query.tags.length > 0) {
       for (const tag of query.tags) {
         conditions.push(`tags LIKE ?`);
+        params.push(`%"${tag}"%`);
+      }
+    }
+
+    // Tags filter (exclude)
+    if (query.excludeTags && query.excludeTags.length > 0) {
+      for (const tag of query.excludeTags) {
+        conditions.push(`tags NOT LIKE ?`);
         params.push(`%"${tag}"%`);
       }
     }
@@ -260,15 +300,49 @@ export class ContentGraphDatabase {
       }
     }
 
+    // Word count filters
+    if (query.minWords !== undefined) {
+      conditions.push('word_count >= ?');
+      params.push(query.minWords);
+    }
+    if (query.maxWords !== undefined) {
+      conditions.push('word_count <= ?');
+      params.push(query.maxWords);
+    }
+
+    // Phrase filters (exact match using LIKE)
+    if (query.phrases && query.phrases.length > 0) {
+      for (const phrase of query.phrases) {
+        conditions.push(`(text LIKE ? OR title LIKE ?)`);
+        const pattern = `%${phrase}%`;
+        params.push(pattern, pattern);
+      }
+    }
+
+    // Wildcard filters (convert * to SQL LIKE %)
+    if (query.wildcards && query.wildcards.length > 0) {
+      for (const wildcard of query.wildcards) {
+        const pattern = wildcard.replace(/\*/g, '%');
+        conditions.push(`(text LIKE ? OR title LIKE ?)`);
+        params.push(pattern, pattern);
+      }
+    }
+
     // Build query
     let sql = 'SELECT * FROM content_nodes';
     if (conditions.length > 0) {
       sql += ' WHERE ' + conditions.join(' AND ');
     }
 
-    // Order
-    const orderField = query.orderBy || 'created_at';
-    const orderDir = query.orderDirection || 'desc';
+    // Order - map camelCase to snake_case
+    const orderFieldMap: Record<string, string> = {
+      createdAt: 'created_at',
+      importedAt: 'imported_at',
+      title: 'title',
+      wordCount: 'word_count',
+    };
+    const orderField = orderFieldMap[query.orderBy || 'createdAt'] || 'created_at';
+    const orderDir = query.orderDirection === 'asc' ? 'ASC' : 'DESC';
     sql += ` ORDER BY ${orderField} ${orderDir}`;
 
     // Limit/offset
@@ -281,23 +355,366 @@ export class ContentGraphDatabase {
       params.push(query.offset);
     }
 
-    const rows = this.db.prepare(sql).all(...params) as ContentNodeRow[];
-    return rows.map(row => this.rowToNode(row));
+    let rows = this.db.prepare(sql).all(...params) as ContentNodeRow[];
+    let nodes = rows.map(row => this.rowToNode(row));
+
+    // Apply regex filters in JavaScript (SQLite REGEXP requires extension)
+    if (query.regexPatterns && query.regexPatterns.length > 0) {
+      nodes = this.applyRegexFilters(nodes, query.regexPatterns);
+    }
+
+    return nodes;
+  }
+
+  /**
+   * Apply regex filters to nodes (JavaScript-side filtering)
+   */
+  private applyRegexFilters(
+    nodes: ContentNode[],
+    patterns: Array<{ pattern: string; flags?: string; field?: 'content' | 'title' | 'tags' }>
+  ): ContentNode[] {
+    const regexes = patterns.map(p => {
+      try {
+        return { regex: new RegExp(p.pattern, p.flags || 'i'), field: p.field || 'content' };
+      } catch {
+        console.warn(`[UCG] Invalid regex pattern: ${p.pattern}`);
+        return null;
+      }
+    }).filter((r): r is { regex: RegExp; field: 'content' | 'title' | 'tags' } => r !== null);
+
+    if (regexes.length === 0) return nodes;
+
+    return nodes.filter(node => {
+      return regexes.every(({ regex, field }) => {
+        switch (field) {
+          case 'title':
+            return node.metadata.title && regex.test(node.metadata.title);
+          case 'tags':
+            return node.metadata.tags.some(tag => regex.test(tag));
+          case 'content':
+          default:
+            return regex.test(node.content.text);
+        }
+      });
+    });
+  }
+
+  /**
+   * Search nodes with title matches heavily prioritized
+   * Title matches get 10x weight compared to content matches
+   * Also applies additional filters (excludeSourceTypes, word count, regex, etc.)
+   */
+  private searchNodesWithTitlePriority(query: ContentNodeQuery): ContentNode[] {
+    const searchTerm = query.searchQuery?.trim() || '';
+    if (!searchTerm) return [];
+
+    const params: unknown[] = [];
+    const additionalFilters: string[] = [];
+
+    // Build source type filter for the main query
+    let sourceFilter = '';
+    if (query.sourceType) {
+      if (Array.isArray(query.sourceType)) {
+        const placeholders = query.sourceType.map(() => '?').join(',');
+        sourceFilter = `AND cn.source_type IN (${placeholders})`;
+        params.push(...query.sourceType);
+      } else {
+        sourceFilter = 'AND cn.source_type = ?';
+        params.push(query.sourceType);
+      }
+    }
+
+    // Build additional filters for post-search filtering
+    const postFilterParams: unknown[] = [];
+
+    // Exclude source types
+    if (query.excludeSourceTypes && query.excludeSourceTypes.length > 0) {
+      const placeholders = query.excludeSourceTypes.map(() => '?').join(',');
+      additionalFilters.push(`cn.source_type NOT IN (${placeholders})`);
+      postFilterParams.push(...query.excludeSourceTypes);
+    }
+
+    // Word count filters
+    if (query.minWords !== undefined) {
+      additionalFilters.push('cn.word_count >= ?');
+      postFilterParams.push(query.minWords);
+    }
+    if (query.maxWords !== undefined) {
+      additionalFilters.push('cn.word_count <= ?');
+      postFilterParams.push(query.maxWords);
+    }
+
+    // Date range filters
+    if (query.dateRange?.start) {
+      additionalFilters.push('cn.created_at >= ?');
+      postFilterParams.push(query.dateRange.start);
+    }
+    if (query.dateRange?.end) {
+      additionalFilters.push('cn.created_at <= ?');
+      postFilterParams.push(query.dateRange.end);
+    }
+
+    // Tags filters
+    if (query.tags && query.tags.length > 0) {
+      for (const tag of query.tags) {
+        additionalFilters.push(`cn.tags LIKE ?`);
+        postFilterParams.push(`%"${tag}"%`);
+      }
+    }
+    if (query.excludeTags && query.excludeTags.length > 0) {
+      for (const tag of query.excludeTags) {
+        additionalFilters.push(`cn.tags NOT LIKE ?`);
+        postFilterParams.push(`%"${tag}"%`);
+      }
+    }
+
+    const additionalFilterSql = additionalFilters.length > 0
+      ? 'AND ' + additionalFilters.join(' AND ')
+      : '';
+
+    // Escape special FTS5 characters and prepare search term
+    const ftsSearchTerm = searchTerm
+      .replace(/['"]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length > 0)
+      .map(w => `"${w}"*`)
+      .join(' ');
+
+    // Also prepare a LIKE pattern for exact title matching
+    const likePattern = `%${searchTerm}%`;
+
+    // Two-phase search:
+    // 1. Exact title matches (highest priority)
+    // 2. FTS matches with title weighted 10x higher than content
+    const sql = `
+      WITH title_matches AS (
+        SELECT id, 1000 as priority
+        FROM content_nodes
+        WHERE title LIKE ?
+        ${sourceFilter.replace(/cn\./g, '')}
+      ),
+      fts_matches AS (
+        SELECT cn.id,
+          CASE
+            WHEN cn.title LIKE ? THEN 100
+            ELSE -bm25(content_nodes_fts, 10.0, 1.0)
+          END as priority
+        FROM content_nodes cn
+        JOIN content_nodes_fts fts ON cn.rowid = fts.rowid
+        WHERE content_nodes_fts MATCH ?
+        ${sourceFilter}
+      ),
+      combined AS (
+        SELECT id, MAX(priority) as priority
+        FROM (
+          SELECT * FROM title_matches
+          UNION ALL
+          SELECT * FROM fts_matches
+        )
+        GROUP BY id
+      )
+      SELECT cn.*
+      FROM content_nodes cn
+      JOIN combined c ON cn.id = c.id
+      WHERE 1=1 ${additionalFilterSql}
+      ORDER BY c.priority DESC
+      LIMIT ?
+      OFFSET ?
+    `;
+
+    // Build params: likePattern, sourceType params, likePattern again, ftsSearchTerm, sourceType params again, postFilterParams, limit, offset
+    const allParams = [
+      likePattern,
+      ...params, // source filter params for title_matches
+      likePattern,
+      ftsSearchTerm,
+      ...params, // source filter params for fts_matches
+      ...postFilterParams, // additional filter params
+      query.limit || 50,
+      query.offset || 0,
+    ];
+
+    try {
+      const rows = this.db.prepare(sql).all(...allParams) as ContentNodeRow[];
+      let nodes = rows.map(row => this.rowToNode(row));
+
+      // Apply regex filters in JavaScript (SQLite REGEXP requires extension)
+      if (query.regexPatterns && query.regexPatterns.length > 0) {
+        nodes = this.applyRegexFilters(nodes, query.regexPatterns);
+      }
+
+      // Apply phrase filters (already searched, but double-check)
+      if (query.phrases && query.phrases.length > 0) {
+        nodes = nodes.filter(node =>
+          query.phrases!.every(phrase =>
+            node.content.text.includes(phrase) ||
+            (node.metadata.title && node.metadata.title.includes(phrase))
+          )
+        );
+      }
+
+      return nodes;
+    } catch (error) {
+      // Fallback to simple LIKE search if FTS fails
+      console.error('[UCG] FTS search failed, falling back to LIKE:', error);
+      const fallbackSql = `
+        SELECT * FROM content_nodes cn
+        WHERE (cn.title LIKE ? OR cn.text LIKE ?)
+        ${sourceFilter}
+        ${additionalFilterSql}
+        ORDER BY
+          CASE WHEN cn.title LIKE ? THEN 0 ELSE 1 END,
+          cn.created_at DESC
+        LIMIT ?
+        OFFSET ?
+      `;
+      const fallbackParams = [
+        likePattern,
+        likePattern,
+        ...params,
+        ...postFilterParams,
+        likePattern,
+        query.limit || 50,
+        query.offset || 0,
+      ];
+      const rows = this.db.prepare(fallbackSql).all(...fallbackParams) as ContentNodeRow[];
+      let nodes = rows.map(row => this.rowToNode(row));
+
+      // Apply regex filters in JavaScript
+      if (query.regexPatterns && query.regexPatterns.length > 0) {
+        nodes = this.applyRegexFilters(nodes, query.regexPatterns);
+      }
+
+      return nodes;
+    }
   }
 
   /**
    * Full-text search for content nodes
+   * Security: Filters by user_id when provided (NULL user_id = legacy data, allowed)
    */
-  searchNodes(query: string, limit: number = 50): ContentNode[] {
-    const rows = this.db.prepare(`
+  searchNodes(query: string, limit: number = 50, userId?: string): ContentNode[] {
+    let sql = `
       SELECT cn.* FROM content_nodes cn
       JOIN content_nodes_fts fts ON cn.rowid = fts.rowid
       WHERE content_nodes_fts MATCH ?
-      ORDER BY rank
-      LIMIT ?
-    `).all(query, limit) as ContentNodeRow[];
+    `;
+    const params: unknown[] = [query];
+
+    // Security: Add user filter if userId is provided
+    if (userId) {
+      sql += ' AND (cn.user_id = ? OR cn.user_id IS NULL)';
+      params.push(userId);
+    }
+
+    sql += ' ORDER BY rank LIMIT ?';
+    params.push(limit);
+
+    const rows = this.db.prepare(sql).all(...params) as ContentNodeRow[];
 
     return rows.map(row => this.rowToNode(row));
+  }
+
+  /**
+   * Find passages related by keyword with centrality scoring
+   * Uses TF-IDF style scoring to rank how central the keyword is to each passage
+   */
+  findByKeyword(
+    keyword: string,
+    options: {
+      excludeNodeId?: string;
+      limit?: number;
+    } = {}
+  ): Array<{ node: ContentNode; score: KeywordScore }> {
+    const { excludeNodeId, limit = 20 } = options;
+    const keywordLower = keyword.toLowerCase().trim();
+    if (!keywordLower) return [];
+
+    // First, get total document count and documents containing keyword for IDF
+    const totalDocs = this.db.prepare('SELECT COUNT(*) as count FROM content_nodes').get() as { count: number };
+    const docsWithKeyword = this.db.prepare(`
+      SELECT COUNT(*) as count FROM content_nodes
+      WHERE LOWER(text) LIKE ? OR LOWER(title) LIKE ?
+    `).get(`%${keywordLower}%`, `%${keywordLower}%`) as { count: number };
+
+    // IDF = log(N / df) where N = total docs, df = docs containing term
+    const idf = docsWithKeyword.count > 0
+      ? Math.log(totalDocs.count / docsWithKeyword.count)
+      : 0;
+
+    // Find all documents containing the keyword
+    let sql = `
+      SELECT * FROM content_nodes
+      WHERE (LOWER(text) LIKE ? OR LOWER(title) LIKE ?)
+    `;
+    const params: unknown[] = [`%${keywordLower}%`, `%${keywordLower}%`];
+
+    if (excludeNodeId) {
+      sql += ' AND id != ?';
+      params.push(excludeNodeId);
+    }
+
+    sql += ' LIMIT 200'; // Get more than we need, then score and sort
+
+    const rows = this.db.prepare(sql).all(...params) as ContentNodeRow[];
+    const nodes = rows.map(row => this.rowToNode(row));
+
+    // Calculate TF-IDF centrality for each node
+    const scored = nodes.map(node => {
+      const score = this.calculateKeywordCentrality(node, keywordLower, idf);
+      return { node, score };
+    });
+
+    // Sort by centrality (descending) and limit
+    scored.sort((a, b) => b.score.centrality - a.score.centrality);
+    return scored.slice(0, limit);
+  }
+
+  /**
+   * Calculate how central a keyword is to a passage
+   */
+  private calculateKeywordCentrality(
+    node: ContentNode,
+    keyword: string,
+    idf: number
+  ): KeywordScore {
+    const text = node.content.text.toLowerCase();
+    const title = (node.metadata.title || '').toLowerCase();
+    const wordCount = node.metadata.wordCount || text.split(/\s+/).length;
+
+    // Count occurrences
+    const keywordRegex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    const textMatches = (text.match(keywordRegex) || []).length;
+    const titleMatches = (title.match(keywordRegex) || []).length;
+
+    // TF (term frequency) = count / total words
+    const tf = wordCount > 0 ? textMatches / wordCount : 0;
+
+    // Title bonus: if keyword is in title, multiply centrality
+    const titleBonus = titleMatches > 0 ? 2.0 : 1.0;
+
+    // Position bonus: check if keyword appears in first 200 chars
+    const firstPart = text.substring(0, 200).toLowerCase();
+    const positionBonus = firstPart.includes(keyword) ? 1.3 : 1.0;
+
+    // Density: how concentrated are the occurrences?
+    // Higher density = keyword appears more frequently relative to text length
+    const density = wordCount > 0 ? (textMatches * keyword.split(/\s+/).length) / wordCount : 0;
+
+    // Combined centrality score
+    const tfidf = tf * idf;
+    const centrality = tfidf * titleBonus * positionBonus * (1 + density);
+
+    return {
+      keyword,
+      occurrences: textMatches + titleMatches,
+      tf: Math.round(tf * 10000) / 10000,
+      idf: Math.round(idf * 100) / 100,
+      tfidf: Math.round(tfidf * 10000) / 10000,
+      titleMatch: titleMatches > 0,
+      positionBonus: positionBonus > 1,
+      centrality: Math.round(centrality * 10000) / 10000,
+    };
   }
 
   /**
@@ -367,6 +784,30 @@ export class ContentGraphDatabase {
       'DELETE FROM content_nodes WHERE id = ?'
     ).run(id);
     return result.changes > 0;
+  }
+
+  /**
+   * Delete all nodes of a given source type
+   */
+  deleteBySourceType(sourceType: string): { deletedNodes: number; deletedLinks: number } {
+    // Delete links first (those that reference nodes we're deleting)
+    const deleteLinksStmt = this.db.prepare(`
+      DELETE FROM content_links
+      WHERE source_id IN (SELECT id FROM content_nodes WHERE source_type = ?)
+         OR target_id IN (SELECT id FROM content_nodes WHERE source_type = ?)
+    `);
+    const linkResult = deleteLinksStmt.run(sourceType, sourceType);
+
+    // Delete nodes
+    const deleteNodesStmt = this.db.prepare(`
+      DELETE FROM content_nodes WHERE source_type = ?
+    `);
+    const nodeResult = deleteNodesStmt.run(sourceType);
+
+    return {
+      deletedNodes: nodeResult.changes,
+      deletedLinks: linkResult.changes,
+    };
   }
 
   /**
@@ -983,32 +1424,43 @@ export class ContentGraphDatabase {
   /**
    * Search nodes by embedding similarity
    * Returns nodes with their similarity scores
+   * Security: Filters by user_id when provided (NULL user_id = legacy data, allowed)
    */
   searchByEmbedding(
     embedding: number[],
     limit: number = 20,
-    threshold: number = 0.5
+    threshold: number = 0.5,
+    userId?: string
   ): Array<{ node: ContentNode; similarity: number }> {
     if (!this.vecLoaded) {
       throw new Error('Vector extension not loaded');
     }
 
-    // Use vec0 distance function for similarity search
-    const rows = this.db.prepare(`
+    // Build SQL with optional user filtering
+    let sql = `
       SELECT
         cn.*,
         vec_distance_cosine(v.embedding, ?) as distance
       FROM content_nodes_vec v
       JOIN content_nodes cn ON cn.id = v.id
       WHERE vec_distance_cosine(v.embedding, ?) < ?
-      ORDER BY distance ASC
-      LIMIT ?
-    `).all(
+    `;
+    const params: unknown[] = [
       JSON.stringify(embedding),
       JSON.stringify(embedding),
       1 - threshold,  // Convert threshold to distance
-      limit
-    ) as Array<ContentNodeRow & { distance: number }>;
+    ];
+
+    // Security: Add user filter if userId is provided
+    if (userId) {
+      sql += ' AND (cn.user_id = ? OR cn.user_id IS NULL)';
+      params.push(userId);
+    }
+
+    sql += ' ORDER BY distance ASC LIMIT ?';
+    params.push(limit);
+
+    const rows = this.db.prepare(sql).all(...params) as Array<ContentNodeRow & { distance: number }>;
 
     return rows.map(row => ({
       node: this.rowToNode(row),

@@ -8,7 +8,7 @@
 
 import type Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = 17;  // Added content_blocks for granular content extraction
+export const SCHEMA_VERSION = 19;  // Added audit_log table for security tracking
 export const EMBEDDING_DIM = 768;  // nomic-embed-text via Ollama
 
 export class EmbeddingMigrations {
@@ -1626,6 +1626,159 @@ export class EmbeddingMigrations {
       }
 
       console.log('[migration] v17 complete: content_blocks table created for granular extraction');
+    }
+
+    // Migration from version 17 to 18: Add user_id for multi-tenant support
+    if (fromVersion < 18) {
+      console.log('[migration] v18: Adding user_id columns for multi-tenant support...');
+
+      // Add user_id column to core content tables
+      // NULL user_id = legacy data (accessible to all authenticated users per isOwner() pattern)
+      const tablesNeedingUserId = [
+        'conversations',
+        'messages',
+        'content_items',
+        'user_marks',
+        'media_items',
+        'imports',
+        'pyramid_chunks',
+        'pyramid_summaries',
+        'pyramid_apex',
+        'media_files',
+        'media_references',
+        'links',
+        'import_jobs',
+        'image_analysis',
+        'books',
+        'book_passages',
+        'book_chapters',
+        'personas',
+        'styles',
+        'harvest_buckets',
+        'content_blocks',
+      ];
+
+      for (const table of tablesNeedingUserId) {
+        try {
+          // Check if table exists
+          const tableExists = this.db.prepare(`
+            SELECT COUNT(*) as count FROM sqlite_master
+            WHERE type='table' AND name=?
+          `).get(table) as { count: number };
+
+          if (tableExists.count > 0) {
+            // Check if column already exists
+            const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+            const hasUserId = columns.some(col => col.name === 'user_id');
+
+            if (!hasUserId) {
+              this.db.exec(`ALTER TABLE ${table} ADD COLUMN user_id TEXT`);
+              console.log(`[migration] Added user_id to ${table}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[migration] Could not add user_id to ${table}:`, err);
+        }
+      }
+
+      // Add user_id to Facebook entity tables
+      const facebookTables = [
+        'fb_people',
+        'fb_places',
+        'fb_events',
+        'fb_advertisers',
+        'fb_off_facebook_activity',
+        'fb_pages',
+        'fb_relationships',
+        'fb_outbound_reactions',
+        'fb_notes',
+        'fb_groups',
+        'fb_group_content',
+      ];
+
+      for (const table of facebookTables) {
+        try {
+          const tableExists = this.db.prepare(`
+            SELECT COUNT(*) as count FROM sqlite_master
+            WHERE type='table' AND name=?
+          `).get(table) as { count: number };
+
+          if (tableExists.count > 0) {
+            const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+            const hasUserId = columns.some(col => col.name === 'user_id');
+
+            if (!hasUserId) {
+              this.db.exec(`ALTER TABLE ${table} ADD COLUMN user_id TEXT`);
+              console.log(`[migration] Added user_id to ${table}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[migration] Could not add user_id to ${table}:`, err);
+        }
+      }
+
+      // Create indexes for efficient user filtering
+      const indexStatements = [
+        'CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_content_items_user ON content_items(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_user_marks_user ON user_marks(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_media_items_user ON media_items(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_imports_user ON imports(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_pyramid_chunks_user ON pyramid_chunks(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_books_user ON books(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_book_passages_user ON book_passages(user_id)',
+        'CREATE INDEX IF NOT EXISTS idx_content_blocks_user ON content_blocks(user_id)',
+        // Composite indexes for common queries
+        'CREATE INDEX IF NOT EXISTS idx_conversations_user_created ON conversations(user_id, created_at DESC)',
+        'CREATE INDEX IF NOT EXISTS idx_content_items_user_type ON content_items(user_id, type)',
+        'CREATE INDEX IF NOT EXISTS idx_messages_user_conv ON messages(user_id, conversation_id)',
+      ];
+
+      for (const stmt of indexStatements) {
+        try {
+          this.db.exec(stmt);
+        } catch (err) {
+          // Index may already exist or table may not exist
+          console.warn(`[migration] Could not create index:`, err);
+        }
+      }
+
+      console.log('[migration] v18 complete: user_id columns added for multi-tenant support');
+    }
+
+    // Migration from version 18 to 19: Add audit_log table for security tracking
+    if (fromVersion < 19) {
+      console.log('[migration] v19: Creating audit_log table for security tracking...');
+
+      // Create audit_log table
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_log (
+          id TEXT PRIMARY KEY,
+          timestamp REAL NOT NULL,
+          user_id TEXT,
+          action TEXT NOT NULL,      -- 'read', 'write', 'delete', 'search', 'auth_fail'
+          resource_type TEXT NOT NULL, -- 'conversation', 'media', 'node', 'gallery'
+          resource_id TEXT,
+          ip_address TEXT,
+          user_agent TEXT,
+          success INTEGER NOT NULL DEFAULT 1,
+          error_code TEXT,
+          metadata TEXT,              -- JSON for additional context
+          request_path TEXT,
+          request_method TEXT
+        )
+      `);
+
+      // Create indexes for efficient querying
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_log(resource_type, resource_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+      `);
+
+      console.log('[migration] v19 complete: audit_log table created');
     }
 
     this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);

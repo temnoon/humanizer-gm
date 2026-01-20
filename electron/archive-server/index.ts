@@ -22,7 +22,15 @@ export {
   getArchiveRoot,
   setArchivePath,
   PATHS,
+  initAuth as initArchiveAuth,
+  isAuthEnabled as isArchiveAuthEnabled,
 } from './server';
+
+// Re-export auth types and utilities
+export {
+  type AuthContext,
+  type AuthenticatedRequest,
+} from './middleware/auth';
 
 // Re-export route utilities
 export { buildConversationIndex, getConversationsFromIndex } from './routes/archives';

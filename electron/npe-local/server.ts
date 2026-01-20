@@ -17,6 +17,7 @@ import { createQuantumRouter } from './routes/quantum';
 import { createConfigRouter } from './routes/config';
 import { setModelConfig, setAPIKeys, isOllamaAvailable, type APIKeyConfig } from './services/llm';
 import { initDatabase } from './services/database';
+import { initAuth, isAuthEnabled } from './middleware/auth';
 
 let app: Express | null = null;
 let server: Server | null = null;
@@ -26,6 +27,7 @@ export interface NpeLocalConfig {
   port?: number;
   ollamaUrl?: string;
   apiKeys?: APIKeyConfig;
+  jwtSecret?: string;
 }
 
 const DEFAULT_PORT = 3003;
@@ -104,6 +106,17 @@ export async function startServer(config: NpeLocalConfig = {}): Promise<string> 
     setAPIKeys(config.apiKeys);
   }
 
+  // Initialize auth if JWT secret provided
+  if (config.jwtSecret) {
+    initAuth(config.jwtSecret);
+    console.log('[NPE-Local] JWT auth enabled');
+  } else if (process.env.JWT_SECRET) {
+    initAuth(process.env.JWT_SECRET);
+    console.log('[NPE-Local] JWT auth enabled (from env)');
+  } else {
+    console.log('[NPE-Local] Dev mode - auth disabled (admin access)');
+  }
+
   app = createApp();
 
   return new Promise((resolve, reject) => {
@@ -166,3 +179,6 @@ export function getPort(): number | null {
 export function getApp(): Express | null {
   return app;
 }
+
+// Re-export auth utilities
+export { initAuth, isAuthEnabled };

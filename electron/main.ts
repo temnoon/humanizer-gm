@@ -28,6 +28,7 @@ import {
   areServicesInitialized,
   waitForServices,
   getArchiveRoot,
+  initArchiveAuth,
 } from './archive-server';
 
 // Embedded NPE-Local Server (AI Detection, Transformations)
@@ -116,12 +117,25 @@ async function createWindow() {
     mainWindow?.show();
   });
 
-  // Handle external links
+  // Handle external links opened via window.open / target="_blank"
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:') || url.startsWith('http:')) {
       shell.openExternal(url);
     }
     return { action: 'deny' };
+  });
+
+  // Handle link clicks that would navigate away from the app
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    // Allow navigation to our own app URLs (dev server or file://)
+    const isAppUrl = url.startsWith('http://localhost:') ||
+                     url.startsWith('file://') ||
+                     url.startsWith(RENDERER_DEV_URL || '');
+
+    if (!isAppUrl && (url.startsWith('https:') || url.startsWith('http:'))) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
   });
 
   // Load the app
@@ -198,6 +212,27 @@ async function startArchiveServer(): Promise<number | null> {
 
   console.log(`Starting embedded archive server on port ${port}...`);
 
+  // Initialize JWT auth for production builds
+  // In development, auth is optional (dev mode with admin access)
+  if (app.isPackaged) {
+    // Get or generate JWT secret (shared with Book Studio)
+    let jwtSecret = store.get('jwtSecret') as string | undefined;
+    if (!jwtSecret) {
+      // Generate a new 64-character hex secret (256 bits)
+      jwtSecret = crypto.randomBytes(32).toString('hex');
+      store.set('jwtSecret', jwtSecret);
+      console.log('[archive-server] Generated new JWT secret');
+    }
+    initArchiveAuth(jwtSecret);
+    console.log('[archive-server] JWT auth enabled');
+  } else if (process.env.JWT_SECRET) {
+    // Dev mode with explicit JWT_SECRET env var
+    initArchiveAuth(process.env.JWT_SECRET);
+    console.log('[archive-server] JWT auth enabled (from env)');
+  } else {
+    console.log('[archive-server] Dev mode - auth disabled (admin access)');
+  }
+
   try {
     const serverUrl = await startEmbeddedArchiveServer(port);
     console.log('Archive server ready:', serverUrl);
@@ -237,8 +272,20 @@ async function startNpeLocal(): Promise<number | null> {
 
   console.log(`Starting embedded npe-local server on port ${port}...`);
 
+  // Get JWT secret for auth (shared with Archive Server and Book Studio)
+  let jwtSecret: string | undefined;
+  if (app.isPackaged) {
+    jwtSecret = store.get('jwtSecret') as string | undefined;
+    if (!jwtSecret) {
+      jwtSecret = crypto.randomBytes(32).toString('hex');
+      store.set('jwtSecret', jwtSecret);
+    }
+  } else if (process.env.JWT_SECRET) {
+    jwtSecret = process.env.JWT_SECRET;
+  }
+
   try {
-    const serverUrl = await startNpeLocalServer({ port });
+    const serverUrl = await startNpeLocalServer({ port, jwtSecret });
     console.log('NPE-Local server ready:', serverUrl);
     npeLocalPort = port;
     return port;

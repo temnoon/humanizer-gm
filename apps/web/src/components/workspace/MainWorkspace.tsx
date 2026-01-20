@@ -24,9 +24,17 @@ import type { ArchiveContainer } from '@humanizer/core';
 import { WelcomeScreen } from './WelcomeScreen';
 import { AnalyzableMarkdown } from './AnalyzableMarkdown';
 import { AddToBookDialog, type AddAction } from '../dialogs/AddToBookDialog';
-import { getArchiveServerUrlSync, isElectron } from '../../lib/platform';
+import { getArchiveServerUrlSync, getArchiveServerUrl, isElectron } from '../../lib/platform';
 import { ContentViewer } from './ContentViewer';
 import { MediaViewer } from './MediaViewer';
+
+// Media item type for UCG node media
+interface NodeMediaItem {
+  hash: string;
+  url: string;
+  mimeType: string | null;
+  filename: string | null;
+}
 
 /**
  * Convert ChatGPT-style LaTeX delimiters to standard $ delimiters
@@ -100,6 +108,10 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const imageMedia = selectedContainer?.media?.filter(m => m.mediaType === 'image') || [];
 
+  // UCG node media (for ChatGPT and other archive content)
+  const [nodeMedia, setNodeMedia] = useState<NodeMediaItem[]>([]);
+  const nodeImageMedia = nodeMedia.filter(m => m.mimeType?.startsWith('image/'));
+
   // Sync editContent when activeContent changes
   useEffect(() => {
     if (activeContent) {
@@ -109,6 +121,32 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
       setEditContent(text);
     }
   }, [activeContent]);
+
+  // Fetch node media when activeNode changes (for ChatGPT/archive content)
+  useEffect(() => {
+    if (!activeNode?.id) {
+      setNodeMedia([]);
+      return;
+    }
+
+    const fetchNodeMedia = async () => {
+      try {
+        const archiveServer = await getArchiveServerUrl();
+        const response = await fetch(`${archiveServer}/api/ucg/nodes/${activeNode.id}/media`);
+        if (response.ok) {
+          const data = await response.json();
+          setNodeMedia(data.media || []);
+        } else {
+          setNodeMedia([]);
+        }
+      } catch (error) {
+        console.error('[Workspace] Failed to fetch node media:', error);
+        setNodeMedia([]);
+      }
+    };
+
+    fetchNodeMedia();
+  }, [activeNode?.id]);
 
   // Handle edit content change
   const handleEditChange = (newContent: string) => {
@@ -236,8 +274,11 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
         switch (e.key) {
           case 'e':
             e.preventDefault();
-            setViewMode(prev => prev === 'read' ? 'edit' : 'read');
-            if (viewMode === 'read') {
+            // Toggle between read and edit modes
+            // Note: Use captured viewMode to compute new mode, then check new mode for focus
+            const newViewMode = viewMode === 'read' ? 'edit' : 'read';
+            setViewMode(newViewMode);
+            if (newViewMode === 'edit') {
               setTimeout(() => editorRef.current?.focus(), 0);
             }
             break;
@@ -650,6 +691,60 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
               </div>
             </div>
           )}
+
+          {/* Media from UCG node (ChatGPT conversations, etc.) */}
+          {nodeMedia.length > 0 && !selectedContainer?.media?.length && (
+            <div className="workspace__media-section">
+              <h3 className="workspace__media-header">
+                Conversation Media ({nodeMedia.length})
+              </h3>
+              <div className="workspace__media-grid">
+                {nodeMedia.map((item, idx) => {
+                  const archiveServer = getArchiveServerUrlSync() || '';
+                  const mediaUrl = `${archiveServer}${item.url}`;
+                  const nodeImageIdx = nodeImageMedia.findIndex(m => m.hash === item.hash);
+
+                  return (
+                    <div key={item.hash} className="workspace__media-item">
+                      {item.mimeType?.startsWith('image/') ? (
+                        <img
+                          src={mediaUrl}
+                          alt={item.filename || `Image ${idx + 1}`}
+                          loading="lazy"
+                          className="workspace__media-image workspace__media-image--clickable"
+                          onClick={() => {
+                            setLightboxIndex(nodeImageIdx >= 0 ? nodeImageIdx : 0);
+                            setLightboxOpen(true);
+                          }}
+                        />
+                      ) : item.mimeType?.startsWith('video/') ? (
+                        <video
+                          src={mediaUrl}
+                          controls
+                          className="workspace__media-video"
+                        />
+                      ) : item.mimeType?.startsWith('audio/') ? (
+                        <audio
+                          src={mediaUrl}
+                          controls
+                          className="workspace__media-audio"
+                        />
+                      ) : (
+                        <a
+                          href={mediaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="workspace__media-link"
+                        >
+                          {item.filename || 'Download file'}
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </article>
       ) : (
         <div
@@ -730,8 +825,8 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
         onConfirm={handleAddToBook}
       />
 
-      {/* Lightbox for media images */}
-      {lightboxOpen && imageMedia[lightboxIndex] && (
+      {/* Lightbox for media images (supports both container media and UCG node media) */}
+      {lightboxOpen && (imageMedia[lightboxIndex] || nodeImageMedia[lightboxIndex]) && (
         <div
           className="workspace__lightbox"
           onClick={() => setLightboxOpen(false)}
@@ -744,36 +839,55 @@ export function MainWorkspace({ selectedMedia, selectedContent, selectedContaine
             ×
           </button>
 
-          {lightboxIndex > 0 && (
-            <button
-              className="workspace__lightbox-nav workspace__lightbox-nav--prev"
-              onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i - 1); }}
-              aria-label="Previous image"
-            >
-              ‹
-            </button>
-          )}
+          {(() => {
+            // Use container media if available, otherwise use node media
+            const currentMedia = imageMedia.length > 0 ? imageMedia : nodeImageMedia;
+            const currentItem = currentMedia[lightboxIndex];
+            if (!currentItem) return null;
 
-          {lightboxIndex < imageMedia.length - 1 && (
-            <button
-              className="workspace__lightbox-nav workspace__lightbox-nav--next"
-              onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i + 1); }}
-              aria-label="Next image"
-            >
-              ›
-            </button>
-          )}
+            // Get URL based on media type
+            const imgSrc = 'filePath' in currentItem
+              ? getMediaUrl(currentItem.filePath || '')
+              : `${getArchiveServerUrlSync() || ''}${(currentItem as NodeMediaItem).url}`;
+            const imgAlt = 'description' in currentItem
+              ? (currentItem.description || 'Full size')
+              : ((currentItem as NodeMediaItem).filename || 'Full size');
 
-          <img
-            src={getMediaUrl(imageMedia[lightboxIndex].filePath || '')}
-            alt={imageMedia[lightboxIndex].description || 'Full size'}
-            className="workspace__lightbox-image"
-            onClick={(e) => e.stopPropagation()}
-          />
+            return (
+              <>
+                {lightboxIndex > 0 && (
+                  <button
+                    className="workspace__lightbox-nav workspace__lightbox-nav--prev"
+                    onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i - 1); }}
+                    aria-label="Previous image"
+                  >
+                    ‹
+                  </button>
+                )}
 
-          <div className="workspace__lightbox-counter">
-            {lightboxIndex + 1} / {imageMedia.length}
-          </div>
+                {lightboxIndex < currentMedia.length - 1 && (
+                  <button
+                    className="workspace__lightbox-nav workspace__lightbox-nav--next"
+                    onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i + 1); }}
+                    aria-label="Next image"
+                  >
+                    ›
+                  </button>
+                )}
+
+                <img
+                  src={imgSrc}
+                  alt={imgAlt}
+                  className="workspace__lightbox-image"
+                  onClick={(e) => e.stopPropagation()}
+                />
+
+                <div className="workspace__lightbox-counter">
+                  {lightboxIndex + 1} / {currentMedia.length}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>

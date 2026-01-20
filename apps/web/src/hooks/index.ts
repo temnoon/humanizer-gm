@@ -9,3 +9,9 @@ export {
   FRONTIER_MODELS,
   type TierAccessInfo,
 } from './useTierAccess';
+
+export {
+  useModalAccessibility,
+  useModalProps,
+  type UseModalAccessibilityOptions,
+} from './useModalAccessibility';

@@ -196,6 +196,16 @@ export type ContentSourceType =
   | 'facebook-post'
   | 'facebook-comment'
   | 'facebook-message'
+  | 'instagram'
+  | 'instagram-post'
+  | 'instagram-comment'
+  | 'instagram-message'
+  | 'instagram-conversation'
+  | 'reddit'
+  | 'reddit-post'
+  | 'reddit-comment'
+  | 'reddit-message'
+  | 'reddit-chat'
   | 'twitter'
   | 'mastodon'
   // Communication
@@ -415,11 +425,17 @@ export interface CreateContentLinkOptions {
  * Query options for retrieving content nodes
  */
 export interface ContentNodeQuery {
-  /** Filter by source type */
+  /** Filter by source type (include) */
   sourceType?: SourceType | SourceType[];
 
-  /** Filter by tags (AND) */
+  /** Exclude these source types */
+  excludeSourceTypes?: SourceType[];
+
+  /** Filter by tags (AND - all must match) */
   tags?: string[];
+
+  /** Exclude these tags */
+  excludeTags?: string[];
 
   /** Filter by date range */
   dateRange?: {
@@ -429,6 +445,21 @@ export interface ContentNodeQuery {
 
   /** Full-text search query */
   searchQuery?: string;
+
+  /** Regex patterns to match against content */
+  regexPatterns?: RegexPattern[];
+
+  /** Exact phrases to match */
+  phrases?: string[];
+
+  /** Wildcard patterns (e.g., "conscio*") */
+  wildcards?: string[];
+
+  /** Minimum word count */
+  minWords?: number;
+
+  /** Maximum word count */
+  maxWords?: number;
 
   /** Limit results */
   limit?: number;
@@ -441,6 +472,21 @@ export interface ContentNodeQuery {
 
   /** Order direction */
   orderDirection?: 'asc' | 'desc';
+
+  /** Security: User ID for multi-tenant filtering (internal use) */
+  userId?: string;
+}
+
+/**
+ * Regex pattern for content search
+ */
+export interface RegexPattern {
+  /** The regex pattern string */
+  pattern: string;
+  /** Regex flags (e.g., "i" for case-insensitive) */
+  flags?: string;
+  /** Field to search in (default: content) */
+  field?: 'content' | 'title' | 'tags';
 }
 
 /**
@@ -461,6 +507,35 @@ export interface ContentLinkQuery {
 
   /** Limit results */
   limit?: number;
+}
+
+/**
+ * Keyword centrality score for semantic matching
+ */
+export interface KeywordScore {
+  /** The keyword being scored */
+  keyword: string;
+
+  /** Number of occurrences in the passage */
+  occurrences: number;
+
+  /** Term frequency (occurrences / total words) */
+  tf: number;
+
+  /** Inverse document frequency (rarity across corpus) */
+  idf: number;
+
+  /** TF-IDF score */
+  tfidf: number;
+
+  /** Whether keyword appears in title */
+  titleMatch: boolean;
+
+  /** Whether keyword appears early in passage */
+  positionBonus: boolean;
+
+  /** Combined centrality score (higher = more central to this passage) */
+  centrality: number;
 }
 
 /**
