@@ -13,6 +13,7 @@ import {
   unifiedSearch,
   getMessageContext,
   type SearchResult,
+  type ContentType,
 } from '../archive-reader'
 import { classifyStub, quickGradeCard } from './harvest-review-agent'
 import { createCardFromSearchResult, type HarvestCard, type StubClassification } from './types'
@@ -38,6 +39,9 @@ export interface HarvestConfig {
   minWordCount: number // Minimum words to not be a stub (default 30)
   expandBreadcrumbs: boolean // Auto-expand breadcrumb stubs (default true)
   contextSize: number // Messages before/after for expansion (default 2)
+  sources?: string[] // Filter by source types (e.g., ['openai', 'claude', 'facebook'])
+  types?: ContentType[] // Filter by content types (e.g., ['message', 'post'])
+  prioritizeConversations: boolean // Boost conversation messages over social media (default true)
 }
 
 export interface ExpandedResult {
@@ -61,12 +65,14 @@ export interface HarvestResult {
   }
 }
 
+// Default harvest configuration - these can be overridden per-harvest
 const DEFAULT_CONFIG: HarvestConfig = {
-  target: 40,
-  searchLimit: 200,
-  minWordCount: 30,
+  target: 20, // Default to 20 cards per harvest (was 40, now more conservative)
+  searchLimit: 100, // Search up to 100 results
+  minWordCount: 20, // Minimum 20 words (was 30, now more inclusive)
   expandBreadcrumbs: true,
   contextSize: 2,
+  prioritizeConversations: true, // Prioritize AI conversations over social media
 }
 
 // ============================================================================
@@ -102,11 +108,31 @@ export async function smartHarvest(
   })
 
   // Fetch a large batch of results
+  console.log(`[SmartHarvest] Searching for "${query}" with limit ${cfg.searchLimit}`)
   const searchResponse = await unifiedSearch(query, {
     limit: cfg.searchLimit,
+    sources: cfg.sources,
+    types: cfg.types,
   })
 
-  const searchResults = searchResponse.results
+  console.log(`[SmartHarvest] Search returned ${searchResponse.results.length} results`)
+  let searchResults = searchResponse.results
+
+  // Prioritize conversations (OpenAI/Claude messages) over social media
+  if (cfg.prioritizeConversations && searchResults.length > 0) {
+    // Sort to put messages first, then by similarity
+    searchResults = [...searchResults].sort((a, b) => {
+      const aIsConvo = a.type === 'message' || a.source === 'openai' || a.source === 'claude'
+      const bIsConvo = b.type === 'message' || b.source === 'openai' || b.source === 'claude'
+
+      // Conversations first
+      if (aIsConvo && !bIsConvo) return -1
+      if (!aIsConvo && bIsConvo) return 1
+
+      // Then by similarity
+      return b.similarity - a.similarity
+    })
+  }
 
   if (searchResults.length === 0) {
     exhausted = true

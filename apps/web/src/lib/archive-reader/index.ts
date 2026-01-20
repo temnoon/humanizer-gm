@@ -2,12 +2,22 @@
  * Archive Reader - Read-only access to humanizer-gm archives
  *
  * This module provides a clean interface to the archive server running
- * on localhost:3002 (proxied via /api/archive).
+ * on localhost:3002 (dynamic port in Electron).
  *
  * IMPORTANT: This is READ-ONLY. No modifications to the archive.
  */
 
-const API_BASE = '/api/archive'
+import { getArchiveServerUrl } from '../platform'
+
+// Cache the API base URL after first fetch
+let _apiBase: string | null = null
+
+async function getApiBase(): Promise<string> {
+  if (_apiBase) return _apiBase
+  const serverUrl = await getArchiveServerUrl()
+  _apiBase = `${serverUrl}/api`
+  return _apiBase
+}
 
 // ============================================================================
 // Types
@@ -93,18 +103,34 @@ export interface Period {
 // Health & Status
 // ============================================================================
 
+// Cache health check result for 30 seconds
+let _healthCache: { result: ArchiveHealth; timestamp: number } | null = null
+const HEALTH_CACHE_TTL = 30 * 1000 // 30 seconds
+
 /**
  * Check if the archive server is available and ready
+ * Results are cached for 30 seconds to prevent rate limiting
  */
 export async function checkHealth(): Promise<ArchiveHealth> {
+  // Return cached result if still valid
+  if (_healthCache && Date.now() - _healthCache.timestamp < HEALTH_CACHE_TTL) {
+    return _healthCache.result
+  }
+
   try {
-    const response = await fetch(`${API_BASE}/embeddings/health`)
+    const response = await fetch(`${await getApiBase()}/embeddings/health`)
     if (!response.ok) {
-      return { ready: false, issues: [`HTTP ${response.status}`] }
+      const result = { ready: false, issues: [`HTTP ${response.status}`] }
+      _healthCache = { result, timestamp: Date.now() }
+      return result
     }
-    return response.json()
+    const result = await response.json()
+    _healthCache = { result, timestamp: Date.now() }
+    return result
   } catch (error) {
-    return { ready: false, issues: [String(error)] }
+    const result = { ready: false, issues: [String(error)] }
+    _healthCache = { result, timestamp: Date.now() }
+    return result
   }
 }
 
@@ -113,7 +139,7 @@ export async function checkHealth(): Promise<ArchiveHealth> {
  */
 export async function getStats(): Promise<EmbeddingStats | null> {
   try {
-    const response = await fetch(`${API_BASE}/embeddings/stats`)
+    const response = await fetch(`${await getApiBase()}/embeddings/stats`)
     if (!response.ok) return null
     return response.json()
   } catch {
@@ -167,7 +193,7 @@ export async function unifiedSearch(
   const requestLimit = hasClientFilters ? Math.min(limit * 3, 100) : limit
 
   try {
-    const response = await fetch(`${API_BASE}/embeddings/search/unified`, {
+    const response = await fetch(`${await getApiBase()}/embeddings/search/unified`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -279,7 +305,7 @@ export async function searchMessages(
   limit: number = 20
 ): Promise<SearchResult[]> {
   try {
-    const response = await fetch(`${API_BASE}/embeddings/search/messages`, {
+    const response = await fetch(`${await getApiBase()}/embeddings/search/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit }),
@@ -301,7 +327,7 @@ export async function findSimilar(
   limit: number = 10
 ): Promise<SearchResult[]> {
   try {
-    const response = await fetch(`${API_BASE}/embeddings/search/similar`, {
+    const response = await fetch(`${await getApiBase()}/embeddings/search/similar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messageId, limit }),
@@ -345,7 +371,7 @@ export async function listContent(
   if (options.offset) params.set('offset', String(options.offset))
 
   try {
-    const response = await fetch(`${API_BASE}/content/items?${params}`)
+    const response = await fetch(`${await getApiBase()}/content/items?${params}`)
     if (!response.ok) {
       return { items: [], total: 0, hasMore: false }
     }
@@ -360,7 +386,7 @@ export async function listContent(
  */
 export async function getPeriods(): Promise<Period[]> {
   try {
-    const response = await fetch(`${API_BASE}/facebook/periods`)
+    const response = await fetch(`${await getApiBase()}/facebook/periods`)
     if (!response.ok) return []
     const data = await response.json()
     return data.periods || []
@@ -393,7 +419,7 @@ export async function searchImages(
   try {
     const params = new URLSearchParams({ q: query, limit: String(limit) })
     const response = await fetch(
-      `${API_BASE}/gallery/analysis/semantic-search?${params}`
+      `${await getApiBase()}/gallery/analysis/semantic-search?${params}`
     )
     if (!response.ok) return []
     const data = await response.json()
@@ -422,7 +448,7 @@ export async function listArchives(): Promise<{
   archives: Archive[]
 }> {
   try {
-    const response = await fetch(`${API_BASE}/archives`)
+    const response = await fetch(`${await getApiBase()}/archives`)
     if (!response.ok) {
       return { current: '', archives: [] }
     }
@@ -464,7 +490,7 @@ export async function webSearch(
   const { limit = 10, freshness } = options
 
   try {
-    const response = await fetch(`${API_BASE}/web/search`, {
+    const response = await fetch(`${await getApiBase()}/web/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit, freshness }),
@@ -509,7 +535,7 @@ export async function webSearch(
  */
 export async function checkWebSearchAvailable(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/web/status`)
+    const response = await fetch(`${await getApiBase()}/web/status`)
     if (!response.ok) return false
     const data = await response.json()
     return data.available === true
@@ -538,7 +564,7 @@ export interface FetchedContent {
  */
 export async function fetchUrlContent(url: string): Promise<FetchedContent | null> {
   try {
-    const response = await fetch(`${API_BASE}/web/fetch`, {
+    const response = await fetch(`${await getApiBase()}/web/fetch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
@@ -611,7 +637,7 @@ export interface Conversation {
  */
 export async function getConversation(folderOrId: string): Promise<Conversation | null> {
   try {
-    const response = await fetch(`${API_BASE}/conversations/${encodeURIComponent(folderOrId)}`)
+    const response = await fetch(`${await getApiBase()}/conversations/${encodeURIComponent(folderOrId)}`)
     if (!response.ok) {
       console.error('Failed to get conversation:', response.status)
       return null
@@ -707,7 +733,7 @@ export async function listConversations(options: {
   if (options.sortOrder) params.set('sort_order', options.sortOrder)
 
   try {
-    const response = await fetch(`${API_BASE}/conversations?${params}`)
+    const response = await fetch(`${await getApiBase()}/conversations?${params}`)
     if (!response.ok) {
       return { conversations: [], total: 0 }
     }

@@ -108,12 +108,12 @@ export const globalRateLimit = createRateLimit({
 });
 
 /**
- * Search rate limiter - 30 requests per minute
- * (searches are expensive operations)
+ * Search rate limiter - 120 requests per minute
+ * (increased for local Electron app with React StrictMode double-invocations)
  */
 export const searchRateLimit = createRateLimit({
   windowMs: 60 * 1000,  // 1 minute
-  maxRequests: 30,
+  maxRequests: 120,
 });
 
 /**

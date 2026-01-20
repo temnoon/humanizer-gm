@@ -36,13 +36,15 @@ interface ArchiveTabsProps {
   onSelectSearchResult?: (result: SearchResult) => void;
   /** Callback when Gutenberg text is selected for workspace */
   onSelectGutenbergText?: (text: string, title: string) => void;
+  /** Callback to open the Book Maker modal */
+  onOpenBookMaker?: () => void;
   /** Controlled tab value (optional) */
   controlledTab?: ArchiveTabId;
   /** Callback when tab changes (for controlled mode) */
   onTabChange?: (tab: ArchiveTabId) => void;
 }
 
-export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onSelectSearchResult, onSelectGutenbergText, controlledTab, onTabChange }: ArchiveTabsProps) {
+export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onSelectSearchResult, onSelectGutenbergText, onOpenBookMaker, controlledTab, onTabChange }: ArchiveTabsProps) {
   const [internalTab, setInternalTab] = useState<ArchiveTabId>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return (saved as ArchiveTabId) || 'conversations';
@@ -68,7 +70,7 @@ export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectConten
       case 'import':
         return <ImportView />;
       case 'books':
-        return <BooksView onSelectBookContent={onSelectBookContent} />;
+        return <BooksView onOpenBookMaker={onOpenBookMaker} />;
       case 'gutenberg':
         return <GutenbergView onSelectText={onSelectGutenbergText} />;
       case 'facebook':

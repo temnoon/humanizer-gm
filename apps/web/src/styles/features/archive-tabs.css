@@ -91,3 +91,261 @@
   padding: 1rem;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   BOOKS VIEW
+   Simplified book list that opens BookMakerModal
+   ═══════════════════════════════════════════════════════════════════ */
+
+.books-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: 100%;
+}
+
+.books-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.books-view__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.books-view__create-btn {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--studio-text);
+  background: var(--studio-hover);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.books-view__create-btn:hover {
+  background: var(--studio-accent);
+  color: white;
+  border-color: var(--studio-accent);
+}
+
+.books-view__create-btn--large {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+}
+
+.books-view__loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--studio-text-secondary);
+}
+
+.books-view__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.books-view__empty-icon {
+  font-size: 2.5rem;
+}
+
+.books-view__empty h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.books-view__empty p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--studio-text-secondary);
+}
+
+.books-view__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.books-view__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--studio-card-bg, var(--studio-panel-bg));
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.books-view__item:hover {
+  background: var(--studio-hover);
+  border-color: var(--studio-accent);
+}
+
+.books-view__item--active {
+  border-color: var(--studio-accent);
+  background: var(--studio-accent-bg, rgba(99, 102, 241, 0.1));
+}
+
+.books-view__item-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.books-view__item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.books-view__item-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--studio-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.books-view__item-desc {
+  font-size: 0.75rem;
+  color: var(--studio-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.125rem;
+}
+
+.books-view__item-meta {
+  font-size: 0.6875rem;
+  color: var(--studio-text-muted, var(--studio-text-secondary));
+  margin-top: 0.25rem;
+}
+
+.books-view__item-arrow {
+  color: var(--studio-text-secondary);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.books-view__hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--studio-text-secondary);
+  border-top: 1px solid var(--studio-border);
+  margin-top: auto;
+}
+
+.books-view__hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.25rem;
+  font-size: 0.625rem;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--studio-quote-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: 3px;
+}
+
+/* Create Book Dialog */
+.books-view__dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: hsla(0, 0%, 0%, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.books-view__dialog {
+  background: var(--studio-panel-bg, #fff);
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px hsla(0, 0%, 0%, 0.2);
+}
+
+.books-view__dialog h3 {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--studio-text);
+}
+
+.books-view__dialog-input {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  background: var(--studio-card-bg, #fff);
+  color: var(--studio-text);
+  outline: none;
+}
+
+.books-view__dialog-input:focus {
+  border-color: var(--studio-accent);
+  box-shadow: 0 0 0 2px var(--studio-accent-bg, rgba(99, 102, 241, 0.2));
+}
+
+.books-view__dialog-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+.books-view__dialog-btn {
+  padding: 0.625rem 1rem;
+  min-height: 44px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.books-view__dialog-btn--cancel {
+  background: transparent;
+  border: 1px solid var(--studio-border);
+  color: var(--studio-text-secondary);
+}
+
+.books-view__dialog-btn--cancel:hover {
+  background: var(--studio-hover);
+}
+
+.books-view__dialog-btn--create {
+  background: var(--studio-accent);
+  border: none;
+  color: white;
+}
+
+.books-view__dialog-btn--create:hover {
+  background: var(--studio-accent-hover, #4f46e5);
+}

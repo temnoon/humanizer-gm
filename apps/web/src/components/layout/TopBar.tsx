@@ -32,12 +32,14 @@ export interface TopBarProps {
   onTransformComplete?: (original: string, transformed: string, transformType: string) => void;
   onBreadcrumbClick?: (index: number, path: string[], archiveSource: ArchiveSource) => void;
   onSelectSearchResult?: (result: SearchResult) => void;
+  /** Callback to open the Book Maker modal */
+  onOpenBookMaker?: () => void;
   archiveTab?: ArchiveTabId;
   onArchiveTabChange?: (tab: ArchiveTabId | undefined) => void;
   onReviewInWorkspace?: (conversationId: string, conversationTitle: string, passage: import('@humanizer/core').SourcePassage) => void;
 }
 
-export function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onTransformComplete, onBreadcrumbClick, onSelectSearchResult, archiveTab, onArchiveTabChange, onReviewInWorkspace }: TopBarProps) {
+export function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onTransformComplete, onBreadcrumbClick, onSelectSearchResult, onOpenBookMaker, archiveTab, onArchiveTabChange, onReviewInWorkspace }: TopBarProps) {
   const { user, isAuthenticated, logout } = useAuth();
   const { isPanelVisible, togglePanel } = useLayout();
   const { activeBuffer, activeNode, canUndo, canRedo, undo, redo } = useBuffers();
@@ -243,6 +245,7 @@ export function TopBar({ onSelectMedia, onSelectContent, onOpenGraph, onSelectBo
           onOpenGraph={onOpenGraph}
           onSelectBookContent={onSelectBookContent}
           onSelectSearchResult={onSelectSearchResult}
+          onOpenBookMaker={onOpenBookMaker}
           navigateToTab={archiveTab}
           onTabChange={setArchiveTab}
         />

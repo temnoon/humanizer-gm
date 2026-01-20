@@ -12,7 +12,7 @@ export interface ToolDefinition {
   icon: string;
   label: string;
   description: string;
-  category: 'transform' | 'analyze' | 'edit' | 'book' | 'advanced' | 'settings';
+  category: 'transform' | 'analyze' | 'edit' | 'advanced' | 'settings';
   defaultVisible: boolean;
 }
 
@@ -30,10 +30,7 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   { id: 'editor', icon: '¶', label: 'Editor', description: 'Markdown editor', category: 'edit', defaultVisible: true },
   { id: 'harvest', icon: '🌾', label: 'Harvest', description: 'Passage curation queue', category: 'edit', defaultVisible: true },
 
-  // Book tools
-  { id: 'arc', icon: '◠', label: 'Arc', description: 'Trace narrative arcs through your archive', category: 'book', defaultVisible: true },
-  { id: 'threads', icon: '⚯', label: 'Threads', description: 'Discover thematic threads', category: 'book', defaultVisible: true },
-  { id: 'chapters', icon: '❡', label: 'Chapters', description: 'Manage book chapters', category: 'book', defaultVisible: true },
+  // Book tools removed - now in BookMakerModal (Cmd+Shift+B)
 
   // Advanced tools (hidden by default)
   { id: 'pipelines', icon: '⚡', label: 'Pipelines', description: 'Preset workflows', category: 'advanced', defaultVisible: false },

@@ -588,16 +588,16 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
         // Call appropriate IPC handler
         switch (action) {
           case 'approve':
-            result = await window.electronAPI.xanadu.harvest.approvePassage(bucketId, passageId);
+            result = await window.electronAPI!.xanadu.harvest.approvePassage(bucketId, passageId);
             break;
           case 'reject':
-            result = await window.electronAPI.xanadu.harvest.rejectPassage(bucketId, passageId);
+            result = await window.electronAPI!.xanadu.harvest.rejectPassage(bucketId, passageId);
             break;
           case 'gem':
-            result = await window.electronAPI.xanadu.harvest.gemPassage(bucketId, passageId);
+            result = await window.electronAPI!.xanadu.harvest.gemPassage(bucketId, passageId);
             break;
           case 'undo':
-            result = await window.electronAPI.xanadu.harvest.undoPassage(bucketId, passageId);
+            result = await window.electronAPI!.xanadu.harvest.undoPassage(bucketId, passageId);
             break;
           default:
             console.warn('[HarvestQueuePanel] Unknown action:', action);
@@ -634,7 +634,7 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
     }
 
     try {
-      const result = await window.electronAPI.xanadu.harvest.stageBucket(bucketId);
+      const result = await window.electronAPI!.xanadu.harvest.stageBucket(bucketId);
       if (!result.success) {
         setHarvestError(`Failed to stage bucket: ${result.error}`);
         return;
@@ -657,7 +657,7 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
     }
 
     try {
-      const result = await window.electronAPI.xanadu.harvest.commitBucket(bucketId);
+      const result = await window.electronAPI!.xanadu.harvest.commitBucket(bucketId);
       if (!result.success) {
         setHarvestError(`Failed to commit bucket: ${result.error}`);
         return;
@@ -684,7 +684,7 @@ export function HarvestQueuePanel({ bookUri, onSelectPassage, onOpenSource, onRe
     }
 
     try {
-      const result = await window.electronAPI.xanadu.harvest.discardBucket(bucketId);
+      const result = await window.electronAPI!.xanadu.harvest.discardBucket(bucketId);
       if (!result.success) {
         setHarvestError(`Failed to discard bucket: ${result.error}`);
         return;

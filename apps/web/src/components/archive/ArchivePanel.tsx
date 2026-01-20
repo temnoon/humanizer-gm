@@ -37,13 +37,15 @@ export interface ArchivePanelProps {
   onSelectBookContent?: (content: BookContent, project: BookProject) => void;
   /** Callback when semantic search result is selected */
   onSelectSearchResult?: (result: SearchResult) => void;
+  /** Callback to open the Book Maker modal */
+  onOpenBookMaker?: () => void;
   /** External tab navigation command */
   navigateToTab?: ArchiveTabId;
   /** Callback when tab changes */
   onTabChange?: (tab: ArchiveTabId) => void;
 }
 
-export function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onSelectSearchResult, navigateToTab, onTabChange }: ArchivePanelProps) {
+export function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGraph, onSelectBookContent, onSelectSearchResult, onOpenBookMaker, navigateToTab, onTabChange }: ArchivePanelProps) {
   const { importText, buffers, activeNode } = useBuffers();
 
   // Get the currently selected conversation folder from workspace
@@ -610,6 +612,7 @@ export function ArchivePanel({ onClose, onSelectMedia, onSelectContent, onOpenGr
       onSelectBookContent={onSelectBookContent}
       onSelectSearchResult={onSelectSearchResult}
       onSelectGutenbergText={handleSelectGutenbergText}
+      onOpenBookMaker={onOpenBookMaker}
       controlledTab={navigateToTab}
       onTabChange={onTabChange}
     />

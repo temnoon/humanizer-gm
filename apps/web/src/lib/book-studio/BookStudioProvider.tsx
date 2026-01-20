@@ -187,6 +187,13 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
           config
         )
 
+        // Auto-commit results immediately to staging
+        if (result.results.length > 0) {
+          const cards = result.results.map(r => r.card)
+          await api.actions.harvestCardsBatch(cards)
+          console.log(`[harvest] Auto-committed ${cards.length} cards to staging`)
+        }
+
         setHarvestState(prev => ({
           ...prev,
           isRunning: false,
@@ -394,8 +401,9 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
           throw new Error('No cards assigned to this chapter')
         }
 
-        // Check for Electron API
-        if (!window.electronAPI?.ollama?.generate) {
+        // Check for Electron API (ollama may not be in type definition yet)
+        const electronAPI = window.electronAPI as { ollama?: { generate: (params: { model: string; prompt: string; options: { temperature: number } }) => Promise<{ response: string }> } } | undefined
+        if (!electronAPI?.ollama?.generate) {
           throw new Error('Draft generation requires Ollama (Electron)')
         }
 
@@ -434,7 +442,7 @@ Write a draft chapter that:
 Begin the draft:`
 
         // Generate via Ollama
-        const result = await window.electronAPI.ollama.generate({
+        const result = await electronAPI.ollama!.generate({
           model: config?.model || 'llama3.2',
           prompt,
           options: {

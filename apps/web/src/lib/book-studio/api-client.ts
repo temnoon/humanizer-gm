@@ -119,6 +119,17 @@ interface ApiCard {
 // Type Converters
 // ============================================================================
 
+/**
+ * Safely convert a Unix timestamp (seconds) to ISO string
+ * Returns current time if value is invalid
+ */
+function safeTimestampToIso(timestamp: number | null | undefined): string {
+  if (timestamp != null && typeof timestamp === 'number' && !isNaN(timestamp)) {
+    return new Date(timestamp * 1000).toISOString()
+  }
+  return new Date().toISOString()
+}
+
 function apiBookToBook(api: ApiBook, chapters: Chapter[] = [], cards: HarvestCard[] = []): Book {
   return {
     id: api.id,
@@ -127,8 +138,8 @@ function apiBookToBook(api: ApiBook, chapters: Chapter[] = [], cards: HarvestCar
     chapters,
     stagingCards: cards.filter(c => c.status === 'staging'),
     targetWordCount: api.target_word_count || undefined,
-    createdAt: new Date(api.created_at * 1000).toISOString(),
-    updatedAt: new Date(api.updated_at * 1000).toISOString(),
+    createdAt: safeTimestampToIso(api.created_at),
+    updatedAt: safeTimestampToIso(api.updated_at),
   }
 }
 
@@ -319,15 +330,15 @@ class BookStudioApiClient {
   }
 
   async createBook(title: string, description?: string): Promise<Book> {
-    const apiBook = await this.fetch<ApiBook>('/books', {
+    const response = await this.fetch<{ book: ApiBook }>('/books', {
       method: 'POST',
       body: JSON.stringify({ title, description }),
     })
-    return apiBookToBook(apiBook)
+    return apiBookToBook(response.book)
   }
 
   async updateBook(bookId: string, updates: Partial<Pick<Book, 'title' | 'description' | 'targetWordCount'>>): Promise<Book> {
-    const apiBook = await this.fetch<ApiBook>(`/books/${bookId}`, {
+    const response = await this.fetch<{ book: ApiBook }>(`/books/${bookId}`, {
       method: 'PATCH',
       body: JSON.stringify({
         title: updates.title,
@@ -335,7 +346,7 @@ class BookStudioApiClient {
         target_word_count: updates.targetWordCount,
       }),
     })
-    return apiBookToBook(apiBook)
+    return apiBookToBook(response.book)
   }
 
   async deleteBook(bookId: string): Promise<void> {
@@ -352,11 +363,11 @@ class BookStudioApiClient {
   }
 
   async createChapter(bookId: string, title: string, order?: number): Promise<Chapter> {
-    const apiChapter = await this.fetch<ApiChapter>('/chapters', {
+    const response = await this.fetch<{ chapter: ApiChapter }>('/chapters', {
       method: 'POST',
       body: JSON.stringify({ bookId, title, order }),
     })
-    return apiChapterToChapter(apiChapter)
+    return apiChapterToChapter(response.chapter)
   }
 
   async createChaptersBatch(bookId: string, titles: string[]): Promise<Chapter[]> {
@@ -368,7 +379,7 @@ class BookStudioApiClient {
   }
 
   async updateChapter(chapterId: string, updates: Partial<Pick<Chapter, 'title' | 'content' | 'draftInstructions' | 'wordCount'>>): Promise<Chapter> {
-    const apiChapter = await this.fetch<ApiChapter>(`/chapters/${chapterId}`, {
+    const response = await this.fetch<{ chapter: ApiChapter }>(`/chapters/${chapterId}`, {
       method: 'PATCH',
       body: JSON.stringify({
         title: updates.title,
@@ -377,7 +388,7 @@ class BookStudioApiClient {
         word_count: updates.wordCount,
       }),
     })
-    return apiChapterToChapter(apiChapter)
+    return apiChapterToChapter(response.chapter)
   }
 
   async deleteChapter(chapterId: string): Promise<void> {
@@ -401,11 +412,11 @@ class BookStudioApiClient {
   }
 
   async harvestCard(bookId: string, card: HarvestCard): Promise<HarvestCard> {
-    const apiCard = await this.fetch<ApiCard>('/cards', {
+    const response = await this.fetch<{ card: ApiCard }>('/cards', {
       method: 'POST',
       body: JSON.stringify(harvestCardToApiRequest(card, bookId)),
     })
-    return apiCardToHarvestCard(apiCard)
+    return apiCardToHarvestCard(response.card)
   }
 
   async harvestCardsBatch(bookId: string, cards: HarvestCard[]): Promise<HarvestCard[]> {
@@ -420,7 +431,7 @@ class BookStudioApiClient {
   }
 
   async updateCard(cardId: string, updates: Partial<HarvestCard>): Promise<HarvestCard> {
-    const apiCard = await this.fetch<ApiCard>(`/cards/${cardId}`, {
+    const response = await this.fetch<{ card: ApiCard }>(`/cards/${cardId}`, {
       method: 'PATCH',
       body: JSON.stringify({
         user_notes: updates.userNotes,
@@ -434,15 +445,15 @@ class BookStudioApiClient {
         canvas_y: updates.canvasPosition?.y,
       }),
     })
-    return apiCardToHarvestCard(apiCard)
+    return apiCardToHarvestCard(response.card)
   }
 
   async moveCardToChapter(cardId: string, chapterId: string): Promise<HarvestCard> {
-    const apiCard = await this.fetch<ApiCard>(`/cards/${cardId}/move`, {
+    const response = await this.fetch<{ card: ApiCard }>(`/cards/${cardId}/move`, {
       method: 'POST',
       body: JSON.stringify({ chapterId }),
     })
-    return apiCardToHarvestCard(apiCard)
+    return apiCardToHarvestCard(response.card)
   }
 
   async deleteCard(cardId: string): Promise<void> {

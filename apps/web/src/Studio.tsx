@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { MathMarkdown } from './components/markdown';
+import { BookMakerModal } from './components/book-maker';
 
 import {
   BufferProvider,
@@ -73,6 +74,21 @@ function StudioContent() {
 
   // Structure inspector state (peek behind the curtain)
   const [inspectorOpen, setInspectorOpen] = useState(false);
+
+  // Book Maker modal state
+  const [showBookMaker, setShowBookMaker] = useState(false);
+
+  // Keyboard shortcut: Cmd+Shift+B to open Book Maker
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setShowBookMaker(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Clear selectedContainer when switching away from Facebook content
   // This prevents Facebook media from persisting when viewing ChatGPT conversations
@@ -485,6 +501,7 @@ function StudioContent() {
         onSelectBookContent={handleSelectBookContent}
         onTransformComplete={handleTransformComplete}
         onSelectSearchResult={handleSelectSearchResult}
+        onOpenBookMaker={() => setShowBookMaker(true)}
         archiveTab={archiveTab}
         onArchiveTabChange={setArchiveTab}
         onReviewInWorkspace={handleReviewInWorkspace}
@@ -515,6 +532,12 @@ function StudioContent() {
 
       {/* Subtle corner assistant - replaces intrusive bottom menubar */}
       <CornerAssistant />
+
+      {/* Book Maker - full-screen modal (Cmd+Shift+B) */}
+      <BookMakerModal
+        isOpen={showBookMaker}
+        onClose={() => setShowBookMaker(false)}
+      />
     </div>
   );
 }

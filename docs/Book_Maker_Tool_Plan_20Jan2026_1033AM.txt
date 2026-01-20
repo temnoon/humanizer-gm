@@ -1,0 +1,408 @@
+──────────────────────────────────────────────────────────────────────────────────────────────────
+ Ready to code?
+
+ Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Book Maker Tool - Implementation Plan
+
+ Executive Summary
+
+ Replace the broken BooksView with a new full-screen Book Maker modal. The tool provides project
+ selection, smart harvesting, agent-driven card analysis, multi-view staging, and chapter
+ composition.
+
+ Key Insight: The types infrastructure (HarvestCard, CardGrade, StubClassification) already
+ exists in apps/web/src/lib/book-studio/types.ts. The main work is building the UI layer.
+
+ ---
+ Architecture
+
+ ┌────────────────────────────────────────────────────────────────┐
+ │                    BookMakerModal (Full-Screen Portal)         │
+ ├────────────────────────────────────────────────────────────────┤
+ │  Header: [Back] [Project Name] [View Tabs]                     │
+ ├────────────────────────────────────────────────────────────────┤
+ │                                                                │
+ │  Views:                                                        │
+ │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │
+ │  │  Projects   │ │   Harvest   │ │   Staging   │              │
+ │  │  (Select/   │ │  (Search,   │ │  (Grid,     │              │
+ │  │   Create)   │ │   Grade)    │ │  Timeline,  │              │
+ │  │             │ │             │ │  Canvas,    │              │
+ │  │             │ │             │ │  Clusters)  │              │
+ │  └─────────────┘ └─────────────┘ └─────────────┘              │
+ │                                                                │
+ │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │
+ │  │   Outline   │ │  Chapters   │ │   Writing   │              │
+ │  │  (Generate, │ │  (List,     │ │  (Compose,  │              │
+ │  │   Review)   │ │   Reorder)  │ │   Draft)    │              │
+ │  └─────────────┘ └─────────────┘ └─────────────┘              │
+ │                                                                │
+ └────────────────────────────────────────────────────────────────┘
+
+ Data Flow:
+ Archive Server (3002) → Smart Harvest → Grading Queue → Staging Cards
+                                               ↓
+                         Book Studio Server (3004/SQLite)
+                                               ↓
+               Outline Agent → Chapters → Draft Agent → Final Book
+
+ ---
+ Phase 1: Modal Infrastructure (Day 1)
+
+ Files to Create
+
+ apps/web/src/components/book-maker/BookMakerModal.tsx
+ // Full-screen portal modal with view navigation
+ // Pattern from: FillChapterDialog.tsx uses createPortal(content, document.body)
+
+ interface BookMakerModalProps {
+   isOpen: boolean
+   onClose: () => void
+ }
+
+ // Views: 'projects' | 'harvest' | 'staging' | 'outline' | 'chapters' | 'writing'
+ // Use LayoutContext patterns for panel coordination
+ // Keyboard: Escape to close, Cmd+1-6 for view switching
+
+ apps/web/src/components/book-maker/index.ts
+ export { BookMakerModal } from './BookMakerModal'
+ export { ProjectsView } from './ProjectsView'
+ // etc.
+
+ apps/web/src/styles/features/book-maker.css
+ /* Full-screen modal overlay */
+ .book-maker__overlay { /* Portal pattern from FillChapterDialog */ }
+ .book-maker__container { /* Full viewport */ }
+ .book-maker__header { /* Navigation bar */ }
+ .book-maker__content { /* View container */ }
+
+ /* Use existing CSS variables from book-studio.css */
+
+ Files to Modify
+
+ apps/web/src/components/layout/Studio.tsx
+ - Add keyboard shortcut (Cmd+Shift+B) to open Book Maker
+ - Add toolbar button for Book Maker
+
+ apps/web/src/App.tsx or entry point
+ - Mount BookMakerModal at app level
+
+ ---
+ Phase 2: Project Selection (Day 2)
+
+ Files to Create
+
+ apps/web/src/components/book-maker/ProjectsView.tsx
+ // Grid of book projects from Book Studio server
+ // Features:
+ // - Project cards with stats (cards, chapters, word count)
+ // - "Create New" card
+ // - Quick actions (rename, delete, duplicate)
+ // - Last modified timestamp
+
+ // Uses: useBookStudioApi() from BookStudioProvider
+ // API: GET /api/books via Book Studio server (port 3004)
+
+ apps/web/src/components/book-maker/CreateProjectDialog.tsx
+ // Pattern: Follow PromptDialog.tsx (createPortal, keyboard handlers)
+ // Fields: title (required), description, target word count
+
+ ---
+ Phase 3: Harvest Workflow (Days 3-4)
+
+ Files to Create
+
+ apps/web/src/components/book-maker/HarvestPanel.tsx
+ // Smart harvest UI
+ // Features:
+ // 1. Search input with suggestions from book title
+ // 2. Progress bar (searching → grading → expanding → complete)
+ // 3. Result preview with grade badges
+ // 4. "Add to Staging" button
+
+ // Integration:
+ // - Uses existing smart-harvest-agent.ts (already in book-studio)
+ // - Uses harvest-review-agent.ts for grading queue
+ // - Calls Archive Server (3002) for semantic search
+
+ apps/web/src/components/book-maker/HarvestProgress.tsx
+ // Progress indicator component
+ // Phases: searching | grading | expanding | complete
+ // Shows: searched count, graded count, accepted/rejected counts
+
+ apps/web/src/components/book-maker/GradeBadge.tsx
+ // Visual grade indicator
+ // Shows overall grade (1-5) with color coding
+ // Tooltip: breakdown of authenticity, necessity, inflection, voice
+ // Stub indicator for classified stubs
+
+ Existing Files to Reuse
+
+ - apps/web/src/lib/book-studio/smart-harvest-agent.ts - Already ported
+ - apps/web/src/lib/book-studio/harvest-review-agent.ts - Grading queue
+ - apps/web/src/lib/book-studio/chekhov-local.ts - Local necessity analysis
+
+ ---
+ Phase 4: Staging Area (Days 5-6)
+
+ Files to Create
+
+ apps/web/src/components/book-maker/StagingArea.tsx
+ // Multi-view staging area
+ // Tabs: Grid | Timeline | Canvas | Clusters
+ // Shared toolbar: Sort, Filter, Select All, Bulk Actions
+ // Selection state: selectedCardIds[]
+
+ apps/web/src/components/book-maker/views/GridView.tsx
+ // Card grid layout
+ // Features: Compact/Normal/Comfortable sizes
+ // Click to select, double-click to expand
+ // Drag to multi-select
+
+ apps/web/src/components/book-maker/views/TimelineView.tsx
+ // Cards grouped by year/month
+ // Visual timeline with date markers
+ // Uses sourceCreatedAt from HarvestCard
+
+ apps/web/src/components/book-maker/views/CanvasView.tsx
+ // Free-form spatial arrangement
+ // Drag cards to position
+ // Saves to card.canvasPosition
+ // Zoom/pan controls
+
+ apps/web/src/components/book-maker/views/ClustersView.tsx
+ // Semantic clustering view
+ // Group by: source, period, tag, semantic
+ // Cluster actions: Make Chapter, Merge, Split, Lock
+ // Uses clustering.ts from book-studio
+
+ apps/web/src/components/book-maker/HarvestCardItem.tsx
+ // Individual card component
+ // Display: Content preview, source icon, grade badge, tags, status
+ // Actions: View full, Find similar, Archive, Delete
+ // Context menu for actions
+
+ ---
+ Phase 5: Outline & Chapters (Days 7-8)
+
+ Files to Create
+
+ apps/web/src/components/book-maker/OutlinePanel.tsx
+ // Outline generation and management
+ // Features:
+ // - Research summary (themes, date range, word count)
+ // - Generate outline button (uses outline-agent)
+ // - Editable outline structure
+ // - Coverage indicators per section
+ // - "Create Chapters" button
+
+ apps/web/src/components/book-maker/ChapterList.tsx
+ // Chapter management
+ // Features:
+ // - Sortable chapter list (drag-drop reorder)
+ // - Card count and word count per chapter
+ // - Status badges (outline/drafting/revising/complete)
+ // - Expand to see assigned cards
+
+ apps/web/src/components/book-maker/WritingView.tsx
+ // Chapter composition view
+ // Features:
+ // - Markdown editor for chapter content
+ // - Side panel with assigned cards
+ // - Generate draft button (via Ollama)
+ // - Word count and progress tracking
+
+ ---
+ Phase 6: Integration & Polish (Day 9)
+
+ Server Integration
+
+ apps/web/src/lib/book-studio/useBookStudioApi.ts
+ Add methods:
+ updateCardGrade(cardId: string, grade: Partial<CardGrade>): Promise<void>
+ bulkMoveCards(cardIds: string[], chapterId: string): Promise<void>
+
+ Entry Point
+
+ apps/web/src/components/layout/Studio.tsx
+ // Add Book Maker button to toolbar
+ // Keyboard shortcut: Cmd+Shift+B
+ <button onClick={() => setBookMakerOpen(true)}>Book Maker</button>
+
+ // Mount modal
+ <BookMakerModal isOpen={bookMakerOpen} onClose={() => setBookMakerOpen(false)} />
+
+ ---
+ Critical Files Summary
+
+ To Create (New)
+ ┌──────────────────────────────────────────────┬─────────────────────────────┐
+ │                     File                     │           Purpose           │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/BookMakerModal.tsx     │ Full-screen modal container │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/ProjectsView.tsx       │ Project selection/creation  │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/HarvestPanel.tsx       │ Harvest workflow UI         │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/StagingArea.tsx        │ Multi-view staging          │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/views/GridView.tsx     │ Card grid view              │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/views/TimelineView.tsx │ Timeline view               │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/views/CanvasView.tsx   │ Spatial canvas view         │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/views/ClustersView.tsx │ Clustering view             │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/OutlinePanel.tsx       │ Outline generation          │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/ChapterList.tsx        │ Chapter management          │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/WritingView.tsx        │ Composition view            │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/HarvestCardItem.tsx    │ Card component              │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ components/book-maker/GradeBadge.tsx         │ Grade visualization         │
+ ├──────────────────────────────────────────────┼─────────────────────────────┤
+ │ styles/features/book-maker.css               │ Styling                     │
+ └──────────────────────────────────────────────┴─────────────────────────────┘
+ To Reuse (Existing)
+ ┌──────────────────────────────────────────┬────────────────────────────────────────────┐
+ │                   File                   │                  Provides                  │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ lib/book-studio/types.ts                 │ HarvestCard, CardGrade, StubClassification │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ lib/book-studio/smart-harvest-agent.ts   │ Multi-phase harvesting                     │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ lib/book-studio/harvest-review-agent.ts  │ Card grading                               │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ lib/book-studio/chekhov-local.ts         │ Necessity analysis                         │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ lib/book-studio/clustering.ts            │ Semantic clustering                        │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ lib/book-studio/outline-agent.ts         │ Outline generation                         │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ lib/book-studio/BookStudioProvider.tsx   │ Context & API                              │
+ ├──────────────────────────────────────────┼────────────────────────────────────────────┤
+ │ components/dialogs/FillChapterDialog.tsx │ Portal pattern reference                   │
+ └──────────────────────────────────────────┴────────────────────────────────────────────┘
+ To Modify
+ ┌─────────────────────────────────────┬───────────────────────┐
+ │                File                 │        Changes        │
+ ├─────────────────────────────────────┼───────────────────────┤
+ │ components/layout/Studio.tsx        │ Add Book Maker button │
+ ├─────────────────────────────────────┼───────────────────────┤
+ │ lib/book-studio/useBookStudioApi.ts │ Add bulk operations   │
+ └─────────────────────────────────────┴───────────────────────┘
+ ---
+ Monorepo Best Practices
+
+ CSS Requirements
+
+ - Use CSS variables (never hardcode colors)
+ - Variables: --studio-*, --color-* from tokens.css
+ - Dark mode support via [data-theme='dark']
+ - WCAG 2.1 AA: 44px touch targets, 3px focus indicators
+
+ Component Requirements
+
+ - Use createPortal(content, document.body) for modals
+ - Keyboard support: Escape, Enter, Cmd shortcuts
+ - ARIA: role="dialog", aria-modal="true", aria-labelledby
+ - Focus management on open/close
+
+ House Agent Review Checklist
+
+ Before merge, verify with:
+ - stylist-agent: CSS variables, dark mode, no hardcoded colors
+ - accessibility-agent: Touch targets, focus indicators, ARIA
+ - architect-agent: No new context sprawl, reuse existing patterns
+ - data-agent: API contract compatibility with Book Studio server
+
+ ---
+ Verification Steps
+
+ Phase 1 Verification
+
+ # Modal opens/closes correctly
+ # - Open with Cmd+Shift+B
+ # - Close with Escape
+ # - Portal renders at body level (check DOM)
+
+ Phase 2 Verification
+
+ # Projects load from server
+ curl http://localhost:3004/api/books
+ # Should return book list with chapters and card counts
+
+ Phase 3 Verification
+
+ # Harvest produces graded cards
+ # - Search query returns results
+ # - Progress shows searching → grading → complete
+ # - Cards show grade badges
+
+ Phase 4 Verification
+
+ # All 4 staging views work
+ # - Grid shows cards
+ # - Timeline groups by date
+ # - Canvas allows drag positioning
+ # - Clusters shows semantic groups
+
+ Phase 5 Verification
+
+ # Outline generates and chapters persist
+ # - Research summary populates
+ # - Outline generates from cards
+ # - Chapters save to server
+
+ ---
+ Handoff Notes
+
+ Context Restoration
+
+ Search ChromaDB for:
+ - "book-maker plan jan-2026"
+ - "harvest-card grading architecture"
+
+ Key Decisions Made
+
+ 1. Full-screen modal (not new route) - Easier state management
+ 2. Reuse existing types - HarvestCard, CardGrade already defined
+ 3. Portal pattern - From FillChapterDialog.tsx
+ 4. Six views - Projects, Harvest, Staging, Outline, Chapters, Writing
+
+ Dependencies
+
+ - Book Studio server running on port 3004
+ - Archive server on port 3002 for semantic search
+ - NPE-Local on port 3003 for SIC/Quantum analysis (optional)
+ - Ollama for draft generation
+
+ ---
+ Timeline Estimate
+ ┌─────────────────────────┬────────┬─────────────────────────────────┐
+ │          Phase          │  Days  │              Focus              │
+ ├─────────────────────────┼────────┼─────────────────────────────────┤
+ │ 1: Modal Infrastructure │ 1      │ Portal, navigation, CSS         │
+ ├─────────────────────────┼────────┼─────────────────────────────────┤
+ │ 2: Project Selection    │ 1      │ List, create, select            │
+ ├─────────────────────────┼────────┼─────────────────────────────────┤
+ │ 3: Harvest Workflow     │ 2      │ Search, grade, progress         │
+ ├─────────────────────────┼────────┼─────────────────────────────────┤
+ │ 4: Staging Area         │ 2      │ 4 views, card component         │
+ ├─────────────────────────┼────────┼─────────────────────────────────┤
+ │ 5: Outline & Chapters   │ 2      │ Generate, compose, write        │
+ ├─────────────────────────┼────────┼─────────────────────────────────┤
+ │ 6: Polish               │ 1      │ Integration, house agent review │
+ ├─────────────────────────┼────────┼─────────────────────────────────┤
+ │ Total                   │ 9 days │                                 │
+ └─────────────────────────┴────────┴─────────────────────────────────┘
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+ Requested permissions:
+   · Bash(prompt: run type checking)
+   · Bash(prompt: start development server)

@@ -30,7 +30,7 @@ import { useBookshelf } from '../../lib/bookshelf';
 import { TOOL_REGISTRY, loadToolVisibility, saveToolVisibility, type ToolDefinition } from '../../lib/tools';
 import { ProfileCardsContainer } from './ProfileCards';
 import { HarvestQueuePanel } from './HarvestQueuePanel';
-import { ArcToolPanel, ThreadsToolPanel, ChaptersToolPanel, PersonaToolPanel, getContentText } from './BookToolPanels';
+// Book tool panels removed - now integrated in BookMakerModal
 import type { SentenceAnalysis } from '../../lib/analysis';
 import type { SourcePassage } from '@humanizer/core';
 
@@ -843,21 +843,7 @@ export function ToolsPanel({ onClose: _onClose, onTransformComplete, onReviewInW
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-            BOOK - Book Environment (stub)
-            ═══════════════════════════════════════════════════════════════ */}
-        {activeTab === 'book' && (
-          <div className="tool-panel">
-            <div className="tool-panel__header">
-              <h3>Book</h3>
-              <span className="tool-panel__subtitle">Book composition environment</span>
-            </div>
-            <div className="tool-panel__empty">
-              <p>Book environment coming soon</p>
-              <span className="tool-panel__muted">Chapter organization, export, formatting</span>
-            </div>
-          </div>
-        )}
+        {/* Book tab removed - now in BookMakerModal (Cmd+Shift+B) */}
 
         {/* ═══════════════════════════════════════════════════════════════
             HARVEST - Passage curation queue
@@ -883,43 +869,7 @@ export function ToolsPanel({ onClose: _onClose, onTransformComplete, onReviewInW
           />
         )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-            ARC - Trace narrative arcs
-            ═══════════════════════════════════════════════════════════════ */}
-        {activeTab === 'arc' && (
-          <ArcToolPanel
-            activeContent={getContentText(activeContent)}
-            bookUri={bookshelf.activeBookUri}
-          />
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════
-            THREADS - Discover thematic threads
-            ═══════════════════════════════════════════════════════════════ */}
-        {activeTab === 'threads' && (
-          <ThreadsToolPanel
-            bookUri={bookshelf.activeBookUri}
-          />
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════
-            CHAPTERS - Book chapter management
-            ═══════════════════════════════════════════════════════════════ */}
-        {activeTab === 'chapters' && (
-          <ChaptersToolPanel
-            bookUri={bookshelf.activeBookUri}
-          />
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════
-            PERSONA - Voice creation and management
-            ═══════════════════════════════════════════════════════════════ */}
-        {activeTab === 'persona' && (
-          <PersonaToolPanel
-            bookUri={bookshelf.activeBookUri}
-            activeContent={getContentText(activeContent)}
-          />
-        )}
+        {/* Book tools (arc, threads, chapters, persona) removed - now in BookMakerModal */}
 
         {/* ═══════════════════════════════════════════════════════════════
             PIPELINES - Advanced workflows
@@ -1093,7 +1043,7 @@ export function ToolsPanel({ onClose: _onClose, onTransformComplete, onReviewInW
               <span className="tool-panel__subtitle">Show or hide tools</span>
             </div>
             <div className="tool-panel__body">
-              {(['transform', 'analyze', 'edit', 'book', 'advanced'] as const).map(category => (
+              {(['transform', 'analyze', 'edit', 'advanced'] as const).map(category => (
                 <div key={category} className="tool-panel__section">
                   <label className="tool-panel__label">{category}</label>
                   {TOOL_REGISTRY.filter(t => t.category === category).map(tool => (
