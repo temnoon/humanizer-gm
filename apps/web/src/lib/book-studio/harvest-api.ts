@@ -5,6 +5,8 @@
  * All business logic lives on the server.
  */
 
+import type { HarvestCard, StubClassification, CardGrade } from './types'
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -191,4 +193,56 @@ export async function getHarvestConfig(): Promise<{
   }
 
   return response.json();
+}
+
+// ============================================================================
+// Conversion Utilities
+// ============================================================================
+
+/**
+ * Convert backend ExpandedResult to a HarvestCard for use in the UI
+ */
+export function convertToHarvestCard(result: ExpandedResult): HarvestCard {
+  const { original, stubType, grade, expanded } = result;
+  const now = Math.floor(Date.now() / 1000);
+
+  // Use expanded content if available, otherwise original
+  const content = expanded?.combinedContent || original.content;
+
+  // Build partial grade from QuickGrade
+  const cardGrade: CardGrade = {
+    authenticity: 3, // Default, will be refined by full grading
+    necessity: grade.necessity,
+    inflection: 3, // Default
+    voice: 3, // Default
+    overall: grade.overall,
+    stubType: stubType as StubClassification,
+    gradedAt: new Date().toISOString(),
+    gradedBy: 'auto',
+    confidence: 0.6, // Quick grade has moderate confidence
+  };
+
+  return {
+    id: crypto.randomUUID(),
+    sourceId: original.id,
+    sourceType: original.type as HarvestCard['sourceType'],
+    source: original.source,
+    contentOrigin: 'original',
+    content,
+    authorName: original.authorName,
+    similarity: original.similarity,
+    // Temporal fields
+    sourceCreatedAt: original.createdAt || null,
+    sourceCreatedAtStatus: original.createdAt ? 'exact' : 'unknown',
+    harvestedAt: now,
+    // Source linking
+    conversationId: original.conversationId,
+    conversationTitle: original.conversationTitle,
+    // Annotations
+    userNotes: '',
+    tags: [],
+    status: 'staging',
+    // Grading
+    grade: cardGrade,
+  };
 }

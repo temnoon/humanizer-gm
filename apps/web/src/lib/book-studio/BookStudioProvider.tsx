@@ -23,6 +23,7 @@ import {
 import { useBookStudioApi, type UseBookStudioApiResult } from './useBookStudioApi'
 import {
   runHarvest as runHarvestApi,
+  convertToHarvestCard,
   type HarvestProgress,
   type HarvestConfig,
   type HarvestResult,
@@ -190,7 +191,7 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
 
         // Auto-commit results immediately to staging
         if (result.results.length > 0) {
-          const cards = result.results.map(r => r.card)
+          const cards = result.results.map(convertToHarvestCard)
           await api.actions.harvestCardsBatch(cards)
           console.log(`[harvest] Auto-committed ${cards.length} cards to staging`)
         }
@@ -230,7 +231,7 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
       return
     }
 
-    const cards = harvestState.results.map(r => r.card)
+    const cards = harvestState.results.map(convertToHarvestCard)
     await api.actions.harvestCardsBatch(cards)
 
     // Clear results after committing

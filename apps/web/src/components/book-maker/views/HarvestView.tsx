@@ -192,7 +192,7 @@ export function HarvestView() {
     return content.slice(0, maxLength).trim() + '...'
   }
 
-  const getTypeIcon = (type: ContentType) => {
+  const getTypeIcon = (type: string) => {
     const found = CONTENT_TYPES.find((ct) => ct.value === type)
     return found?.icon || '📄'
   }
@@ -335,7 +335,7 @@ export function HarvestView() {
           </div>
           <div className="harvest-view__results-grid">
             {harvestState.results.slice(0, 12).map((result) => (
-              <div key={result.card.id} className="harvest-view__result-card">
+              <div key={result.original.id} className="harvest-view__result-card">
                 <div className="harvest-view__result-header">
                   <span className="harvest-view__result-icon">
                     {getTypeIcon(result.original.type)}
@@ -345,7 +345,7 @@ export function HarvestView() {
                   </span>
                 </div>
                 <div className="harvest-view__result-content">
-                  {truncateContent(result.card.content, 100)}
+                  {truncateContent(result.expanded?.combinedContent || result.original.content, 100)}
                 </div>
               </div>
             ))}
