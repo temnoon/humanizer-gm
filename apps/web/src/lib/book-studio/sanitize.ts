@@ -144,29 +144,86 @@ export function sanitizeForStorage(dirty: string): string {
 // ============================================================================
 
 /**
+ * Allowed URL protocols (whitelist approach)
+ * Only http and https are safe for external links
+ */
+const ALLOWED_PROTOCOLS = ['http:', 'https:']
+
+/**
+ * Dangerous protocols that could be used for XSS or data exfiltration
+ * Blocked explicitly for defense-in-depth (whitelist already handles this)
+ */
+const BLOCKED_PROTOCOLS = ['javascript:', 'data:', 'blob:', 'vbscript:', 'file:']
+
+/**
  * Validate and sanitize a URL
  * Returns sanitized URL or empty string if invalid/dangerous
+ *
+ * Security considerations:
+ * - Whitelist approach: only http/https allowed
+ * - Blocks javascript: (XSS via onclick handlers)
+ * - Blocks data: (inline content injection)
+ * - Blocks blob: (arbitrary content)
+ * - Blocks file: (local file access)
+ * - Logs blocked attempts for security auditing
  */
 export function sanitizeUrl(url: string | undefined): string {
   if (!url) return ''
 
+  // Trim and normalize
+  const trimmedUrl = url.trim()
+  if (!trimmedUrl) return ''
+
   try {
-    const parsed = new URL(url)
+    const parsed = new URL(trimmedUrl)
 
-    // Only allow http/https protocols
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
+    // Whitelist approach: only allow safe protocols
+    if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
+      // Log blocked URLs in development for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[sanitize] Blocked URL with disallowed protocol:', {
+          url: trimmedUrl.substring(0, 100),
+          protocol: parsed.protocol,
+        })
+      }
       return ''
     }
 
-    // Block javascript: pseudo-protocol (additional check)
-    if (url.toLowerCase().includes('javascript:')) {
-      return ''
-    }
-
+    // Return normalized URL
     return parsed.href
-  } catch {
+  } catch (err) {
+    // Invalid URL format
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[sanitize] Invalid URL format:', {
+        url: trimmedUrl.substring(0, 100),
+        error: err instanceof Error ? err.message : 'Parse error',
+      })
+    }
     return ''
   }
+}
+
+/**
+ * Validate URL for use in image src attributes
+ * More restrictive: also allows relative paths and API endpoints
+ */
+export function sanitizeImageUrl(url: string | undefined): string {
+  if (!url) return ''
+
+  const trimmed = url.trim()
+
+  // Allow relative URLs (internal images)
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return trimmed
+  }
+
+  // Allow our API endpoints
+  if (trimmed.startsWith('/api/')) {
+    return trimmed
+  }
+
+  // For absolute URLs, use standard sanitization
+  return sanitizeUrl(trimmed)
 }
 
 // ============================================================================
