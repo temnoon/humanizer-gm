@@ -109,8 +109,16 @@ export function ToolsPanel({ onClose: _onClose, onTransformComplete, onReviewInW
 
   // Load available personas and styles on mount
   useEffect(() => {
-    getPersonas().then(setAvailablePersonas).catch(() => {});
-    getStyles().then(setAvailableStyles).catch(() => {});
+    getPersonas()
+      .then(setAvailablePersonas)
+      .catch((err) => {
+        console.error('[ToolsPanel] Failed to load personas:', err);
+      });
+    getStyles()
+      .then(setAvailableStyles)
+      .catch((err) => {
+        console.error('[ToolsPanel] Failed to load styles:', err);
+      });
   }, []);
 
   // Reset transform/analysis state when content changes

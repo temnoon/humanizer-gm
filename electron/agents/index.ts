@@ -71,7 +71,14 @@ export * from './council';
 
 import { getMessageBus } from './bus';
 import { getAgentRegistry } from './runtime';
-import { getModelMasterAgent } from './houses';
+import {
+  getModelMasterAgent,
+  getProjectManagerAgent,
+  getCuratorAgent,
+  getBuilderAgent,
+  getHarvesterAgent,
+  getReviewerAgent,
+} from './houses';
 import { getTaskQueue } from './tasks';
 import { getAgentStore } from './state';
 import { getCouncilOrchestrator, type CouncilSession, type SignoffRequestParams, type OrchestratorStats } from './council';
@@ -87,27 +94,36 @@ export const council = {
 
   /**
    * Initialize the council and all agents
+   *
+   * The council consists of 6 house agents that supervise book production:
+   *
+   * - **Model Master**: AI capability wrapper, routes to Ollama/cloud LLMs
+   * - **Project Manager**: Orchestrates project lifecycle (planning → mastering)
+   * - **Curator**: Content quality assessment, gem discovery, redundancy detection
+   * - **Builder**: Chapter composition, transitions, narrative structure
+   * - **Harvester**: Archive search, connection discovery, source diversification
+   * - **Reviewer**: Quality reviews, humanization checks, publication signoff
    */
   async initialize(): Promise<void> {
-    console.log('[Council] Initializing...');
+    console.log('[Council] Initializing house agents...');
 
     const registry = getAgentRegistry();
     const orchestrator = getCouncilOrchestrator();
 
-    // Register core agents
+    // Register all house agents for book production supervision
     await registry.register(getModelMasterAgent());
+    await registry.register(getProjectManagerAgent());
+    await registry.register(getCuratorAgent());
+    await registry.register(getBuilderAgent());
+    await registry.register(getHarvesterAgent());
+    await registry.register(getReviewerAgent());
 
-    // TODO: Register additional agents
-    // await registry.register(getProjectManagerAgent());
-    // await registry.register(getCuratorAgent());
-    // await registry.register(getBuilderAgent());
-    // await registry.register(getHarvesterAgent());
-    // await registry.register(getReviewerAgent());
+    console.log('[Council] Registered 6 house agents');
 
     // Initialize orchestrator (which initializes agents)
     await orchestrator.initialize();
 
-    console.log('[Council] Initialized');
+    console.log('[Council] Initialized - ready to supervise book production');
   },
 
   /**

@@ -58,7 +58,11 @@ export function AdminConfigPanel({ onClose }: AdminConfigPanelProps) {
   useEffect(() => {
     if (isAdmin) {
       loadConfigs(activeCategory);
-      getEncryptionStatus().then(setEncryptionStatus).catch(() => {});
+      getEncryptionStatus()
+        .then(setEncryptionStatus)
+        .catch((err) => {
+          console.warn('[AdminConfig] Failed to get encryption status:', err);
+        });
     }
   }, [isAdmin, activeCategory, loadConfigs]);
 

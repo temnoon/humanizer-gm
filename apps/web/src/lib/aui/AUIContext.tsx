@@ -706,7 +706,9 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
   const clearConversation = useCallback(() => {
     // Archive current if enabled
     if (settings.archive.archiveChats && conversation.messages.length > 1) {
-      archiveConversationInternal(conversation).catch(() => {});
+      archiveConversationInternal(conversation).catch((err) => {
+        console.error('[AUI] Failed to archive conversation before clearing:', err);
+      });
     }
     setConversation(createNewConversation(settings));
   }, [conversation, settings]);
