@@ -6,78 +6,39 @@
  * - ⌘E toggle between edit and preview modes
  * - Print to PDF
  * - Theme switching (sepia, light, dark)
+ * - Selection toolbar for text transformations
+ * - Metrics sidebar for sentence analysis
  */
 
-import { useState, useEffect, useCallback, useRef, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTheme, type ResolvedTheme } from './lib/theme';
 
+// Import real UI components from packages/ui
+import {
+  // Selection system
+  SelectionProvider,
+  SelectionToolbar,
+  useSelection,
+  type TransformAction,
+  // Sentence analysis
+  useSentenceAnalysis,
+  MetricsSidebar,
+  type SentenceMetrics,
+} from '@humanizer/ui';
+
+// Import transform service for real API calls
+import {
+  transformPersona,
+  transformStyle,
+  humanize,
+  analyzeSentences as analyzeWithApi,
+} from './lib/transform/service';
+
 type ViewMode = 'split' | 'preview' | 'analyze';
 type ActivePane = 'editor' | 'preview';
 type Theme = ResolvedTheme; // Use the global theme type
-
-// Simplified SentenceMetrics type
-interface SentenceMetrics {
-  text: string;
-  index: number;
-  sicScore: number;
-  sicLevel: 'low' | 'medium' | 'high';
-}
-
-// Simplified Selection Context (inline implementation)
-interface SelectionContextValue {
-  registerAction: (action: TransformAction) => void;
-}
-
-interface TransformAction {
-  id: string;
-  label: string;
-  group?: string;
-  shortcut?: string;
-  handler: (selection: { text: string }) => Promise<void>;
-}
-
-const SelectionContext = createContext<SelectionContextValue>({
-  registerAction: () => {},
-});
-
-function SelectionProvider({ children }: { children: ReactNode }) {
-  const registerAction = useCallback(() => {
-    // Placeholder - actions logged but not stored
-  }, []);
-
-  return (
-    <SelectionContext.Provider value={{ registerAction }}>
-      {children}
-    </SelectionContext.Provider>
-  );
-}
-
-function useSelection() {
-  return useContext(SelectionContext);
-}
-
-// Simplified sentence analysis hook
-function useSentenceAnalysis(content: string, _options?: { useLocal?: boolean; debounceMs?: number }) {
-  const sentences: SentenceMetrics[] = content
-    .split(/[.!?]+/)
-    .filter(s => s.trim().length > 10)
-    .map((text, index) => ({
-      text: text.trim(),
-      index,
-      sicScore: Math.floor(Math.random() * 100), // Placeholder
-      sicLevel: 'medium' as const,
-    }));
-
-  return {
-    sentences,
-    overall: {
-      totalSentences: sentences.length,
-      avgSicScore: sentences.reduce((a, b) => a + b.sicScore, 0) / Math.max(sentences.length, 1),
-    },
-  };
-}
 
 interface BookEditorProps {
   /** Initial content (markdown) */
@@ -92,16 +53,29 @@ interface BookEditorProps {
   editable?: boolean;
 }
 
-// Transform actions for selection toolbar
+/**
+ * Transform handler type for updating content
+ */
+type TransformHandler = (
+  type: 'persona' | 'style' | 'humanize' | 'analyze',
+  originalText: string,
+  transformedText: string
+) => void;
+
+/**
+ * Create transform actions that call the real transform API
+ */
 const createTransformActions = (
-  onTransform: (type: string, selection: string) => Promise<string>
+  onTransformComplete: TransformHandler,
+  onAnalyze: (text: string) => void,
+  setTransforming: (isTransforming: boolean) => void
 ): TransformAction[] => [
   {
     id: 'analyze',
     label: 'Analyze',
     group: 'analyze',
     handler: async (sel) => {
-      console.log('Analyze:', sel.text);
+      onAnalyze(sel.text);
     },
   },
   {
@@ -109,7 +83,16 @@ const createTransformActions = (
     label: 'Apply Persona',
     group: 'transform',
     handler: async (sel) => {
-      await onTransform('persona', sel.text);
+      setTransforming(true);
+      try {
+        // Use default persona for now - could show picker
+        const result = await transformPersona(sel.text, 'Conversational');
+        onTransformComplete('persona', sel.text, result.transformed);
+      } catch (err) {
+        console.error('[BookEditor] Persona transform failed:', err);
+      } finally {
+        setTransforming(false);
+      }
     },
   },
   {
@@ -117,16 +100,33 @@ const createTransformActions = (
     label: 'Apply Style',
     group: 'transform',
     handler: async (sel) => {
-      await onTransform('style', sel.text);
+      setTransforming(true);
+      try {
+        // Use default style for now - could show picker
+        const result = await transformStyle(sel.text, 'Concise');
+        onTransformComplete('style', sel.text, result.transformed);
+      } catch (err) {
+        console.error('[BookEditor] Style transform failed:', err);
+      } finally {
+        setTransforming(false);
+      }
     },
   },
   {
-    id: 'regenerate',
-    label: 'Regenerate',
-    group: 'generate',
-    shortcut: '⌘R',
+    id: 'humanize',
+    label: 'Humanize',
+    group: 'transform',
+    shortcut: '⌘H',
     handler: async (sel) => {
-      await onTransform('regenerate', sel.text);
+      setTransforming(true);
+      try {
+        const result = await humanize(sel.text, { intensity: 'moderate' });
+        onTransformComplete('humanize', sel.text, result.transformed);
+      } catch (err) {
+        console.error('[BookEditor] Humanize failed:', err);
+      } finally {
+        setTransforming(false);
+      }
     },
   },
   {
@@ -134,7 +134,15 @@ const createTransformActions = (
     label: 'Expand',
     group: 'generate',
     handler: async (sel) => {
-      await onTransform('expand', sel.text);
+      setTransforming(true);
+      try {
+        const result = await transformStyle(sel.text, 'Elaborate');
+        onTransformComplete('style', sel.text, result.transformed);
+      } catch (err) {
+        console.error('[BookEditor] Expand failed:', err);
+      } finally {
+        setTransforming(false);
+      }
     },
   },
   {
@@ -142,7 +150,15 @@ const createTransformActions = (
     label: 'Compress',
     group: 'transform',
     handler: async (sel) => {
-      await onTransform('compress', sel.text);
+      setTransforming(true);
+      try {
+        const result = await transformStyle(sel.text, 'Concise');
+        onTransformComplete('style', sel.text, result.transformed);
+      } catch (err) {
+        console.error('[BookEditor] Compress failed:', err);
+      } finally {
+        setTransforming(false);
+      }
     },
   },
 ];
@@ -200,23 +216,52 @@ function BookEditorInner({
   // Selection context
   const { registerAction } = useSelection();
 
+  // Handle content edit
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      setEditableContent(newContent);
+      onContentChange?.(newContent);
+    },
+    [onContentChange]
+  );
+
+  // Handle transform completion - replace selected text with transformed text
+  const handleTransformComplete: TransformHandler = useCallback(
+    (type, originalText, transformedText) => {
+      // Replace the original text in the content with the transformed text
+      setEditableContent((currentContent) => {
+        const newContent = currentContent.replace(originalText, transformedText);
+        onContentChange?.(newContent);
+        return newContent;
+      });
+      console.log(`[BookEditor] ${type} transform complete:`, transformedText.substring(0, 50));
+    },
+    [onContentChange]
+  );
+
+  // Handle analyze request - open sidebar with sentence analysis
+  const handleAnalyzeRequest = useCallback((text: string) => {
+    // Find the sentence in the analysis results
+    const matchingSentence = analysis.sentences.find(s => s.text.includes(text) || text.includes(s.text));
+    if (matchingSentence) {
+      setSelectedSentence(matchingSentence);
+      setSidebarOpen(true);
+    } else {
+      // If no exact match, switch to analyze mode
+      console.log('[BookEditor] Analyzing selection:', text.substring(0, 50));
+      setViewMode('analyze');
+    }
+  }, [analysis.sentences]);
+
   // Register transform actions
   useEffect(() => {
-    const handleTransform = async (type: string, text: string): Promise<string> => {
-      setIsTransforming(true);
-      try {
-        // TODO: Call actual transform API
-        console.log(`Transform ${type}:`, text.substring(0, 50));
-        // Placeholder - in real implementation, call transform service
-        return text;
-      } finally {
-        setIsTransforming(false);
-      }
-    };
-
-    const actions = createTransformActions(handleTransform);
+    const actions = createTransformActions(
+      handleTransformComplete,
+      handleAnalyzeRequest,
+      setIsTransforming
+    );
     actions.forEach((action) => registerAction(action));
-  }, [registerAction]);
+  }, [registerAction, handleTransformComplete, handleAnalyzeRequest]);
 
   // ⌘E keyboard shortcut to toggle edit mode
   useEffect(() => {
@@ -265,15 +310,6 @@ function BookEditorInner({
       clearTimeout(timeout);
     };
   }, [viewMode]);
-
-  // Handle content edit
-  const handleContentChange = useCallback(
-    (newContent: string) => {
-      setEditableContent(newContent);
-      onContentChange?.(newContent);
-    },
-    [onContentChange]
-  );
 
   // Handle sentence click
   const handleSentenceClick = useCallback((sentence: SentenceMetrics) => {
@@ -496,23 +532,17 @@ function BookEditorInner({
           </div>
         )}
 
-        {/* Selection Toolbar - TODO: implement floating toolbar on text selection */}
+        {/* Selection Toolbar - floating toolbar on text selection */}
+        <SelectionToolbar showMenu={true} />
 
-        {/* Metrics Sidebar - TODO: implement slide-out panel for sentence details */}
-        {sidebarOpen && selectedSentence && (
-          <div className="book-editor__sidebar">
-            <button
-              className="book-editor__btn"
-              onClick={() => setSidebarOpen(false)}
-            >
-              Close
-            </button>
-            <div className="book-editor__sidebar-content">
-              <p><strong>Sentence:</strong> {selectedSentence.text.substring(0, 100)}...</p>
-              <p><strong>SIC Score:</strong> {selectedSentence.sicScore}</p>
-            </div>
-          </div>
-        )}
+        {/* Metrics Sidebar - slide-out panel for sentence analysis */}
+        <MetricsSidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          metrics={selectedSentence}
+          showPosition={true}
+          showCraft={true}
+        />
       </div>
 
       {/* Floating Edit Toggle (⌘E) */}

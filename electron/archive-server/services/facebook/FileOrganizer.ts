@@ -306,17 +306,27 @@ export class FileOrganizer {
     const summaries: PeriodSummary[] = [];
 
     for (const [folderName, data] of periodData.entries()) {
+      // Count media files by type
+      const mediaCounts = this.countMediaByType(data.posts, data.comments);
+
+      // Count reactions for this period
+      const periodReactionsCount = reactions.filter(r => {
+        const reactionTime = r.created_at || 0;
+        return reactionTime >= data.period.startDate.getTime() / 1000 &&
+               reactionTime < data.period.endDate.getTime() / 1000;
+      }).length;
+
       const summary: PeriodSummary = {
         period_folder: folderName,
         start_date: data.period.startDate.getTime() / 1000,
         end_date: data.period.endDate.getTime() / 1000,
         posts_count: data.posts.length,
         comments_count: data.comments.length,
-        photos_count: 0,  // TODO: Count from media_files
-        videos_count: 0,
-        reactions_count: 0,  // TODO: Count reactions in this period
+        photos_count: mediaCounts.photos,
+        videos_count: mediaCounts.videos,
+        reactions_count: periodReactionsCount,
         total_characters: this.countTotalCharacters(data.posts, data.comments),
-        media_size_bytes: 0,  // TODO: Calculate from actual files
+        media_size_bytes: mediaCounts.totalBytes,
       };
 
       summaries.push(summary);
@@ -347,6 +357,54 @@ export class FileOrganizer {
       if (comment.text) total += comment.text.length;
     }
     return total;
+  }
+
+  /**
+   * Count media files by type (photos vs videos)
+   * Also estimates total bytes from media_refs
+   */
+  private countMediaByType(
+    posts: ContentItem[],
+    comments: ContentItem[]
+  ): { photos: number; videos: number; totalBytes: number } {
+    let photos = 0;
+    let videos = 0;
+    let totalBytes = 0;
+
+    const allItems = [...posts, ...comments];
+
+    for (const item of allItems) {
+      // Count from media_refs if available
+      if (item.media_refs && item.media_refs.length > 0) {
+        for (const ref of item.media_refs) {
+          const ext = ref.toLowerCase().split('.').pop() || '';
+          if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) {
+            videos++;
+          } else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].includes(ext)) {
+            photos++;
+          }
+        }
+      }
+
+      // Use media_count if no refs but count exists
+      if (item.media_count && (!item.media_refs || item.media_refs.length === 0)) {
+        // Assume photos unless type suggests otherwise
+        if (item.type === 'video') {
+          videos += item.media_count;
+        } else {
+          photos += item.media_count;
+        }
+      }
+
+      // Check item type directly
+      if (item.type === 'photo') photos++;
+      if (item.type === 'video') videos++;
+    }
+
+    // Estimate bytes (rough average: 500KB per photo, 5MB per video)
+    totalBytes = (photos * 500_000) + (videos * 5_000_000);
+
+    return { photos, videos, totalBytes };
   }
 
   /**
