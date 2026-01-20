@@ -446,7 +446,7 @@ export class ChatGPTAdapter implements ContentAdapter<ChatGPTInput> {
   }
 
   /**
-   * Extract text from message content
+   * Extract text from message content, including inline images as markdown
    */
   private extractMessageText(msg: OpenAIMessage): string {
     if (!msg.content) {
@@ -464,9 +464,22 @@ export class ChatGPTAdapter implements ContentAdapter<ChatGPTInput> {
             return part;
           }
           if (typeof part === 'object' && part !== null) {
-            // Handle objects like images, code blocks, etc.
-            if ('text' in part) {
-              return (part as { text: string }).text;
+            const partObj = part as Record<string, unknown>;
+
+            // Handle image_asset_pointer - convert to markdown image
+            if (partObj.content_type === 'image_asset_pointer' && partObj.asset_pointer) {
+              const pointer = partObj.asset_pointer as string;
+              // Convert sediment://file_XXX to file-service://file-XXX format
+              // that can be resolved by the media endpoint
+              const fileServiceUrl = pointer
+                .replace('sediment://file_', 'file-service://file-')
+                .replace('sediment://', 'file-service://');
+              return `\n\n![image](${fileServiceUrl})\n\n`;
+            }
+
+            // Handle objects with text property (code blocks, etc.)
+            if ('text' in partObj) {
+              return (partObj as { text: string }).text;
             }
           }
           return '';

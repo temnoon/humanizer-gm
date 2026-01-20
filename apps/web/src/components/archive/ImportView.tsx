@@ -443,10 +443,11 @@ export function ImportView() {
 
     try {
       const archiveServer = await getArchiveServerUrl();
-      const response = await fetch(`${archiveServer}/api/import/archive/folder`, {
+      // Use UCG import endpoint
+      const response = await fetch(`${archiveServer}/api/ucg/import/folder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderPath }),
+        body: JSON.stringify({ folderPath, recursive: true }),
       });
 
       if (!response.ok) {
@@ -454,12 +455,40 @@ export function ImportView() {
         throw new Error(error.error || 'Folder import failed');
       }
 
-      const { jobId } = await response.json();
-      setCurrentJob({ id: jobId, status: 'parsing', progress: 0 });
+      const { importId } = await response.json();
+      setCurrentJob({ id: importId, status: 'parsing', progress: 0 });
 
-      // Start polling
-      pollIntervalRef.current = window.setInterval(() => {
-        pollJobStatus(jobId);
+      // Start polling UCG import status
+      pollIntervalRef.current = window.setInterval(async () => {
+        try {
+          const statusRes = await fetch(`${archiveServer}/api/ucg/import/status/${importId}`);
+          if (statusRes.ok) {
+            const status = await statusRes.json();
+            setCurrentJob({
+              id: importId,
+              status: status.status === 'complete' ? 'complete' : status.status === 'error' ? 'error' : 'parsing',
+              progress: status.progress,
+              error: status.error,
+              conversationCount: status.nodeCount,
+            });
+
+            if (status.status === 'complete') {
+              setImportStatus(`Import complete! ${status.nodeCount} items imported.`);
+              setImporting(false);
+              clearInterval(pollIntervalRef.current!);
+              pollIntervalRef.current = null;
+            } else if (status.status === 'error') {
+              setImportStatus(`Error: ${status.error}`);
+              setImporting(false);
+              clearInterval(pollIntervalRef.current!);
+              pollIntervalRef.current = null;
+            } else {
+              setImportStatus(`Importing... ${status.nodeCount} items`);
+            }
+          }
+        } catch {
+          // Ignore polling errors
+        }
       }, 1000);
 
     } catch (err) {
@@ -493,7 +522,8 @@ export function ImportView() {
 
     try {
       const archiveServer = await getArchiveServerUrl();
-      const response = await fetch(`${archiveServer}/api/facebook/graph/import`, {
+      // Use UCG import endpoint for Facebook
+      const response = await fetch(`${archiveServer}/api/ucg/import/facebook`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ exportPath: folderPath }),
@@ -506,36 +536,62 @@ export function ImportView() {
 
       const result = await response.json();
       if (result.success) {
-        setImportStatus('Facebook import started. This may take several minutes...');
+        const importId = result.importId;
+        setImportStatus('Facebook import started. Processing your data...');
         setFacebookProgress({
-          importId: result.importId || 'current',
+          importId,
           status: 'running',
           stage: 'starting',
           message: 'Processing Facebook export...',
         });
 
-        // Start polling for progress (check logs periodically)
-        // Note: Full progress polling requires backend status endpoint
-        // For now, just show running status
+        // Poll UCG import status
         facebookPollRef.current = window.setInterval(async () => {
           try {
-            // Check if Facebook data is appearing
-            const periodsRes = await fetch(`${archiveServer}/api/facebook/periods`);
-            if (periodsRes.ok) {
-              const periodsData = await periodsRes.json();
-              if (periodsData.periods && periodsData.periods.length > 0) {
-                // Import is producing data
+            const statusRes = await fetch(`${archiveServer}/api/ucg/import/status/${importId}`);
+            if (statusRes.ok) {
+              const status = await statusRes.json();
+
+              setFacebookProgress(prev => prev ? {
+                ...prev,
+                stage: status.status,
+                message: `${status.nodeCount} items processed...`,
+                result: status.status === 'complete' ? {
+                  posts_imported: status.nodeCount,
+                  comments_imported: 0,
+                  reactions_imported: 0,
+                  media_indexed: 0,
+                } : undefined,
+              } : null);
+
+              if (status.status === 'complete') {
+                clearInterval(facebookPollRef.current!);
+                facebookPollRef.current = null;
+                setImporting(false);
                 setFacebookProgress(prev => prev ? {
                   ...prev,
-                  stage: 'indexing',
-                  message: `${periodsData.periods.length} periods indexed...`,
+                  status: 'completed',
+                  stage: 'done',
+                  message: `Import complete! ${status.nodeCount} items imported to UCG.`,
                 } : null);
+                setImportStatus(`Facebook import complete! ${status.nodeCount} items imported. View in Unified Archive.`);
+              } else if (status.status === 'error') {
+                clearInterval(facebookPollRef.current!);
+                facebookPollRef.current = null;
+                setImporting(false);
+                setFacebookProgress(prev => prev ? {
+                  ...prev,
+                  status: 'failed',
+                  error: status.error,
+                  message: `Error: ${status.error}`,
+                } : null);
+                setImportStatus(`Error: ${status.error}`);
               }
             }
           } catch {
             // Ignore polling errors
           }
-        }, 5000);
+        }, 1000);
 
         // Auto-stop polling after 10 minutes
         setTimeout(() => {
@@ -547,9 +603,9 @@ export function ImportView() {
               ...prev,
               status: 'completed',
               stage: 'done',
-              message: 'Import completed. Refresh to see Facebook data.',
+              message: 'Import completed. Refresh to see data.',
             } : null);
-            setImportStatus('Facebook import completed! Switch to Facebook tab to see your data.');
+            setImportStatus('Facebook import completed! View in Unified Archive.');
           }
         }, 600000);  // 10 minutes max
 

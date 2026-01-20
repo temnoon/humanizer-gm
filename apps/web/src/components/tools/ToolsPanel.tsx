@@ -356,16 +356,17 @@ export function ToolsPanel({ onClose: _onClose, onTransformComplete, onReviewInW
   // Auto-trigger analysis when toolbar mode changes to 'analyze'
   useEffect(() => {
     // Only trigger when mode is 'analyze', there's content, we're not already analyzing,
-    // and we don't already have analysis data
+    // we don't already have analysis data, and no previous error
     if (
       splitMode === 'analyze' &&
       contentText.trim() &&
       !isAnalyzing &&
-      !analysisData?.sentences?.length
+      !analysisData?.sentences?.length &&
+      !analysisError
     ) {
       handleSentenceAnalysis();
     }
-  }, [splitMode, contentText, isAnalyzing, analysisData?.sentences?.length, handleSentenceAnalysis]);
+  }, [splitMode, contentText, isAnalyzing, analysisData?.sentences?.length, analysisError, handleSentenceAnalysis]);
 
   // Ensure active tab is visible
   useEffect(() => {

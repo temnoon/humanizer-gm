@@ -11,6 +11,7 @@ import { FacebookView } from './FacebookView';
 import { ExploreView, type SearchResult } from './ExploreView';
 import { FilesView } from './FilesView';
 import { GutenbergView } from './GutenbergView';
+import { UnifiedArchiveView } from './UnifiedArchiveView';
 import { AUIChatTab } from '../aui/AUIChatTab';
 import { QueueTab } from '../queue';
 import { FilterProvider } from '../../lib/archive/FilterContext';
@@ -82,6 +83,8 @@ export function ArchiveTabs({ renderConversations, onSelectMedia, onSelectConten
         return <FilesView />;
       case 'queue':
         return <QueueTab />;
+      case 'unified':
+        return <UnifiedArchiveView />;
       default:
         return renderConversations();
     }

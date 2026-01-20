@@ -1,0 +1,347 @@
+/**
+ * FilterTreeView - Visual filter tree display styles
+ */
+
+.filter-tree-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-tree-view--empty {
+  padding: 12px;
+  text-align: center;
+}
+
+.filter-tree-view__placeholder {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.filter-tree-view--compact .filter-node {
+  padding: 4px 8px;
+}
+
+/* Base filter node */
+.filter-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  font-size: 13px;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.filter-node:hover {
+  border-color: var(--studio-accent);
+}
+
+/* Group nodes (AND/OR) */
+.filter-node--group {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  background: transparent;
+  border: 2px dashed var(--studio-border);
+}
+
+.filter-node--group:hover {
+  border-color: var(--color-catuskoti-both);
+}
+
+.filter-node--and {
+  border-color: var(--color-catuskoti-is-border);
+}
+
+.filter-node--or {
+  border-color: var(--color-catuskoti-both-border);
+}
+
+.filter-node--negated {
+  border-color: var(--color-catuskoti-is-not-border);
+  background: var(--color-catuskoti-is-not-subtle);
+}
+
+.filter-node__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--color-bg-tertiary);
+  border-radius: 4px 4px 0 0;
+}
+
+.filter-node__type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+}
+
+.filter-node__not {
+  color: var(--color-catuskoti-is-not);
+}
+
+.filter-node__operator {
+  padding: 2px 6px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+}
+
+.filter-node--and .filter-node__operator {
+  color: var(--color-catuskoti-is);
+}
+
+.filter-node--or .filter-node__operator {
+  color: var(--color-catuskoti-both);
+}
+
+.filter-node__children {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+
+/* Nesting depth indicators */
+.filter-node--group[data-depth="1"] {
+  margin-left: 12px;
+}
+
+.filter-node--group[data-depth="2"] {
+  margin-left: 24px;
+}
+
+.filter-node--group[data-depth="3"] {
+  margin-left: 36px;
+}
+
+/* Catuskoti filter nodes */
+.filter-node--catuskoti {
+  position: relative;
+}
+
+.filter-node--catuskoti[data-state="is"] {
+  border-color: var(--color-catuskoti-is-border);
+  background: var(--color-catuskoti-is-subtle);
+}
+
+.filter-node--catuskoti[data-state="is-not"] {
+  border-color: var(--color-catuskoti-is-not-border);
+  background: var(--color-catuskoti-is-not-subtle);
+}
+
+.filter-node--catuskoti[data-state="both"] {
+  border-color: var(--color-catuskoti-both-border);
+  background: var(--color-catuskoti-both-subtle);
+}
+
+.filter-node--catuskoti[data-state="neither"] {
+  border-color: var(--color-catuskoti-neither-border);
+  background: var(--color-catuskoti-neither-subtle);
+}
+
+.filter-node__icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.filter-node--catuskoti[data-state="is"] .filter-node__icon {
+  color: var(--color-catuskoti-is);
+}
+
+.filter-node--catuskoti[data-state="is-not"] .filter-node__icon {
+  color: var(--color-catuskoti-is-not);
+}
+
+.filter-node--catuskoti[data-state="both"] .filter-node__icon {
+  color: var(--color-catuskoti-both);
+}
+
+.filter-node--catuskoti[data-state="neither"] .filter-node__icon {
+  color: var(--color-catuskoti-neither);
+}
+
+.filter-node__category {
+  color: var(--studio-accent);
+  font-weight: 500;
+}
+
+.filter-node__separator {
+  color: var(--color-text-tertiary);
+}
+
+.filter-node__value {
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, monospace);
+}
+
+.filter-node__state-label {
+  margin-left: auto;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+/* Regex filter nodes */
+.filter-node--regex {
+  border-color: #e879f9;
+  background: rgba(232, 121, 249, 0.08);
+}
+
+.filter-node--regex .filter-node__icon {
+  color: #e879f9;
+}
+
+.filter-node__pattern {
+  font-family: var(--font-mono, monospace);
+  color: #e879f9;
+}
+
+/* Phrase filter nodes */
+.filter-node--phrase {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.filter-node--phrase .filter-node__icon {
+  color: #22d3ee;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.filter-node--phrase .filter-node__value {
+  color: #22d3ee;
+}
+
+/* Wildcard filter nodes */
+.filter-node--wildcard {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.filter-node--wildcard .filter-node__icon {
+  color: #4ade80;
+}
+
+.filter-node--wildcard .filter-node__value {
+  color: #4ade80;
+}
+
+/* Comparison filter nodes */
+.filter-node--comparison {
+  border-color: #fb923c;
+  background: rgba(251, 146, 60, 0.08);
+}
+
+.filter-node__comparison {
+  font-family: var(--font-mono, monospace);
+  color: #fb923c;
+}
+
+/* Stack reference nodes */
+.filter-node--stack-ref {
+  border-color: var(--color-catuskoti-both);
+  background: var(--color-catuskoti-both-subtle);
+}
+
+.filter-node--stack-ref .filter-node__icon {
+  color: var(--color-catuskoti-both);
+}
+
+.filter-node--stack-ref .filter-node__value {
+  color: var(--color-catuskoti-both);
+  font-weight: 500;
+}
+
+.filter-node--unresolved {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.filter-node__warning {
+  color: #f59e0b;
+  font-size: 14px;
+}
+
+.filter-node__field {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* Remove button */
+.filter-node__remove {
+  margin-left: auto;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.filter-node__remove:hover {
+  color: var(--color-catuskoti-is-not);
+  background: var(--color-catuskoti-is-not-subtle);
+}
+
+.filter-node__remove:focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: 2px;
+}
+
+/* Dark mode adjustments */
+[data-theme='dark'] .filter-node--regex {
+  background: rgba(240, 171, 252, 0.1);
+}
+
+[data-theme='dark'] .filter-node__pattern {
+  color: #f0abfc;
+}
+
+[data-theme='dark'] .filter-node--phrase {
+  background: rgba(103, 232, 249, 0.1);
+}
+
+[data-theme='dark'] .filter-node--phrase .filter-node__icon,
+[data-theme='dark'] .filter-node--phrase .filter-node__value {
+  color: #67e8f9;
+}
+
+[data-theme='dark'] .filter-node--wildcard {
+  background: rgba(134, 239, 172, 0.1);
+}
+
+[data-theme='dark'] .filter-node--wildcard .filter-node__icon,
+[data-theme='dark'] .filter-node--wildcard .filter-node__value {
+  color: #86efac;
+}
+
+[data-theme='dark'] .filter-node--comparison {
+  background: rgba(253, 186, 116, 0.1);
+}
+
+[data-theme='dark'] .filter-node__comparison {
+  color: #fdba74;
+}

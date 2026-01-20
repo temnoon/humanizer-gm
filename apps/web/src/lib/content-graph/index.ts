@@ -26,3 +26,16 @@ export {
   useCreateLink,
   useNodesBySource,
 } from './useContentGraph.js';
+
+// UCG Search Agent
+export {
+  ucgAgentSearch,
+  ucgQuickSearch,
+  type UCGSearchNode,
+  type UCGSearchResult,
+  type UCGSearchConfig,
+  type UCGSearchProgress,
+  type UCGSearchStats,
+  type QualityScore,
+  type ExpandedContext,
+} from './ucg-search-agent.js';

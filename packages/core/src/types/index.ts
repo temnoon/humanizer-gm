@@ -64,6 +64,7 @@ export type {
   ContentVersion,
   ContentLineage,
   ContentSourceType,
+  KeywordScore,
   // Re-export as UCGSourceType to avoid conflict with entity SourceType
   SourceType as UCGSourceType,
 } from './content-graph.js';

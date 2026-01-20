@@ -12,7 +12,8 @@ export type ArchiveTabId =
   | 'explore'
   | 'files'
   | 'aui'
-  | 'queue';
+  | 'queue'
+  | 'unified';
 
 /**
  * Selected Facebook Media - for display in main workspace
@@ -64,6 +65,7 @@ export interface ArchiveTabDefinition {
 
 export const ARCHIVE_TABS: ArchiveTabDefinition[] = [
   { id: 'aui', icon: '✦', label: 'AUI', description: 'AI Assistant' },
+  { id: 'unified', icon: '🗄️', label: 'All', description: 'Unified archive (all sources)' },
   { id: 'conversations', icon: '💬', label: 'Chat', description: 'ChatGPT conversations' },
   { id: 'gallery', icon: '🖼️', label: 'Gallery', description: 'Images and audio files' },
   { id: 'import', icon: '📥', label: 'Import', description: 'Import archives' },

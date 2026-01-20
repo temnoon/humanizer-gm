@@ -102,6 +102,39 @@
   --color-archive-notes: hsl(40, 60%, 50%);
   --color-archive-import: hsl(200, 50%, 50%);
 
+  /* ─────────────────────────────────────────────────────────────────
+     Catuskoti: Four-cornered logic filter states
+     Buddhist tetralemma for nuanced content filtering
+     ───────────────────────────────────────────────────────────────── */
+
+  /* IS (Affirmation) - Green family, signals "include" */
+  --hue-catuskoti-is: 145;
+  --color-catuskoti-is: hsl(var(--hue-catuskoti-is), 55%, 42%);
+  --color-catuskoti-is-subtle: hsl(var(--hue-catuskoti-is), 40%, 94%);
+  --color-catuskoti-is-border: hsl(var(--hue-catuskoti-is), 50%, 50%);
+
+  /* IS NOT (Negation) - Warm red, signals "exclude" */
+  --hue-catuskoti-is-not: 0;
+  --color-catuskoti-is-not: hsl(var(--hue-catuskoti-is-not), 60%, 52%);
+  --color-catuskoti-is-not-subtle: hsl(var(--hue-catuskoti-is-not), 45%, 94%);
+  --color-catuskoti-is-not-border: hsl(var(--hue-catuskoti-is-not), 55%, 58%);
+
+  /* BOTH (Synthesis) - Purple, signals "transcendence" */
+  --hue-catuskoti-both: 270;
+  --color-catuskoti-both: hsl(var(--hue-catuskoti-both), 50%, 50%);
+  --color-catuskoti-both-subtle: hsl(var(--hue-catuskoti-both), 35%, 94%);
+  --color-catuskoti-both-border: hsl(var(--hue-catuskoti-both), 45%, 56%);
+
+  /* NEITHER (Void/Sunyata) - Cool gray/blue, signals "beyond category" */
+  --hue-catuskoti-neither: 210;
+  --color-catuskoti-neither: hsl(var(--hue-catuskoti-neither), 25%, 50%);
+  --color-catuskoti-neither-subtle: hsl(var(--hue-catuskoti-neither), 15%, 94%);
+  --color-catuskoti-neither-border: hsl(var(--hue-catuskoti-neither), 20%, 56%);
+
+  /* Neutral/unset state */
+  --color-catuskoti-neutral: var(--color-surface-tertiary);
+  --color-catuskoti-neutral-border: var(--color-border-default);
+
   /* ═══════════════════════════════════════════════════════════════
      TYPOGRAPHY
      ═══════════════════════════════════════════════════════════════ */
@@ -364,6 +397,25 @@
   --color-curator: hsl(280, 45%, 65%);
   --color-curator-subtle: hsl(280, 25%, 18%);
 
+  /* Catuskoti - Dark mode */
+  --color-catuskoti-is: hsl(var(--hue-catuskoti-is), 50%, 55%);
+  --color-catuskoti-is-subtle: hsl(var(--hue-catuskoti-is), 35%, 18%);
+  --color-catuskoti-is-border: hsl(var(--hue-catuskoti-is), 45%, 45%);
+
+  --color-catuskoti-is-not: hsl(var(--hue-catuskoti-is-not), 55%, 58%);
+  --color-catuskoti-is-not-subtle: hsl(var(--hue-catuskoti-is-not), 40%, 18%);
+  --color-catuskoti-is-not-border: hsl(var(--hue-catuskoti-is-not), 50%, 48%);
+
+  --color-catuskoti-both: hsl(var(--hue-catuskoti-both), 45%, 60%);
+  --color-catuskoti-both-subtle: hsl(var(--hue-catuskoti-both), 30%, 18%);
+  --color-catuskoti-both-border: hsl(var(--hue-catuskoti-both), 40%, 50%);
+
+  --color-catuskoti-neither: hsl(var(--hue-catuskoti-neither), 20%, 60%);
+  --color-catuskoti-neither-subtle: hsl(var(--hue-catuskoti-neither), 12%, 20%);
+  --color-catuskoti-neither-border: hsl(var(--hue-catuskoti-neither), 15%, 45%);
+
+  --color-catuskoti-neutral: var(--color-surface-secondary);
+
   /* Shadows */
   --shadow-subtle: 0 1px 2px hsl(0, 0%, 0%, 0.2);
   --shadow-small: 0 1px 3px hsl(0, 0%, 0%, 0.3), 0 1px 2px hsl(0, 0%, 0%, 0.2);
@@ -431,6 +483,23 @@
   /* Curator */
   --color-curator: hsl(280, 35%, 45%);
   --color-curator-subtle: hsl(280, 20%, 92%);
+
+  /* Catuskoti - Sepia mode (warmer tones) */
+  --color-catuskoti-is: hsl(145, 45%, 38%);
+  --color-catuskoti-is-subtle: hsl(145, 30%, 90%);
+  --color-catuskoti-is-border: hsl(145, 40%, 45%);
+
+  --color-catuskoti-is-not: hsl(5, 55%, 48%);
+  --color-catuskoti-is-not-subtle: hsl(5, 40%, 90%);
+  --color-catuskoti-is-not-border: hsl(5, 50%, 55%);
+
+  --color-catuskoti-both: hsl(275, 40%, 45%);
+  --color-catuskoti-both-subtle: hsl(275, 25%, 90%);
+  --color-catuskoti-both-border: hsl(275, 35%, 52%);
+
+  --color-catuskoti-neither: hsl(30, 20%, 48%);
+  --color-catuskoti-neither-subtle: hsl(30, 15%, 90%);
+  --color-catuskoti-neither-border: hsl(30, 18%, 55%);
 
   /* Shadows - softer, warmer */
   --shadow-subtle: 0 1px 2px hsl(30, 20%, 0%, 0.06);

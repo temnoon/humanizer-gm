@@ -102,6 +102,10 @@ export {
   createMarkdownAdapter,
   TextAdapter,
   createTextAdapter,
+  FacebookAdapter,
+  createFacebookAdapter,
+  FolderAdapter,
+  createFolderAdapter,
 } from './adapters/index.js';
 
 // Re-export core types
@@ -137,12 +141,20 @@ export function registerBuiltinAdapters(): void {
   const { createClaudeAdapter } = require('./adapters/claude-adapter.js');
   const { createMarkdownAdapter } = require('./adapters/markdown-adapter.js');
   const { createTextAdapter } = require('./adapters/text-adapter.js');
+  const { createFacebookAdapter } = require('./adapters/facebook-adapter.js');
+  const { createFolderAdapter } = require('./adapters/folder-adapter.js');
+  const { createRedditAdapter } = require('./adapters/reddit-adapter.js');
+  const { createInstagramAdapter } = require('./adapters/instagram-adapter.js');
 
   // Register with priorities (higher = checked first)
   registerBuiltinAdapter(createChatGPTAdapter, 100);
   registerBuiltinAdapter(createClaudeAdapter, 90);
+  registerBuiltinAdapter(createFacebookAdapter, 85);  // Facebook export detection
+  registerBuiltinAdapter(createInstagramAdapter, 80); // Instagram export detection
+  registerBuiltinAdapter(createRedditAdapter, 75);    // Reddit export detection
   registerBuiltinAdapter(createMarkdownAdapter, 50);
-  registerBuiltinAdapter(createTextAdapter, 10);  // Lowest priority (fallback)
+  registerBuiltinAdapter(createFolderAdapter, 30);    // Folder import (composite)
+  registerBuiltinAdapter(createTextAdapter, 10);      // Lowest priority (fallback)
 
   console.log(`[UCG] Registered ${adapterRegistry.count} built-in adapters`);
 }

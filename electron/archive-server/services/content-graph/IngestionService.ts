@@ -10,6 +10,8 @@
 import type Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { ContentGraphDatabase } from './ContentGraphDatabase.js';
 import { ChunkingService, type ContentChunk } from './ChunkingService.js';
@@ -21,6 +23,7 @@ import {
   getModelName,
   initializeEmbedding,
 } from '../embeddings/EmbeddingGenerator.js';
+import { getArchiveRoot } from '../../config.js';
 
 /**
  * Archive row types for reading
@@ -247,6 +250,156 @@ export class IngestionService {
   }
 
   /**
+   * Build conversation text with embedded media markdown at canonical positions.
+   *
+   * This method parses conversation.json directly and traverses the message tree
+   * via BFS to preserve the exact order and position of all content including images.
+   * Images appear inline exactly where they occur in the original conversation.
+   *
+   * Fallback: If conversation.json doesn't exist, uses the messages table.
+   */
+  private buildConversationTextWithMedia(
+    folder: string,
+    messages: MessageRow[]
+  ): string {
+    const archiveRoot = getArchiveRoot();
+    const folderPath = path.join(archiveRoot, folder);
+
+    // Load conversation.json to get full message tree
+    let conversationData: any = null;
+    try {
+      const jsonPath = path.join(folderPath, 'conversation.json');
+      if (fs.existsSync(jsonPath)) {
+        conversationData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      }
+    } catch (err) {
+      console.warn(`[ingestion] Could not load conversation.json for ${folder}:`, err);
+    }
+
+    // Fallback to messages table if no conversation.json
+    if (!conversationData?.mapping) {
+      const textParts: string[] = messages.map(m => `${m.role}: ${m.content || ''}`);
+      return textParts.join('\n\n');
+    }
+
+    // Load media manifest for filename resolution
+    let mediaManifest: Record<string, string> = {};
+    try {
+      const manifestPath = path.join(folderPath, 'media_manifest.json');
+      if (fs.existsSync(manifestPath)) {
+        mediaManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      }
+    } catch {
+      // No manifest file
+    }
+
+    // Extract asset pointer map from conversation.html
+    let assetPointerMap: Record<string, string> = {};
+    try {
+      const htmlPath = path.join(folderPath, 'conversation.html');
+      if (fs.existsSync(htmlPath)) {
+        const html = fs.readFileSync(htmlPath, 'utf-8');
+        const match = html.match(/assetPointerMap\s*=\s*(\{[^}]+\})/);
+        if (match) {
+          assetPointerMap = JSON.parse(match[1]);
+        }
+      }
+    } catch {
+      // Could not parse asset pointer map
+    }
+
+    // Traverse message tree via BFS (same approach as parseConversation in conversations.ts)
+    const messageParts: string[] = [];
+
+    // Find root node (node with no parent)
+    const rootId = Object.keys(conversationData.mapping).find(
+      id => !conversationData.mapping[id].parent
+    );
+
+    if (!rootId) {
+      // Fallback
+      const textParts: string[] = messages.map(m => `${m.role}: ${m.content || ''}`);
+      return textParts.join('\n\n');
+    }
+
+    const visited = new Set<string>();
+    const queue = [rootId];
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      if (visited.has(nodeId)) continue;
+      visited.add(nodeId);
+
+      const node = conversationData.mapping[nodeId];
+      if (node?.message?.content?.parts) {
+        const msg = node.message;
+        const role = msg.author?.role || 'unknown';
+        const contentParts: string[] = [];
+
+        // Process each part in order - this preserves canonical positions
+        for (const part of msg.content.parts) {
+          if (typeof part === 'string') {
+            if (part.trim()) {
+              contentParts.push(part);
+            }
+          } else if (part?.content_type === 'image_asset_pointer') {
+            // Resolve asset pointer to filename and create markdown
+            const assetPointer = part.asset_pointer as string;
+            const filename = assetPointerMap[assetPointer];
+            if (filename) {
+              // Use conversation media endpoint
+              contentParts.push(`![image](/api/conversations/${encodeURIComponent(folder)}/media/${encodeURIComponent(filename)})`);
+            } else {
+              // Use UCG by-pointer endpoint as fallback
+              contentParts.push(`![image](/api/ucg/media/by-pointer?pointer=${encodeURIComponent(assetPointer)})`);
+            }
+          } else if (part?.content_type === 'audio_asset_pointer') {
+            const assetPointer = part.asset_pointer as string;
+            const filename = assetPointerMap[assetPointer];
+            if (filename) {
+              contentParts.push(`[Audio: ${filename}](/api/conversations/${encodeURIComponent(folder)}/media/${encodeURIComponent(filename)})`);
+            } else {
+              contentParts.push(`[Audio: ${assetPointer}]`);
+            }
+          } else if (part?.content_type === 'code') {
+            const lang = part.language || '';
+            contentParts.push(`\`\`\`${lang}\n${part.text || ''}\n\`\`\``);
+          } else if (part?.content_type === 'execution_output') {
+            contentParts.push(`\`\`\`\n${part.text || ''}\n\`\`\``);
+          }
+        }
+
+        // Handle attachments (appear after main content parts)
+        if (msg.metadata?.attachments) {
+          for (const att of msg.metadata.attachments) {
+            const displayName = att.filename || att.name;
+            const actualFilename = mediaManifest[displayName] || displayName;
+
+            if (/\.(jpg|jpeg|png|gif|webp)$/i.test(displayName)) {
+              contentParts.push(`![${displayName}](/api/conversations/${encodeURIComponent(folder)}/media/${encodeURIComponent(actualFilename)})`);
+            } else if (/\.(wav|mp3|m4a|ogg)$/i.test(displayName)) {
+              contentParts.push(`[Audio: ${displayName}](/api/conversations/${encodeURIComponent(folder)}/media/${encodeURIComponent(actualFilename)})`);
+            } else {
+              contentParts.push(`[File: ${displayName}](/api/conversations/${encodeURIComponent(folder)}/media/${encodeURIComponent(actualFilename)})`);
+            }
+          }
+        }
+
+        if (contentParts.length > 0) {
+          messageParts.push(`${role}: ${contentParts.join('\n\n')}`);
+        }
+      }
+
+      // Add children to queue in order
+      if (node?.children) {
+        queue.push(...node.children);
+      }
+    }
+
+    return messageParts.join('\n\n');
+  }
+
+  /**
    * Ingest a single conversation
    */
   async ingestConversation(
@@ -271,10 +424,8 @@ export class IngestionService {
       return { chunksCreated: 0, embeddingsGenerated: 0, linksCreated: 0 };
     }
 
-    // Build full conversation text
-    const fullText = messages
-      .map(m => `${m.role}: ${m.content || ''}`)
-      .join('\n\n');
+    // Build full conversation text with embedded media markdown
+    const fullText = this.buildConversationTextWithMedia(conv.folder, messages);
 
     const contentHash = this.hashContent(fullText);
 

@@ -1,0 +1,405 @@
+/**
+ * Catuskoti Filter System - CSS Styles
+ *
+ * Four-state filter controls based on Buddhist tetralemma.
+ * Uses CSS variables from tokens.css for theme compatibility.
+ */
+
+/* =======================================================================
+   CATUSKOTI FILTER CHIP
+   ======================================================================= */
+
+.catuskoti-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-small);
+  padding: var(--space-small) var(--space-medium);
+  min-height: var(--touch-target); /* 44px - WCAG compliance */
+  min-width: 80px;
+
+  font-size: var(--text-size-small);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+
+  background: var(--color-catuskoti-neutral);
+  border: var(--border-width-thin) solid var(--color-catuskoti-neutral-border);
+  border-radius: var(--radius-full); /* Pill shape */
+
+  cursor: pointer;
+  user-select: none;
+
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-instant) var(--ease-out);
+}
+
+/* Compact variant */
+.catuskoti-chip--compact {
+  min-height: 28px;
+  padding: var(--space-tiny) var(--space-small);
+  font-size: var(--text-size-micro);
+  min-width: auto;
+}
+
+/* Hover state */
+.catuskoti-chip:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-subtle);
+}
+
+/* Focus state - keyboard accessibility */
+.catuskoti-chip:focus-visible {
+  outline: var(--border-width-medium) solid var(--color-border-focus);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+
+/* Active/pressed state */
+.catuskoti-chip:active {
+  transform: scale(0.98);
+}
+
+/* =======================================================================
+   STATE: NEUTRAL (unset/default)
+   ======================================================================= */
+
+.catuskoti-chip[data-state="neutral"] {
+  background: var(--color-catuskoti-neutral);
+  border-color: var(--color-catuskoti-neutral-border);
+  color: var(--color-text-secondary);
+}
+
+/* =======================================================================
+   STATE: IS (affirmation/include)
+   ======================================================================= */
+
+.catuskoti-chip[data-state="is"] {
+  background: var(--color-catuskoti-is-subtle);
+  border-color: var(--color-catuskoti-is-border);
+  border-left-width: var(--border-width-thick);
+  color: var(--color-text-primary);
+}
+
+.catuskoti-chip[data-state="is"] .catuskoti-chip__icon {
+  color: var(--color-catuskoti-is);
+}
+
+.catuskoti-chip[data-state="is"]:hover {
+  background: var(--color-catuskoti-is-subtle);
+  filter: brightness(0.97);
+}
+
+/* =======================================================================
+   STATE: IS NOT (negation/exclude)
+   ======================================================================= */
+
+.catuskoti-chip[data-state="is-not"] {
+  background: var(--color-catuskoti-is-not-subtle);
+  border-color: var(--color-catuskoti-is-not-border);
+  color: var(--color-text-secondary);
+}
+
+.catuskoti-chip[data-state="is-not"] .catuskoti-chip__icon {
+  color: var(--color-catuskoti-is-not);
+}
+
+.catuskoti-chip[data-state="is-not"] .catuskoti-chip__label {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.catuskoti-chip[data-state="is-not"]:hover {
+  background: var(--color-catuskoti-is-not-subtle);
+  filter: brightness(0.97);
+}
+
+/* Subtle shake animation on entering is-not state */
+.catuskoti-chip[data-state="is-not"] .catuskoti-chip__icon {
+  animation: catuskoti-shake 0.3s ease-out;
+}
+
+@keyframes catuskoti-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+/* =======================================================================
+   STATE: BOTH (synthesis/spanning)
+   ======================================================================= */
+
+.catuskoti-chip[data-state="both"] {
+  background: var(--color-catuskoti-both-subtle);
+  border-color: var(--color-catuskoti-both-border);
+  border-left-width: var(--border-width-thick);
+  border-left-color: var(--color-catuskoti-both);
+}
+
+.catuskoti-chip[data-state="both"] .catuskoti-chip__icon {
+  color: var(--color-catuskoti-both);
+}
+
+.catuskoti-chip[data-state="both"]:hover {
+  background: var(--color-catuskoti-both-subtle);
+  filter: brightness(0.97);
+}
+
+/* Gentle pulse animation */
+.catuskoti-chip[data-state="both"] .catuskoti-chip__icon {
+  animation: catuskoti-pulse 0.4s ease-out;
+}
+
+@keyframes catuskoti-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+/* =======================================================================
+   STATE: NEITHER (void/uncategorized)
+   ======================================================================= */
+
+.catuskoti-chip[data-state="neither"] {
+  background: var(--color-catuskoti-neither-subtle);
+  border-color: var(--color-catuskoti-neither-border);
+  border-style: dashed; /* Signals "undefined boundary" */
+}
+
+.catuskoti-chip[data-state="neither"] .catuskoti-chip__icon {
+  color: var(--color-catuskoti-neither);
+}
+
+.catuskoti-chip[data-state="neither"]:hover {
+  background: var(--color-catuskoti-neither-subtle);
+  filter: brightness(0.97);
+}
+
+/* =======================================================================
+   CHIP INTERNAL ELEMENTS
+   ======================================================================= */
+
+.catuskoti-chip__icon {
+  font-size: var(--text-size-body);
+  line-height: 1;
+  flex-shrink: 0;
+  width: 1.2em;
+  text-align: center;
+}
+
+.catuskoti-chip__label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.catuskoti-chip__count {
+  font-size: var(--text-size-micro);
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-normal);
+  flex-shrink: 0;
+}
+
+/* Dismissible variant */
+.catuskoti-chip--dismissible {
+  padding-right: var(--space-tiny);
+}
+
+.catuskoti-chip__dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: var(--space-tiny);
+
+  font-size: var(--text-size-micro);
+  color: var(--color-text-tertiary);
+
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.catuskoti-chip__dismiss:hover {
+  background: var(--color-surface-tertiary);
+  color: var(--color-text-primary);
+}
+
+.catuskoti-chip__dismiss:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+/* =======================================================================
+   FILTER BAR CONTAINER
+   ======================================================================= */
+
+.catuskoti-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  padding: var(--space-small) var(--space-medium);
+
+  background: var(--color-surface-secondary);
+  border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.catuskoti-filter-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.catuskoti-filter-bar::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: var(--radius-full);
+}
+
+.catuskoti-filter-bar__label {
+  font-size: var(--text-size-micro);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caps);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.catuskoti-filter-bar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tiny);
+  flex-shrink: 0;
+}
+
+.catuskoti-filter-bar__divider {
+  width: var(--border-width-thin);
+  height: 24px;
+  background: var(--color-border-subtle);
+  margin: 0 var(--space-small);
+  flex-shrink: 0;
+}
+
+.catuskoti-filter-bar__clear {
+  font-size: var(--text-size-small);
+  color: var(--color-text-link);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: var(--space-tiny) var(--space-small);
+  border-radius: var(--radius-small);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.catuskoti-filter-bar__clear:hover {
+  color: var(--color-text-link-hover);
+  background: var(--color-surface-tertiary);
+}
+
+.catuskoti-filter-bar__clear:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+/* =======================================================================
+   ACTIVE FILTERS STRIP
+   ======================================================================= */
+
+.catuskoti-active-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-tiny);
+  padding: var(--space-tiny) var(--space-medium);
+
+  background: var(--color-surface-tertiary);
+  border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+
+  font-size: var(--text-size-micro);
+}
+
+.catuskoti-active-strip__label {
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.catuskoti-active-strip__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-tiny);
+  flex: 1;
+}
+
+/* =======================================================================
+   RESPONSIVE ADJUSTMENTS
+   ======================================================================= */
+
+/* Tablet and below: stack filter groups */
+@media (max-width: 768px) {
+  .catuskoti-filter-bar {
+    flex-wrap: wrap;
+    padding: var(--space-small);
+  }
+
+  .catuskoti-filter-bar__group {
+    flex-wrap: wrap;
+  }
+
+  .catuskoti-filter-bar__divider {
+    display: none;
+  }
+
+  .catuskoti-chip {
+    /* Ensure touch targets remain accessible */
+    min-height: var(--touch-target);
+    padding: var(--space-small) var(--space-medium);
+  }
+}
+
+/* Mobile: full-width chips */
+@media (max-width: 480px) {
+  .catuskoti-filter-bar__group {
+    width: 100%;
+  }
+
+  .catuskoti-chip {
+    flex: 1;
+    justify-content: space-between;
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .catuskoti-chip {
+    transition: none;
+  }
+
+  .catuskoti-chip__icon {
+    animation: none !important;
+  }
+}
+
+/* =======================================================================
+   UTILITY: Screen reader only
+   ======================================================================= */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

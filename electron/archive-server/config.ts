@@ -30,6 +30,7 @@ const HUMANIZER_DIR = path.join(os.homedir(), '.humanizer');
 const ARCHIVE_CONFIG_FILE = path.join(HUMANIZER_DIR, 'archive-config.json');
 const SESSION_STORAGE_DIR = path.join(HUMANIZER_DIR, 'sessions');
 const ARCHIVE_UPLOADS_DIR = path.join(os.tmpdir(), 'archive-uploads');
+const MEDIA_STORAGE_DIR = path.join(HUMANIZER_DIR, 'media');
 
 // Default archive settings (can be overridden by env or runtime)
 // First check environment, then fall back to ~/.humanizer/archives
@@ -99,6 +100,7 @@ export async function initConfig(): Promise<ServerConfig> {
   await fs.mkdir(HUMANIZER_DIR, { recursive: true });
   await fs.mkdir(SESSION_STORAGE_DIR, { recursive: true });
   await fs.mkdir(ARCHIVE_UPLOADS_DIR, { recursive: true });
+  await fs.mkdir(MEDIA_STORAGE_DIR, { recursive: true });
 
   currentConfig = {
     port: parseInt(process.env.ARCHIVE_SERVER_PORT || '3002', 10),
@@ -155,6 +157,13 @@ export function getArchiveRoot(): string {
   return getConfig().archiveConfig.archivePath;
 }
 
+/**
+ * Get media storage path (managed folder for imported media blobs)
+ */
+export function getMediaStoragePath(): string {
+  return MEDIA_STORAGE_DIR;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // PERSISTENCE HELPERS
 // ═══════════════════════════════════════════════════════════════════
@@ -193,4 +202,5 @@ export const PATHS = {
   ARCHIVE_UPLOADS_DIR,
   ARCHIVE_CONFIG_FILE,
   DEFAULT_ARCHIVES_BASE,
+  MEDIA_STORAGE_DIR,
 };
