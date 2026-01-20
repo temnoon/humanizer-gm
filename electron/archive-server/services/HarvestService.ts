@@ -304,6 +304,7 @@ export class HarvestService {
 
   /**
    * Search embeddings database
+   * Uses filtered search to ensure quality content (min 50 chars)
    */
   private async searchEmbeddings(
     query: string,
@@ -316,64 +317,77 @@ export class HarvestService {
       // Generate query embedding
       const queryEmbedding = await embed(query);
 
-      // Search messages first
-      const messageResults = embDb.searchMessages(queryEmbedding, config.searchLimit, undefined);
+      // Use filtered search which returns substantive content
+      // Search 3x the limit to account for filtering
+      const searchLimit = config.searchLimit * 3;
+      const messageResults = embDb.searchMessagesFiltered(
+        queryEmbedding,
+        [], // No explicit filters, but the search returns full content
+        searchLimit
+      );
 
-      // Get full message info
+      // Get full message info and filter by content length
       const results: SearchResult[] = [];
+      const minContentLength = 50; // Minimum chars to be useful
 
       for (const result of messageResults) {
-        try {
-          // Get message details
-          const messageInfo = embDb.getMessagesByEmbeddingIds([result.id], {});
+        // Skip short content early
+        if (!result.content || result.content.length < minContentLength) {
+          continue;
+        }
 
-          if (messageInfo.messages.length > 0) {
-            const msg = messageInfo.messages[0];
-            results.push({
-              id: msg.messageId,
-              content: msg.content,
-              type: 'message',
-              source: 'openai', // Default, could be improved
-              similarity: result.similarity,
-              conversationId: msg.conversationId,
-              conversationTitle: msg.conversationTitle,
-              createdAt: msg.createdAt,
-            });
-          }
+        try {
+          results.push({
+            id: result.id,
+            content: result.content,
+            type: 'message',
+            source: 'openai',
+            similarity: result.similarity,
+            conversationId: result.conversationId,
+            conversationTitle: result.metadata?.conversationTitle as string,
+            createdAt: result.metadata?.createdAt as number,
+          });
         } catch (error) {
           // Skip invalid results
         }
+
+        // Stop if we have enough
+        if (results.length >= config.searchLimit) break;
       }
 
-      // Also search content items
-      try {
-        const contentResults = embDb.searchContentItems(
-          queryEmbedding,
-          Math.floor(config.searchLimit / 2),
-          config.types?.[0],
-          config.sources?.[0]
-        );
+      // Also search content items if we need more
+      if (results.length < config.searchLimit) {
+        try {
+          const contentResults = embDb.searchContentItems(
+            queryEmbedding,
+            config.searchLimit - results.length,
+            config.types?.[0],
+            config.sources?.[0]
+          );
 
-        for (const result of contentResults) {
-          const item = embDb.getContentItem(result.content_item_id);
-          if (item && typeof item.text === 'string') {
-            results.push({
-              id: result.content_item_id,
-              content: item.text,
-              type: result.type,
-              source: result.source,
-              similarity: 1 - result.distance,
-              authorName: item.author_name as string | undefined,
-              createdAt: item.created_at as number | undefined,
-            });
+          for (const result of contentResults) {
+            const item = embDb.getContentItem(result.content_item_id);
+            if (item && typeof item.text === 'string' && item.text.length >= minContentLength) {
+              results.push({
+                id: result.content_item_id,
+                content: item.text,
+                type: result.type,
+                source: result.source,
+                similarity: 1 - result.distance,
+                authorName: item.author_name as string | undefined,
+                createdAt: item.created_at as number | undefined,
+              });
+            }
           }
+        } catch (error) {
+          // Content search failed, continue with message results
         }
-      } catch (error) {
-        // Content search failed, continue with message results
       }
 
       // Sort by similarity
       results.sort((a, b) => b.similarity - a.similarity);
+
+      console.log(`[HarvestService] Search returned ${results.length} results (min ${minContentLength} chars)`);
 
       // Limit to config.searchLimit
       return results.slice(0, config.searchLimit);

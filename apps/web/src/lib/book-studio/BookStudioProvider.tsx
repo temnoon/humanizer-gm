@@ -22,12 +22,12 @@ import {
 
 import { useBookStudioApi, type UseBookStudioApiResult } from './useBookStudioApi'
 import {
-  smartHarvest,
+  runHarvest as runHarvestApi,
   type HarvestProgress,
   type HarvestConfig,
   type HarvestResult,
   type ExpandedResult,
-} from './smart-harvest-agent'
+} from './harvest-api'
 import {
   researchHarvest,
   reviewOutline,
@@ -179,7 +179,8 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
       }))
 
       try {
-        const result = await smartHarvest(
+        // Use backend harvest API instead of local smart-harvest-agent
+        const result = await runHarvestApi(
           query,
           (progress) => {
             setHarvestState(prev => ({ ...prev, progress }))
