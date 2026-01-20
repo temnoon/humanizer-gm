@@ -10,6 +10,7 @@
 
 import { useState, useCallback } from 'react'
 import { useBookStudio } from '../../lib/book-studio/BookStudioProvider'
+import { usePromptDialog, PromptDialog } from '../dialogs/PromptDialog'
 import type { Book } from '../../lib/book-studio/types'
 
 interface ProjectsViewProps {
@@ -21,13 +22,18 @@ export function ProjectsView({ onSelectBook }: ProjectsViewProps) {
   const [editingBookId, setEditingBookId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const { prompt, dialogProps } = usePromptDialog()
 
-  const handleCreateBook = useCallback(() => {
-    const title = prompt('Enter book title:', 'My Book')
+  const handleCreateBook = useCallback(async () => {
+    const title = await prompt('New Book', {
+      message: 'Enter a title for your book:',
+      defaultValue: 'My Book',
+      placeholder: 'Book title...',
+    })
     if (title?.trim()) {
       bookStudio.actions.createBook(title.trim())
     }
-  }, [bookStudio.actions])
+  }, [bookStudio.actions, prompt])
 
   const handleSelectBook = useCallback((book: Book) => {
     bookStudio.actions.selectBook(book.id)
@@ -207,6 +213,9 @@ export function ProjectsView({ onSelectBook }: ProjectsViewProps) {
           ))}
         </div>
       )}
+
+      {/* Prompt Dialog for creating books */}
+      <PromptDialog {...dialogProps} />
     </div>
   )
 }

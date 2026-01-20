@@ -11,6 +11,7 @@
 
 import { useState, useCallback } from 'react'
 import { useBookStudio } from '../../../lib/book-studio/BookStudioProvider'
+import { usePromptDialog, PromptDialog } from '../../dialogs/PromptDialog'
 
 interface EditingState {
   chapterId: string
@@ -21,6 +22,8 @@ export function ChaptersView() {
   const bookStudio = useBookStudio()
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
+  const { prompt, dialogProps } = usePromptDialog()
 
   const book = bookStudio.activeBook
   const chapters = book?.chapters || []
@@ -37,12 +40,16 @@ export function ChaptersView() {
   }
 
   // Create chapter
-  const handleCreate = useCallback(() => {
-    const title = prompt('Chapter title:', `Chapter ${chapters.length + 1}`)
+  const handleCreate = useCallback(async () => {
+    const title = await prompt('New Chapter', {
+      message: 'Enter a title for this chapter:',
+      defaultValue: `Chapter ${chapters.length + 1}`,
+      placeholder: 'Chapter title...',
+    })
     if (title?.trim()) {
       bookStudio.actions.createChapter(title.trim())
     }
-  }, [chapters.length, bookStudio.actions])
+  }, [chapters.length, bookStudio.actions, prompt])
 
   // Start rename
   const handleStartRename = useCallback((chapterId: string, currentTitle: string) => {
@@ -57,12 +64,18 @@ export function ChaptersView() {
     setEditing(null)
   }, [editing, bookStudio.actions])
 
-  // Delete chapter
-  const handleDelete = useCallback((chapterId: string, title: string) => {
-    if (confirm(`Delete chapter "${title}"? Cards will be moved back to staging.`)) {
-      bookStudio.actions.deleteChapter(chapterId)
+  // Request delete confirmation
+  const handleRequestDelete = useCallback((chapterId: string, title: string) => {
+    setConfirmDelete({ id: chapterId, title })
+  }, [])
+
+  // Confirm delete chapter
+  const handleConfirmDelete = useCallback(() => {
+    if (confirmDelete) {
+      bookStudio.actions.deleteChapter(confirmDelete.id)
+      setConfirmDelete(null)
     }
-  }, [bookStudio.actions])
+  }, [confirmDelete, bookStudio.actions])
 
   // Reorder chapter
   const handleReorder = useCallback((chapterId: string, direction: 'up' | 'down') => {
@@ -197,7 +210,7 @@ export function ChaptersView() {
                       </button>
                       <button
                         className="chapters-view__action-btn chapters-view__action-btn--danger"
-                        onClick={() => handleDelete(chapter.id, chapter.title)}
+                        onClick={() => handleRequestDelete(chapter.id, chapter.title)}
                         title="Delete"
                       >
                         ×
@@ -243,6 +256,34 @@ export function ChaptersView() {
                 </div>
               )
             })}
+        </div>
+      )}
+
+      {/* Prompt Dialog for creating chapters */}
+      <PromptDialog {...dialogProps} />
+
+      {/* Confirm Delete Dialog */}
+      {confirmDelete && (
+        <div className="chapters-view__confirm-overlay">
+          <div className="chapters-view__confirm-dialog">
+            <h3>Delete Chapter</h3>
+            <p>Delete "{confirmDelete.title}"?</p>
+            <p className="chapters-view__confirm-note">Cards will be moved back to staging.</p>
+            <div className="chapters-view__confirm-actions">
+              <button
+                className="chapters-view__confirm-btn"
+                onClick={() => setConfirmDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="chapters-view__confirm-btn chapters-view__confirm-btn--danger"
+                onClick={handleConfirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
