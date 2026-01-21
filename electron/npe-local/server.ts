@@ -11,7 +11,8 @@ import { Server } from 'http';
 
 import { createDetectionRouter } from './routes/detection';
 import { createTransformationsRouter } from './routes/transformations';
-import { createBooksRouter } from './routes/books';
+// REMOVED: Books routes now consolidated in book-studio-server (Phase 5 cleanup)
+// import { createBooksRouter } from './routes/books';
 import { createSessionsRouter } from './routes/sessions';
 import { createQuantumRouter } from './routes/quantum';
 import { createConfigRouter } from './routes/config';
@@ -63,7 +64,8 @@ function createApp(): Express {
   // Routes
   expressApp.use('/ai-detection', createDetectionRouter());
   expressApp.use('/transformations', createTransformationsRouter());
-  expressApp.use('/books', createBooksRouter());
+  // REMOVED: Books routes now consolidated in book-studio-server (Phase 5 cleanup)
+  // expressApp.use('/books', createBooksRouter());
   expressApp.use('/sessions', createSessionsRouter());
   expressApp.use('/quantum-analysis', createQuantumRouter());
   expressApp.use('/config', createConfigRouter());

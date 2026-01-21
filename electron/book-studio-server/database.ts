@@ -7,6 +7,7 @@
 
 import Database from 'better-sqlite3';
 import { getDbPath } from './config';
+import { runFileBasedMigrations } from './database/migrations/index';
 
 // ============================================================================
 // Database Instance
@@ -360,12 +361,15 @@ function runMigrations(database: Database.Database): void {
 
   console.log(`[book-studio-db] Current schema version: ${currentVersion}`);
 
-  // Run pending migrations
+  // Run pending inline migrations (1-6)
   for (let i = currentVersion; i < MIGRATIONS.length; i++) {
     console.log(`[book-studio-db] Running migration ${i + 1}...`);
     database.exec(MIGRATIONS[i]);
     console.log(`[book-studio-db] Migration ${i + 1} complete`);
   }
+
+  // Run file-based migrations (7+)
+  runFileBasedMigrations(database);
 }
 
 // ============================================================================
@@ -531,6 +535,101 @@ export interface DbBookSettings {
   settings_json: string | null; // Additional settings
   updated_at: number;
   user_id: string | null;
+}
+
+// ============================================================================
+// New Types (Migration 7+)
+// ============================================================================
+
+export type HarvestInstructionType = 'include' | 'exclude' | 'prefer' | 'avoid';
+
+export interface DbHarvestInstruction {
+  id: string;
+  book_id: string;
+  chapter_id: string | null;
+  instruction_type: HarvestInstructionType;
+  instruction_text: string;
+  applies_to_sources: string | null; // JSON array
+  applies_to_date_range: string | null; // JSON {start, end}
+  priority: number;
+  active: number;
+  created_at: number;
+  updated_at: number;
+  user_id: string | null;
+}
+
+export type VoiceSourceType = 'extracted' | 'manual' | 'imported';
+
+export interface DbAuthorVoice {
+  id: string;
+  book_id: string;
+  name: string;
+  description: string | null;
+  sample_text: string;
+  extracted_features: string | null; // JSON
+  source_card_ids: string; // JSON array
+  source_type: VoiceSourceType | null;
+  is_primary: number;
+  usage_count: number;
+  created_at: number;
+  updated_at: number;
+  user_id: string | null;
+}
+
+export type DraftReviewStatus = 'pending' | 'approved' | 'rejected' | 'needs_revision';
+
+export interface DbDraftVersion {
+  id: string;
+  chapter_id: string;
+  book_id: string;
+  version_number: number;
+  content: string;
+  word_count: number;
+  generator_model: string | null;
+  generator_params: string | null; // JSON
+  card_ids_used: string; // JSON array
+  voice_id: string | null;
+  quality_score: number | null;
+  review_status: DraftReviewStatus;
+  review_notes: string | null;
+  created_at: number;
+  user_id: string | null;
+}
+
+export type MediaType = 'image' | 'audio' | 'document' | 'video';
+export type MediaUsageContext = 'cover' | 'chapter_image' | 'reference' | 'inline' | 'attachment';
+
+export interface DbBookMedia {
+  id: string;
+  book_id: string;
+  chapter_id: string | null;
+  media_type: MediaType;
+  filename: string;
+  mime_type: string | null;
+  file_path: string;
+  file_size: number | null;
+  title: string | null;
+  description: string | null;
+  alt_text: string | null;
+  usage_context: MediaUsageContext | null;
+  position: number | null;
+  created_at: number;
+  user_id: string | null;
+}
+
+// Enhanced harvest history type (migration 7 additions)
+// Fields with NOT NULL DEFAULT have non-nullable types
+export interface DbHarvestHistoryEnhanced extends DbHarvestHistory {
+  similarity_threshold: number; // NOT NULL DEFAULT 0.3
+  result_limit: number; // NOT NULL DEFAULT 20
+  date_range_start: number | null; // Optional date range
+  date_range_end: number | null; // Optional date range
+  result_ids: string; // NOT NULL DEFAULT '[]' - JSON array
+  accepted_ids: string; // NOT NULL DEFAULT '[]' - JSON array
+  rejected_ids: string; // NOT NULL DEFAULT '[]' - JSON array
+  parent_harvest_id: string | null; // Optional parent reference
+  iteration_number: number; // NOT NULL DEFAULT 1
+  adjustment_notes: string | null; // Optional notes
 }
 
 // ============================================================================

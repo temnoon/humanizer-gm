@@ -1,8 +1,18 @@
 /**
  * Books Routes - READ-ONLY access to Xanadu book data
  *
+ * @deprecated LEGACY SYSTEM - Will be migrated to book-studio-server
+ *
  * NOTE: These routes provide read access to legacy Xanadu book data stored in EmbeddingDatabase.
  * For book project management (create, update, harvest), use Book Studio Server (port 3004).
+ *
+ * MIGRATION STATUS (Jan 2026):
+ * - Book Studio Server (port 3004) is the new consolidated API for all book operations
+ * - This legacy route remains for backward compatibility with:
+ *   - BookshelfContext.tsx (uses electronAPI.xanadu.* IPC handlers)
+ *   - HarvestBucketService.ts
+ *   - LocalStorageMigration.ts
+ * - Full migration requires updating all bookshelf code to use book-studio API
  *
  * See: docs/ARCHITECTURE_BOOKMAKING_INTEGRATION.md for architecture details.
  *

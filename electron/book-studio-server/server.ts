@@ -34,6 +34,12 @@ import { createConfigRouter } from './routes/config';
 import { createGradingRouter } from './routes/grading';
 import { createOutlineComputationRouter } from './routes/outline-computation';
 import { createMetricsRouter } from './routes/metrics';
+import { createHarvestRouter } from './routes/harvest';
+import { createDraftRouter } from './routes/draft';
+import { createVoiceRouter } from './routes/voice';
+
+// Middleware
+import { errorHandler, notFoundHandler } from './middleware/error-handler';
 
 // ============================================================================
 // Server Instance
@@ -209,11 +215,16 @@ function createApp(): Express {
   expressApp.use('/api/grading', createGradingRouter());
   expressApp.use('/api/metrics', createMetricsRouter());
 
-  // Error handler
-  expressApp.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('[book-studio-server] Error:', err.message);
-    res.status(500).json({ error: err.message });
-  });
+  // New consolidated API routes (Phase 3)
+  expressApp.use('/api/harvest', createHarvestRouter());
+  expressApp.use('/api/draft', createDraftRouter());
+  expressApp.use('/api/voice', createVoiceRouter());
+
+  // 404 handler for unmatched routes
+  expressApp.use(notFoundHandler);
+
+  // Error handler (must be last)
+  expressApp.use(errorHandler);
 
   return expressApp;
 }

@@ -119,6 +119,108 @@ interface ApiCard {
 }
 
 // ============================================================================
+// New API Types (Phase 3 Consolidation)
+// ============================================================================
+
+/** Harvest search result from archive-server */
+export interface HarvestSearchResult {
+  id: string
+  source_id: string
+  source_type: string
+  source: string
+  content: string
+  title?: string
+  author_name?: string
+  similarity: number
+  source_created_at?: number
+  source_url?: string
+  conversation_id?: string
+  conversation_title?: string
+  metadata?: Record<string, unknown>
+}
+
+/** Harvest history entry */
+export interface HarvestHistoryEntry {
+  id: string
+  bookId: string
+  chapterId?: string
+  query: string
+  resultCount: number
+  acceptedCount: number
+  rejectedCount: number
+  status: 'pending' | 'completed' | 'abandoned'
+  createdAt: number
+  completedAt?: number
+}
+
+/** Harvest instruction */
+export interface HarvestInstruction {
+  id: string
+  bookId: string
+  chapterId?: string
+  instructionType: 'include' | 'exclude' | 'prefer' | 'avoid'
+  instructionText: string
+  appliesToSources?: string[]
+  priority: number
+  isActive: boolean
+  createdAt: number
+}
+
+/** Draft version */
+export interface DraftVersion {
+  id: string
+  chapterId: string
+  bookId: string
+  versionNumber: number
+  content: string
+  wordCount: number
+  voiceId?: string
+  generatedBy: 'human' | 'llm'
+  reviewStatus: 'pending' | 'approved' | 'rejected' | 'needs_revision'
+  reviewNotes?: string
+  qualityScore?: number
+  isAccepted: boolean
+  createdAt: number
+  createdBy: string
+}
+
+/** Draft comparison result */
+export interface DraftComparison {
+  version1: DraftVersion
+  version2: DraftVersion
+  additions: number
+  deletions: number
+  wordCountDiff: number
+}
+
+/** Voice profile */
+export interface VoiceProfile {
+  id: string
+  bookId: string
+  name: string
+  description?: string
+  sampleText?: string
+  extractedFeatures?: {
+    sentencePatterns?: string[]
+    vocabularyLevel?: string
+    toneDescriptors?: string[]
+    punctuationStyle?: string
+  }
+  sourceCardIds?: string[]
+  isPrimary: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+/** Voice application result */
+export interface VoiceApplicationResult {
+  originalContent: string
+  transformedContent: string
+  voiceId: string
+  strengthFactor: number
+}
+
+// ============================================================================
 // Type Converters
 // ============================================================================
 
@@ -483,6 +585,382 @@ class BookStudioApiClient {
       updatedCount: response.updatedCount,
       cards: response.cards.map(apiCardToHarvestCard),
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Harvest API (Phase 3 Consolidation)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Search archive for content matching the query
+   */
+  async harvestSearch(params: {
+    bookId: string
+    query: string
+    chapterId?: string
+    similarityThreshold?: number
+    limit?: number
+    sourceTypes?: string[]
+    dateRangeStart?: number
+    dateRangeEnd?: number
+  }): Promise<{ results: HarvestSearchResult[]; harvestId: string; query: string }> {
+    const response = await this.fetch<{
+      success: boolean
+      data: { results: HarvestSearchResult[]; harvestId: string; query: string }
+    }>('/harvest/search', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+    return response.data
+  }
+
+  /**
+   * Commit harvest results as cards
+   */
+  async harvestCommit(params: {
+    harvestId: string
+    acceptedIds: string[]
+    rejectedIds?: string[]
+    results?: HarvestSearchResult[]
+  }): Promise<{ cards: HarvestCard[]; committed: number; harvestId: string }> {
+    const response = await this.fetch<{
+      success: boolean
+      data: { cards: ApiCard[]; committed: number; harvestId: string }
+    }>('/harvest/commit', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+    return {
+      cards: response.data.cards.map(apiCardToHarvestCard),
+      committed: response.data.committed,
+      harvestId: response.data.harvestId,
+    }
+  }
+
+  /**
+   * Get harvest history for a book
+   */
+  async getHarvestHistory(
+    bookId: string,
+    options?: { page?: number; limit?: number; chapterId?: string }
+  ): Promise<{ harvests: HarvestHistoryEntry[]; pagination: { page: number; total: number; hasMore: boolean } }> {
+    const params = new URLSearchParams()
+    if (options?.page) params.set('page', options.page.toString())
+    if (options?.limit) params.set('limit', options.limit.toString())
+    if (options?.chapterId) params.set('chapterId', options.chapterId)
+
+    const response = await this.fetch<{
+      success: boolean
+      data: HarvestHistoryEntry[]
+      pagination: { page: number; total: number; hasMore: boolean }
+    }>(`/harvest/history/${bookId}?${params}`)
+    return { harvests: response.data, pagination: response.pagination }
+  }
+
+  /**
+   * Iterate on a previous harvest with adjustments
+   */
+  async harvestIterate(
+    harvestId: string,
+    adjustments: {
+      query?: string
+      similarityThreshold?: number
+      limit?: number
+      sourceTypes?: string[]
+    },
+    notes?: string
+  ): Promise<{ results: HarvestSearchResult[]; harvestId: string; query: string }> {
+    const response = await this.fetch<{
+      success: boolean
+      data: { results: HarvestSearchResult[]; harvestId: string; query: string }
+    }>(`/harvest/iterate/${harvestId}`, {
+      method: 'POST',
+      body: JSON.stringify({ adjustments, notes }),
+    })
+    return response.data
+  }
+
+  /**
+   * Get query suggestions based on harvest history
+   */
+  async getHarvestSuggestions(bookId: string): Promise<string[]> {
+    const response = await this.fetch<{ success: boolean; data: string[] }>(`/harvest/suggestions/${bookId}`)
+    return response.data
+  }
+
+  /**
+   * Get harvest instructions for a book
+   */
+  async getHarvestInstructions(bookId: string, chapterId?: string): Promise<HarvestInstruction[]> {
+    const params = chapterId ? `?chapterId=${chapterId}` : ''
+    const response = await this.fetch<{ success: boolean; data: HarvestInstruction[] }>(
+      `/harvest/instructions/${bookId}${params}`
+    )
+    return response.data
+  }
+
+  /**
+   * Create a harvest instruction
+   */
+  async createHarvestInstruction(instruction: Omit<HarvestInstruction, 'id' | 'isActive' | 'createdAt'>): Promise<HarvestInstruction> {
+    const response = await this.fetch<{ success: boolean; data: HarvestInstruction }>('/harvest/instructions', {
+      method: 'POST',
+      body: JSON.stringify(instruction),
+    })
+    return response.data
+  }
+
+  /**
+   * Delete a harvest instruction
+   */
+  async deleteHarvestInstruction(instructionId: string): Promise<void> {
+    await this.fetch(`/harvest/instructions/${instructionId}`, { method: 'DELETE' })
+  }
+
+  /**
+   * Toggle harvest instruction active state
+   */
+  async toggleHarvestInstruction(instructionId: string, active: boolean): Promise<void> {
+    await this.fetch(`/harvest/instructions/${instructionId}/toggle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ active }),
+    })
+  }
+
+  // --------------------------------------------------------------------------
+  // Draft API (Phase 3 Consolidation)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Generate a new draft for a chapter via Ollama LLM
+   */
+  async generateDraft(params: {
+    chapterId: string
+    bookId: string
+    cardIds?: string[]
+    voiceId?: string
+    model?: string
+    temperature?: number
+    maxTokens?: number
+    prompt?: string
+  }): Promise<{ draft: DraftVersion; generationTime: number }> {
+    const response = await this.fetch<{
+      success: boolean
+      data: { draft: DraftVersion; generationTime: number }
+    }>('/draft/generate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+    return response.data
+  }
+
+  /**
+   * Save a manually created draft version
+   */
+  async saveDraft(params: {
+    chapterId: string
+    bookId: string
+    content: string
+    voiceId?: string
+  }): Promise<DraftVersion> {
+    const response = await this.fetch<{ success: boolean; data: DraftVersion }>('/draft/save', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+    return response.data
+  }
+
+  /**
+   * Get all draft versions for a chapter
+   */
+  async getDraftVersions(chapterId: string): Promise<DraftVersion[]> {
+    const response = await this.fetch<{ success: boolean; data: DraftVersion[] }>(`/draft/versions/${chapterId}`)
+    return response.data
+  }
+
+  /**
+   * Get a specific draft version
+   */
+  async getDraftVersion(versionId: string): Promise<DraftVersion | null> {
+    try {
+      const response = await this.fetch<{ success: boolean; data: DraftVersion }>(`/draft/${versionId}`)
+      return response.data
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Get the latest draft version for a chapter
+   */
+  async getLatestDraft(chapterId: string): Promise<DraftVersion | null> {
+    try {
+      const response = await this.fetch<{ success: boolean; data: DraftVersion }>(`/draft/latest/${chapterId}`)
+      return response.data
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Compare two draft versions
+   */
+  async compareDrafts(v1: string, v2: string): Promise<DraftComparison | null> {
+    try {
+      const response = await this.fetch<{ success: boolean; data: DraftComparison }>(`/draft/compare?v1=${v1}&v2=${v2}`)
+      return response.data
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Update review status of a draft version
+   */
+  async reviewDraft(versionId: string, status: DraftVersion['reviewStatus'], notes?: string): Promise<void> {
+    await this.fetch(`/draft/${versionId}/review`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, notes }),
+    })
+  }
+
+  /**
+   * Set quality score for a draft version
+   */
+  async scoreDraft(versionId: string, score: number): Promise<void> {
+    await this.fetch(`/draft/${versionId}/score`, {
+      method: 'PATCH',
+      body: JSON.stringify({ score }),
+    })
+  }
+
+  /**
+   * Accept a draft version and copy its content to the chapter
+   */
+  async acceptDraft(versionId: string): Promise<Chapter> {
+    const response = await this.fetch<{ success: boolean; data: ApiChapter }>(`/draft/accept/${versionId}`, {
+      method: 'POST',
+    })
+    return apiChapterToChapter(response.data)
+  }
+
+  /**
+   * Delete a draft version
+   */
+  async deleteDraft(versionId: string): Promise<void> {
+    await this.fetch(`/draft/${versionId}`, { method: 'DELETE' })
+  }
+
+  /**
+   * Check if draft generation is available (Ollama health)
+   */
+  async checkDraftHealth(): Promise<{ available: boolean; model?: string; error?: string }> {
+    const response = await this.fetch<{ success: boolean; data: { available: boolean; model?: string; error?: string } }>('/draft/health')
+    return response.data
+  }
+
+  // --------------------------------------------------------------------------
+  // Voice API (Phase 3 Consolidation)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Extract a voice profile from cards
+   */
+  async extractVoice(params: {
+    bookId: string
+    cardIds: string[]
+    name?: string
+    description?: string
+  }): Promise<VoiceProfile> {
+    const response = await this.fetch<{ success: boolean; data: VoiceProfile }>('/voice/extract', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+    return response.data
+  }
+
+  /**
+   * List all voices for a book
+   */
+  async listVoices(bookId: string): Promise<VoiceProfile[]> {
+    const response = await this.fetch<{ success: boolean; data: VoiceProfile[] }>(`/voice/${bookId}`)
+    return response.data
+  }
+
+  /**
+   * Get a specific voice profile
+   */
+  async getVoice(voiceId: string): Promise<VoiceProfile | null> {
+    try {
+      const response = await this.fetch<{ success: boolean; data: VoiceProfile }>(`/voice/detail/${voiceId}`)
+      return response.data
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Create a manual voice profile
+   */
+  async createVoice(params: {
+    bookId: string
+    name: string
+    description?: string
+    sampleText: string
+  }): Promise<VoiceProfile> {
+    const response = await this.fetch<{ success: boolean; data: VoiceProfile }>('/voice/create', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+    return response.data
+  }
+
+  /**
+   * Update a voice profile
+   */
+  async updateVoice(voiceId: string, updates: { name?: string; description?: string; sampleText?: string }): Promise<VoiceProfile> {
+    const response = await this.fetch<{ success: boolean; data: VoiceProfile }>(`/voice/${voiceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    })
+    return response.data
+  }
+
+  /**
+   * Delete a voice profile
+   */
+  async deleteVoice(voiceId: string): Promise<void> {
+    await this.fetch(`/voice/${voiceId}`, { method: 'DELETE' })
+  }
+
+  /**
+   * Set a voice as primary for its book
+   */
+  async setPrimaryVoice(voiceId: string): Promise<void> {
+    await this.fetch(`/voice/${voiceId}/primary`, { method: 'POST' })
+  }
+
+  /**
+   * Apply a voice to transform content
+   */
+  async applyVoice(params: {
+    voiceId: string
+    content: string
+    strengthFactor?: number
+  }): Promise<VoiceApplicationResult> {
+    const response = await this.fetch<{ success: boolean; data: VoiceApplicationResult }>('/voice/apply', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+    return response.data
+  }
+
+  /**
+   * Get extracted features for a voice
+   */
+  async getVoiceFeatures(voiceId: string): Promise<VoiceProfile['extractedFeatures']> {
+    const response = await this.fetch<{ success: boolean; data: VoiceProfile['extractedFeatures'] }>(`/voice/${voiceId}/features`)
+    return response.data
   }
 }
 

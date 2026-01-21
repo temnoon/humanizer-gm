@@ -22,6 +22,13 @@ import {
 
 import { useBookStudioApi, type UseBookStudioApiResult } from './useBookStudioApi'
 import {
+  apiClient,
+  type HarvestSearchResult,
+  type DraftVersion,
+  type VoiceProfile,
+  type VoiceApplicationResult,
+} from './api-client'
+import {
   runHarvest as runHarvestApi,
   convertToHarvestCard,
   type HarvestProgress,
@@ -43,7 +50,7 @@ import {
   type OrderedSection,
 } from './outline-agent'
 import type { HarvestCard, OutlineStructure, Chapter } from './types'
-import { findDuplicateCard } from './types'
+import { findDuplicateCard, createCardFromSearchResult } from './types'
 
 // ============================================================================
 // Types
@@ -88,6 +95,16 @@ export interface DraftGenerationConfig {
   targetWordCount?: number
   preserveVoice?: boolean
   includeTransitions?: boolean
+  voiceId?: string
+}
+
+export interface VoiceAgentState {
+  voices: VoiceProfile[]
+  primaryVoiceId: string | null
+  isExtracting: boolean
+  isApplying: boolean
+  isLoading: boolean
+  error: string | null
 }
 
 export interface BookStudioContextValue extends UseBookStudioApiResult {
@@ -114,6 +131,17 @@ export interface BookStudioContextValue extends UseBookStudioApiResult {
     state: DraftAgentState
     generate: (chapter: Chapter, config?: DraftGenerationConfig) => Promise<string>
     cancel: () => void
+  }
+
+  // Voice agent
+  voice: {
+    state: VoiceAgentState
+    extract: (cardIds: string[], name?: string, description?: string) => Promise<VoiceProfile>
+    list: () => Promise<VoiceProfile[]>
+    apply: (voiceId: string, content: string, strengthFactor?: number) => Promise<VoiceApplicationResult>
+    setPrimary: (voiceId: string) => Promise<void>
+    delete: (voiceId: string) => Promise<void>
+    refresh: () => Promise<void>
   }
 
   // Outline suggestion banner (shown after harvest when no chapters exist)
@@ -165,6 +193,16 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
     isGenerating: false,
     progress: null,
     currentChapterId: null,
+    error: null,
+  })
+
+  // Voice agent state
+  const [voiceState, setVoiceState] = useState<VoiceAgentState>({
+    voices: [],
+    primaryVoiceId: null,
+    isExtracting: false,
+    isApplying: false,
+    isLoading: false,
     error: null,
   })
 
@@ -434,7 +472,7 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
 
   const generateDraft = useCallback(
     async (chapter: Chapter, config?: DraftGenerationConfig): Promise<string> => {
-      if (!api.activeBook) {
+      if (!api.activeBook || !api.activeBookId) {
         throw new Error('No active book')
       }
 
@@ -466,12 +504,6 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
           throw new Error('No cards assigned to this chapter')
         }
 
-        // Check for Electron API (ollama may not be in type definition yet)
-        const electronAPI = window.electronAPI as { ollama?: { generate: (params: { model: string; prompt: string; options: { temperature: number } }) => Promise<{ response: string }> } } | undefined
-        if (!electronAPI?.ollama?.generate) {
-          throw new Error('Draft generation requires Ollama (Electron)')
-        }
-
         setDraftState(prev => ({
           ...prev,
           progress: prev.progress
@@ -479,48 +511,30 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
                 ...prev.progress,
                 phase: 'generating',
                 sectionsTotal: chapterCards.length,
-                message: 'Generating draft content...',
+                message: 'Generating draft content via API...',
               }
             : null,
         }))
 
-        // Build prompt from cards
-        const cardContents = chapterCards
-          .map((card, i) => `[Source ${i + 1}]\n${card.content}`)
-          .join('\n\n---\n\n')
+        // Use primary voice if configured to preserve voice and one exists
+        const voiceId = config?.voiceId || (config?.preserveVoice ? voiceState.primaryVoiceId : undefined)
 
-        const prompt = `You are helping write a chapter titled "${chapter.title}".
-
-Using the following source materials, write a cohesive draft for this chapter.
-${chapter.draftInstructions ? `\nAdditional instructions: ${chapter.draftInstructions}` : ''}
-
-Source materials:
-
-${cardContents}
-
-Write a draft chapter that:
-1. Synthesizes the key ideas from the sources
-2. Maintains a consistent voice
-3. Creates smooth transitions between ideas
-4. Targets approximately ${config?.targetWordCount || 1500} words
-
-Begin the draft:`
-
-        // Generate via Ollama
-        const result = await electronAPI.ollama!.generate({
-          model: config?.model || 'llama3.2',
-          prompt,
-          options: {
-            temperature: config?.temperature || 0.7,
-          },
+        // Generate draft via consolidated API (handles Ollama internally)
+        const { draft, generationTime } = await apiClient.generateDraft({
+          chapterId: chapter.id,
+          bookId: api.activeBookId,
+          cardIds: chapterCards.map(c => c.id),
+          voiceId: voiceId || undefined,
+          model: config?.model,
+          temperature: config?.temperature,
         })
 
         if (controller.signal.aborted) {
           throw new Error('Generation cancelled')
         }
 
-        const draftContent = result.response || ''
-        const wordCount = draftContent.split(/\s+/).filter(Boolean).length
+        const draftContent = draft.content
+        const wordCount = draft.wordCount
 
         setDraftState(prev => ({
           ...prev,
@@ -531,7 +545,7 @@ Begin the draft:`
                 phase: 'complete',
                 sectionsComplete: chapterCards.length,
                 wordsGenerated: wordCount,
-                message: `Draft complete: ${wordCount} words`,
+                message: `Draft complete: ${wordCount} words (${(generationTime / 1000).toFixed(1)}s)`,
               }
             : null,
         }))
@@ -555,7 +569,7 @@ Begin the draft:`
         setDraftAbortController(null)
       }
     },
-    [api.activeBook, api.actions]
+    [api.activeBook, api.activeBookId, api.actions, voiceState.primaryVoiceId]
   )
 
   const cancelDraft = useCallback(() => {
@@ -568,6 +582,142 @@ Begin the draft:`
       }))
     }
   }, [draftAbortController])
+
+  // --------------------------------------------------------------------------
+  // Voice Agent Operations
+  // --------------------------------------------------------------------------
+
+  const refreshVoices = useCallback(async () => {
+    if (!api.activeBookId) return
+
+    setVoiceState(prev => ({ ...prev, isLoading: true, error: null }))
+
+    try {
+      const voices = await apiClient.listVoices(api.activeBookId)
+      const primary = voices.find(v => v.isPrimary)
+      setVoiceState(prev => ({
+        ...prev,
+        isLoading: false,
+        voices,
+        primaryVoiceId: primary?.id || null,
+      }))
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Failed to load voices'
+      setVoiceState(prev => ({
+        ...prev,
+        isLoading: false,
+        error,
+      }))
+    }
+  }, [api.activeBookId])
+
+  const extractVoice = useCallback(
+    async (cardIds: string[], name?: string, description?: string): Promise<VoiceProfile> => {
+      if (!api.activeBookId) {
+        throw new Error('No active book selected')
+      }
+
+      setVoiceState(prev => ({ ...prev, isExtracting: true, error: null }))
+
+      try {
+        const voice = await apiClient.extractVoice({
+          bookId: api.activeBookId,
+          cardIds,
+          name,
+          description,
+        })
+
+        // Refresh the voices list to include the new voice
+        await refreshVoices()
+
+        setVoiceState(prev => ({ ...prev, isExtracting: false }))
+        return voice
+      } catch (err) {
+        const error = err instanceof Error ? err.message : 'Voice extraction failed'
+        setVoiceState(prev => ({
+          ...prev,
+          isExtracting: false,
+          error,
+        }))
+        throw err
+      }
+    },
+    [api.activeBookId, refreshVoices]
+  )
+
+  const listVoices = useCallback(async (): Promise<VoiceProfile[]> => {
+    if (!api.activeBookId) {
+      return []
+    }
+
+    await refreshVoices()
+    return voiceState.voices
+  }, [api.activeBookId, refreshVoices, voiceState.voices])
+
+  const applyVoice = useCallback(
+    async (voiceId: string, content: string, strengthFactor?: number): Promise<VoiceApplicationResult> => {
+      setVoiceState(prev => ({ ...prev, isApplying: true, error: null }))
+
+      try {
+        const result = await apiClient.applyVoice({
+          voiceId,
+          content,
+          strengthFactor,
+        })
+
+        setVoiceState(prev => ({ ...prev, isApplying: false }))
+        return result
+      } catch (err) {
+        const error = err instanceof Error ? err.message : 'Voice application failed'
+        setVoiceState(prev => ({
+          ...prev,
+          isApplying: false,
+          error,
+        }))
+        throw err
+      }
+    },
+    []
+  )
+
+  const setPrimaryVoice = useCallback(
+    async (voiceId: string): Promise<void> => {
+      try {
+        await apiClient.setPrimaryVoice(voiceId)
+        setVoiceState(prev => ({
+          ...prev,
+          primaryVoiceId: voiceId,
+          voices: prev.voices.map(v => ({
+            ...v,
+            isPrimary: v.id === voiceId,
+          })),
+        }))
+      } catch (err) {
+        const error = err instanceof Error ? err.message : 'Failed to set primary voice'
+        setVoiceState(prev => ({ ...prev, error }))
+        throw err
+      }
+    },
+    []
+  )
+
+  const deleteVoice = useCallback(
+    async (voiceId: string): Promise<void> => {
+      try {
+        await apiClient.deleteVoice(voiceId)
+        setVoiceState(prev => ({
+          ...prev,
+          voices: prev.voices.filter(v => v.id !== voiceId),
+          primaryVoiceId: prev.primaryVoiceId === voiceId ? null : prev.primaryVoiceId,
+        }))
+      } catch (err) {
+        const error = err instanceof Error ? err.message : 'Failed to delete voice'
+        setVoiceState(prev => ({ ...prev, error }))
+        throw err
+      }
+    },
+    []
+  )
 
   // --------------------------------------------------------------------------
   // Outline Suggestion Handlers
@@ -617,6 +767,17 @@ Begin the draft:`
       state: draftState,
       generate: generateDraft,
       cancel: cancelDraft,
+    },
+
+    // Voice agent
+    voice: {
+      state: voiceState,
+      extract: extractVoice,
+      list: listVoices,
+      apply: applyVoice,
+      setPrimary: setPrimaryVoice,
+      delete: deleteVoice,
+      refresh: refreshVoices,
     },
 
     // Outline suggestion banner
