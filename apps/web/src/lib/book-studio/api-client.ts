@@ -68,6 +68,9 @@ interface ApiBook {
   target_word_count: number | null
   created_at: number
   updated_at: number
+  // Optional counts returned by list endpoint
+  cardCount?: number
+  chapterCount?: number
 }
 
 interface ApiChapter {
@@ -140,6 +143,9 @@ function apiBookToBook(api: ApiBook, chapters: Chapter[] = [], cards: HarvestCar
     targetWordCount: api.target_word_count || undefined,
     createdAt: safeTimestampToIso(api.created_at),
     updatedAt: safeTimestampToIso(api.updated_at),
+    // Pass through counts from list endpoint (computed by SQL)
+    cardCount: api.cardCount,
+    chapterCount: api.chapterCount,
   }
 }
 
@@ -371,9 +377,11 @@ class BookStudioApiClient {
   }
 
   async createChaptersBatch(bookId: string, titles: string[]): Promise<Chapter[]> {
+    // Server expects chapters as array of {title, order?} objects
+    const chapters = titles.map(title => ({ title }))
     const response = await this.fetch<{ chapters: ApiChapter[] }>('/chapters/batch', {
       method: 'POST',
-      body: JSON.stringify({ bookId, titles }),
+      body: JSON.stringify({ bookId, chapters }),
     })
     return response.chapters.map(ch => apiChapterToChapter(ch))
   }
@@ -434,15 +442,15 @@ class BookStudioApiClient {
     const response = await this.fetch<{ card: ApiCard }>(`/cards/${cardId}`, {
       method: 'PATCH',
       body: JSON.stringify({
-        user_notes: updates.userNotes,
-        ai_context: updates.aiContext,
-        tags: updates.tags?.join(','),
+        chapterId: updates.suggestedChapterId,
+        userNotes: updates.userNotes,
+        aiContext: updates.aiContext,
+        tags: updates.tags,
         status: updates.status,
-        grade: updates.grade ? JSON.stringify(updates.grade) : undefined,
-        is_outline: updates.isOutline !== undefined ? (updates.isOutline ? 1 : 0) : undefined,
-        outline_structure: updates.outlineStructure ? JSON.stringify(updates.outlineStructure) : undefined,
-        canvas_x: updates.canvasPosition?.x,
-        canvas_y: updates.canvasPosition?.y,
+        grade: updates.grade,
+        isOutline: updates.isOutline,
+        outlineStructure: updates.outlineStructure,
+        canvasPosition: updates.canvasPosition,
       }),
     })
     return apiCardToHarvestCard(response.card)

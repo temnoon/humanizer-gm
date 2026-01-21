@@ -76,6 +76,9 @@ export function OutlineView() {
       }
     }
 
+    // Refresh the book to load updated chapter-card associations
+    await bookStudio.actions.refreshBooks()
+
     // Clear generated outline after creating
     bookStudio.outline.clear()
   }, [outlineState.generatedOutline, bookStudio.actions, bookStudio.outline])

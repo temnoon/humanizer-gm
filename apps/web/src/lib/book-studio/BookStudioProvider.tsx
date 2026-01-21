@@ -43,6 +43,7 @@ import {
   type OrderedSection,
 } from './outline-agent'
 import type { HarvestCard, OutlineStructure, Chapter } from './types'
+import { findDuplicateCard } from './types'
 
 // ============================================================================
 // Types
@@ -255,14 +256,34 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
     }
 
     const cards = harvestState.results.map(convertToHarvestCard)
-    await api.actions.harvestCardsBatch(cards)
+
+    // Cross-harvest deduplication: filter out cards that already exist in the book
+    const existingCards = api.activeBook?.stagingCards || []
+    const uniqueCards = cards.filter(card => {
+      const duplicate = findDuplicateCard(card.content, existingCards, 0.85)
+      if (duplicate) {
+        console.log(`[harvest] Skipping duplicate card (matches existing card ${duplicate.id})`)
+        return false
+      }
+      return true
+    })
+
+    if (uniqueCards.length === 0) {
+      console.log('[harvest] All cards were duplicates, nothing to commit')
+    } else if (uniqueCards.length < cards.length) {
+      console.log(`[harvest] Filtered ${cards.length - uniqueCards.length} duplicates, committing ${uniqueCards.length} unique cards`)
+    }
+
+    if (uniqueCards.length > 0) {
+      await api.actions.harvestCardsBatch(uniqueCards)
+    }
 
     // Clear results after committing
     setHarvestState(prev => ({
       ...prev,
       results: [],
     }))
-  }, [api.activeBookId, api.actions, harvestState.results])
+  }, [api.activeBookId, api.activeBook?.stagingCards, api.actions, harvestState.results])
 
   // --------------------------------------------------------------------------
   // Outline Agent Operations
