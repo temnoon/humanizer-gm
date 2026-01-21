@@ -132,9 +132,12 @@ export class AIRouter {
     request: AIRequest
   ): Promise<RouterDecision> {
     const config = await this.adminConfig.getConfig();
-    const profile = request.userId
+    // Use user profile if available, otherwise fall back to default profile
+    // This ensures preferLocalModels and other defaults are respected
+    // Cast defaultProfile since methods only use preference fields (not userId)
+    const profile: UserAIProfile | null = request.userId
       ? await this.profileManager.getProfile(request.userId)
-      : null;
+      : (config.defaultProfile as UserAIProfile);
 
     // Get the model class
     const modelClass = config.modelClasses[request.capability];
@@ -443,9 +446,9 @@ export class AIRouter {
     profile: UserAIProfile | null,
     config: SystemAIConfig
   ): Promise<{ user: boolean; system: boolean }> {
-    // User budget
+    // User budget - only check if profile has userId (defaultProfile doesn't)
     let userOk = true;
-    if (profile) {
+    if (profile?.userId) {
       const status = await this.profileManager.isOverBudget(profile.userId);
       userOk = !status.overDaily && !status.overMonthly;
     }
