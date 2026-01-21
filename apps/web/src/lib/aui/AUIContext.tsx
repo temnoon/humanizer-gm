@@ -669,10 +669,23 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
           const lastAssistant = newMessages
             .filter((m) => m.role === 'assistant')
             .pop();
-          assistantContent = lastAssistant?.content || "I couldn't process that.";
-          isCloud = lastAssistant?.isCloud || false;
-          modelUsed = lastAssistant?.model;
-          providerUsed = lastAssistant?.provider;
+
+          // Also check for system error messages (backend sends errors as system messages)
+          const lastSystem = newMessages
+            .filter((m) => m.role === 'system' && m.content.startsWith('Error:'))
+            .pop();
+
+          if (lastAssistant?.content) {
+            assistantContent = lastAssistant.content;
+            isCloud = lastAssistant.isCloud || false;
+            modelUsed = lastAssistant.model;
+            providerUsed = lastAssistant.provider;
+          } else if (lastSystem?.content) {
+            // Show the error to the user instead of generic message
+            assistantContent = lastSystem.content;
+          } else {
+            assistantContent = "I couldn't process that. Make sure Ollama is running (ollama serve).";
+          }
         } else {
           // Fallback: Direct Ollama call (web-only mode)
           // This is always local, no cloud indicator needed
