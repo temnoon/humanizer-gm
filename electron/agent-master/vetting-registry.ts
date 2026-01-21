@@ -321,16 +321,48 @@ function filterXmlTags(text: string, profile: VettingProfile): VettingResult {
 
 /**
  * Filter heuristic preambles and closings
+ * Also strips thinking tags if the profile defines them
  */
 function filterHeuristic(text: string, profile: VettingProfile): VettingResult {
-  const result = filterHeuristicPhrases(text.trim(), profile);
+  let content = text.trim();
+  let hadThinkingTags = false;
+
+  // Strip thinking tags if profile defines them (some models like qwen use heuristic but output thinking)
+  if (profile.thinkingTags && profile.thinkingTags.length > 0) {
+    // Build tag pairs
+    const tagPairs: Array<{ open: string; close: string }> = [];
+    for (const tag of profile.thinkingTags) {
+      if (tag.startsWith('</')) continue;
+      const openTag = tag;
+      const closeTag = tag.replace('<', '</');
+      if (profile.thinkingTags.includes(closeTag)) {
+        tagPairs.push({ open: openTag, close: closeTag });
+      }
+    }
+
+    // Remove each tag pair and contents
+    for (const { open, close } of tagPairs) {
+      const regex = new RegExp(
+        `${escapeRegex(open)}[\\s\\S]*?${escapeRegex(close)}`,
+        'gi'
+      );
+      const before = content;
+      content = content.replace(regex, '');
+      if (content !== before) {
+        hadThinkingTags = true;
+      }
+    }
+    content = content.trim();
+  }
+
+  const result = filterHeuristicPhrases(content, profile);
 
   return {
     content: result.content,
     raw: text,
     strategy: 'heuristic',
     stripped: {
-      thinkingTags: false,
+      thinkingTags: hadThinkingTags,
       preamble: result.hadPreamble,
       closing: result.hadClosing,
     },

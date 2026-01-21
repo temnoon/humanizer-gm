@@ -375,10 +375,41 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
 
   // Build book interface from bookshelf's simple methods
   // IMPORTANT: Memoize to prevent infinite re-renders in useEffect dependencies
-  const book = useMemo(() => ({
+  // ALSO: Prefer BookStudio's activeBook over legacy bookshelf for context consistency
+  const book = useMemo(() => {
+    // Map BookStudio's Book type to what AUI tools expect
+    // BookStudio uses 'title', legacy uses 'name'
+    // Use type assertion since AUI tools only use a subset of BookProject fields
+    const bookStudioActiveBook = bookStudio?.activeBook;
+    const mappedActiveBook = bookStudioActiveBook ? {
+      // Core identity
+      id: bookStudioActiveBook.id,
+      uri: `book://user/${bookStudioActiveBook.id}`,
+      type: 'book',
+      name: bookStudioActiveBook.title, // Map title -> name for legacy compatibility
+      description: bookStudioActiveBook.description,
+      // Required BookProject fields (with sensible defaults)
+      status: 'drafting', // Valid BookStatus
+      personaRefs: [],
+      styleRefs: [],
+      threads: [],
+      sourceRefs: [],
+      passages: [],
+      chapters: [],
+      tags: [],
+      stats: { totalSources: 0, totalPassages: 0, approvedPassages: 0, gems: 0, chapters: bookStudioActiveBook.chapters.length, wordCount: 0 },
+      createdAt: new Date(bookStudioActiveBook.createdAt).getTime(),
+      updatedAt: new Date(bookStudioActiveBook.updatedAt).getTime(),
+      // Additional BookStudio data (for context display)
+      _bookStudioChapters: bookStudioActiveBook.chapters,
+      _bookStudioCards: bookStudioActiveBook.stagingCards,
+    } as import('@humanizer/core').BookProject : null;
+
+    return {
     // Use both names for compatibility with different tool versions
-    activeProject: bookshelf.activeBook || null,
-    activeBook: bookshelf.activeBook || null,
+    // Prefer BookStudio's activeBook over legacy bookshelf
+    activeProject: mappedActiveBook || bookshelf.activeBook || null,
+    activeBook: mappedActiveBook || bookshelf.activeBook || null,
 
     createProject: (name: string, subtitle?: string) => {
       const id = `book-${Date.now()}`;
@@ -481,7 +512,8 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
     },
 
     getPassages: () => bookshelf.getPassagesSimple() || [],
-  }), [
+  };
+  }, [
     bookshelf.activeBook,
     bookshelf.createBook,
     bookshelf.setActiveBookUri,
@@ -493,6 +525,8 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
     bookshelf.addPassageSimple,
     bookshelf.updatePassageSimple,
     bookshelf.getPassagesSimple,
+    // Also depend on BookStudio's activeBook for context consistency
+    bookStudio?.activeBook,
   ]);
 
   // State - settings must be loaded first since createNewConversation uses it
