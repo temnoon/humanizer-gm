@@ -116,6 +116,7 @@ export class HarvestService {
     };
 
     const acceptedResults: ExpandedResult[] = [];
+    const seenSourceIds = new Set<string>(); // Prevent duplicate source IDs
     let totalSearched = 0;
     let totalRejected = 0;
     let totalExpanded = 0;
@@ -196,6 +197,13 @@ export class HarvestService {
         totalRejected++;
         continue;
       }
+
+      // Skip duplicate source IDs
+      if (seenSourceIds.has(result.id)) {
+        totalRejected++;
+        continue;
+      }
+      seenSourceIds.add(result.id);
 
       const stubType = this.classifyStub(result.content);
       const wordCount = result.content.split(/\s+/).filter(Boolean).length;
@@ -304,7 +312,7 @@ export class HarvestService {
 
   /**
    * Search embeddings database
-   * Uses filtered search to ensure quality content (min 50 chars)
+   * Uses filtered search to ensure quality content
    */
   private async searchEmbeddings(
     query: string,
@@ -318,23 +326,39 @@ export class HarvestService {
       const queryEmbedding = await embed(query);
 
       // Use filtered search which returns substantive content
-      // Search 3x the limit to account for filtering
-      const searchLimit = config.searchLimit * 3;
+      // Search 5x the limit to account for filtering and deduplication
+      const searchLimit = config.searchLimit * 5;
       const messageResults = embDb.searchMessagesFiltered(
         queryEmbedding,
         [], // No explicit filters, but the search returns full content
         searchLimit
       );
 
+      // Deduplication set - track content by normalized hash
+      const seenContent = new Set<string>();
+      const normalizeForDedup = (text: string): string => {
+        return text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200);
+      };
+
       // Get full message info and filter by content length
       const results: SearchResult[] = [];
-      const minContentLength = 50; // Minimum chars to be useful
+      // Minimum 200 chars to be useful (roughly 30-40 words)
+      const minContentLength = 200;
+      // Prefer longer content - boost threshold for very short
+      const preferredContentLength = 500;
 
       for (const result of messageResults) {
         // Skip short content early
         if (!result.content || result.content.length < minContentLength) {
           continue;
         }
+
+        // Skip duplicates
+        const contentHash = normalizeForDedup(result.content);
+        if (seenContent.has(contentHash)) {
+          continue;
+        }
+        seenContent.add(contentHash);
 
         try {
           results.push({
@@ -360,7 +384,7 @@ export class HarvestService {
         try {
           const contentResults = embDb.searchContentItems(
             queryEmbedding,
-            config.searchLimit - results.length,
+            (config.searchLimit - results.length) * 3,
             config.types?.[0],
             config.sources?.[0]
           );
@@ -368,6 +392,13 @@ export class HarvestService {
           for (const result of contentResults) {
             const item = embDb.getContentItem(result.content_item_id);
             if (item && typeof item.text === 'string' && item.text.length >= minContentLength) {
+              // Skip duplicates
+              const contentHash = normalizeForDedup(item.text);
+              if (seenContent.has(contentHash)) {
+                continue;
+              }
+              seenContent.add(contentHash);
+
               results.push({
                 id: result.content_item_id,
                 content: item.text,
@@ -377,6 +408,8 @@ export class HarvestService {
                 authorName: item.author_name as string | undefined,
                 createdAt: item.created_at as number | undefined,
               });
+
+              if (results.length >= config.searchLimit) break;
             }
           }
         } catch (error) {
@@ -384,10 +417,17 @@ export class HarvestService {
         }
       }
 
-      // Sort by similarity
-      results.sort((a, b) => b.similarity - a.similarity);
+      // Sort by quality: combine similarity with content length bonus
+      // Longer content gets a boost to prioritize substantive results
+      results.sort((a, b) => {
+        const aLengthBonus = Math.min(0.2, a.content.length / 5000);
+        const bLengthBonus = Math.min(0.2, b.content.length / 5000);
+        const aScore = a.similarity + aLengthBonus;
+        const bScore = b.similarity + bLengthBonus;
+        return bScore - aScore;
+      });
 
-      console.log(`[HarvestService] Search returned ${results.length} results (min ${minContentLength} chars)`);
+      console.log(`[HarvestService] Search returned ${results.length} unique results (min ${minContentLength} chars, ${seenContent.size} checked)`);
 
       // Limit to config.searchLimit
       return results.slice(0, config.searchLimit);

@@ -101,9 +101,9 @@ const DEFAULT_CONFIG: ArchiveServerConfig = {
   harvest: {
     defaultTarget: 20,
     searchLimit: 100,
-    minWordCount: 20,
+    minWordCount: 75, // Require substantive content (~75 words minimum)
     expandBreadcrumbs: true,
-    contextSize: 2,
+    contextSize: 3, // More context for breadcrumbs
     prioritizeConversations: true,
   },
   cache: {
@@ -116,7 +116,7 @@ const DEFAULT_CONFIG: ArchiveServerConfig = {
       targetCount: 40,
       searchLimit: 200,
       minQuality: 0.3,
-      minWordCount: 30,
+      minWordCount: 75, // Require substantive content
     },
     hybrid: {
       denseWeight: 0.7,
