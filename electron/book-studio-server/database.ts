@@ -297,6 +297,52 @@ const MIGRATIONS = [
 
   INSERT OR IGNORE INTO schema_version (version) VALUES (5);
   `,
+
+  // Migration 6: Card roles and harvest history
+  `
+  -- Add role column to cards for categorization during outline/draft generation
+  -- Roles: author_voice, main_source, reference, epigraph, example, evidence, counterpoint, background
+  ALTER TABLE cards ADD COLUMN role TEXT DEFAULT 'main_source';
+
+  -- Harvest history table for remembering queries per book
+  CREATE TABLE IF NOT EXISTS harvest_history (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    chapter_id TEXT,
+    query TEXT NOT NULL,
+    source_types TEXT DEFAULT '[]',
+    result_count INTEGER DEFAULT 0,
+    harvested_count INTEGER DEFAULT 0,
+    config_json TEXT,
+    created_at INTEGER NOT NULL,
+    user_id TEXT,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+    FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_harvest_history_book ON harvest_history(book_id);
+  CREATE INDEX IF NOT EXISTS idx_harvest_history_chapter ON harvest_history(chapter_id);
+  CREATE INDEX IF NOT EXISTS idx_harvest_history_created ON harvest_history(created_at DESC);
+
+  -- Book settings table for storing book-level preferences
+  CREATE TABLE IF NOT EXISTS book_settings (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL UNIQUE,
+    author_voice_card_ids TEXT DEFAULT '[]',
+    main_source_priority TEXT DEFAULT '[]',
+    reference_style TEXT,
+    target_audience TEXT,
+    tone TEXT,
+    settings_json TEXT,
+    updated_at INTEGER NOT NULL,
+    user_id TEXT,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_book_settings_book ON book_settings(book_id);
+
+  INSERT OR IGNORE INTO schema_version (version) VALUES (6);
+  `,
 ];
 
 /**
@@ -350,6 +396,17 @@ export interface DbChapter {
   updated_at: number;
 }
 
+// Card roles for outline/draft generation categorization
+export type CardRole =
+  | 'author_voice'   // Stylistic reference for tone/voice
+  | 'main_source'    // Primary content to synthesize (default)
+  | 'reference'      // Supporting material, citations
+  | 'epigraph'       // Quotes for chapter openings
+  | 'example'        // Illustrative stories/anecdotes
+  | 'evidence'       // Data, facts, statistics
+  | 'counterpoint'   // Opposing views to address
+  | 'background';    // Context/history
+
 export interface DbCard {
   id: string;
   book_id: string;
@@ -378,6 +435,7 @@ export interface DbCard {
   grade: string | null; // JSON object
   is_outline: number;
   outline_structure: string | null; // JSON object
+  role: CardRole; // Card role for outline/draft generation
   user_id: string | null;
   created_at: number;
   updated_at: number;
@@ -446,6 +504,32 @@ export interface DbResearchCache {
   card_hash: string;
   confidence: number | null;
   computed_at: number;
+  user_id: string | null;
+}
+
+export interface DbHarvestHistory {
+  id: string;
+  book_id: string;
+  chapter_id: string | null;
+  query: string;
+  source_types: string; // JSON array
+  result_count: number;
+  harvested_count: number;
+  config_json: string | null;
+  created_at: number;
+  user_id: string | null;
+}
+
+export interface DbBookSettings {
+  id: string;
+  book_id: string;
+  author_voice_card_ids: string; // JSON array of card IDs
+  main_source_priority: string; // JSON array of card IDs in priority order
+  reference_style: string | null;
+  target_audience: string | null;
+  tone: string | null;
+  settings_json: string | null; // Additional settings
+  updated_at: number;
   user_id: string | null;
 }
 

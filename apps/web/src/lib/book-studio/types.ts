@@ -251,6 +251,9 @@ export interface Book {
   chapters: Chapter[]
   stagingCards: HarvestCard[]
   targetWordCount?: number
+  // Computed counts from API (available in list view before full load)
+  cardCount?: number
+  chapterCount?: number
 }
 
 export function createEmptyBook(title: string): Book {

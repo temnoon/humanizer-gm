@@ -15,18 +15,23 @@ export function createBooksRouter(): Router {
   // Apply auth middleware to all routes
   router.use(requireAuth());
 
-  // GET /api/books - List all books for current user
+  // GET /api/books - List all books for current user with counts
   router.get('/', (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
       const db = getDatabase();
 
       // Filter by user_id, also include legacy books without user_id
+      // Include card and chapter counts via subqueries
       const books = db.prepare(`
-        SELECT * FROM books
-        WHERE user_id = ? OR user_id IS NULL
-        ORDER BY updated_at DESC
-      `).all(userId) as DbBook[];
+        SELECT
+          b.*,
+          (SELECT COUNT(*) FROM cards WHERE book_id = b.id) as cardCount,
+          (SELECT COUNT(*) FROM chapters WHERE book_id = b.id) as chapterCount
+        FROM books b
+        WHERE b.user_id = ? OR b.user_id IS NULL
+        ORDER BY b.updated_at DESC
+      `).all(userId) as (DbBook & { cardCount: number; chapterCount: number })[];
 
       res.json({ books });
     } catch (err) {

@@ -173,11 +173,11 @@ export function ProjectsView({ onSelectBook }: ProjectsViewProps) {
                     <h3 className="projects-view__card-title">{book.title}</h3>
                     <div className="projects-view__card-stats">
                       <span className="projects-view__stat">
-                        <span className="projects-view__stat-value">{book.stagingCards?.length || 0}</span>
+                        <span className="projects-view__stat-value">{book.cardCount ?? book.stagingCards?.length ?? 0}</span>
                         <span className="projects-view__stat-label">cards</span>
                       </span>
                       <span className="projects-view__stat">
-                        <span className="projects-view__stat-value">{book.chapters?.length || 0}</span>
+                        <span className="projects-view__stat-value">{book.chapterCount ?? book.chapters?.length ?? 0}</span>
                         <span className="projects-view__stat-label">chapters</span>
                       </span>
                     </div>
