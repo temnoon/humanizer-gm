@@ -288,15 +288,17 @@ function filterXmlTags(text: string, profile: VettingProfile): VettingResult {
   }
 
   // Remove each tag pair and contents
+  // Note: test() advances lastIndex on global regexes, so check via replace result
   for (const { open, close } of tagPairs) {
     const regex = new RegExp(
       `${escapeRegex(open)}[\\s\\S]*?${escapeRegex(close)}`,
       'gi'
     );
-    if (regex.test(content)) {
+    const before = content;
+    content = content.replace(regex, '');
+    if (content !== before) {
       hadThinkingTags = true;
     }
-    content = content.replace(regex, '');
   }
 
   content = content.trim();
@@ -485,6 +487,8 @@ function filterGeneric(text: string): VettingResult {
   let hadThinkingTags = false;
 
   // Remove common thinking tags
+  // Note: test() and replace() both advance lastIndex on global regexes,
+  // so we check for match existence via replace result comparison
   const thinkingPatterns = [
     /<think>[\s\S]*?<\/think>/gi,
     /<thinking>[\s\S]*?<\/thinking>/gi,
@@ -492,10 +496,11 @@ function filterGeneric(text: string): VettingResult {
   ];
 
   for (const pattern of thinkingPatterns) {
-    if (pattern.test(content)) {
+    const before = content;
+    content = content.replace(pattern, '');
+    if (content !== before) {
       hadThinkingTags = true;
     }
-    content = content.replace(pattern, '');
   }
 
   content = content.trim();
