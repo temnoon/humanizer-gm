@@ -282,7 +282,10 @@ export async function callOpenAI(
   messages: LLMMessage[],
   config: ProviderConfig
 ): Promise<ProviderResponse> {
-  const baseUrl = config.endpoint || 'https://api.openai.com';
+  // Normalize endpoint - handle both with and without /v1 suffix
+  let baseUrl = config.endpoint || 'https://api.openai.com';
+  // Remove trailing /v1 if present (we'll add the full path)
+  baseUrl = baseUrl.replace(/\/v1\/?$/, '');
   const apiKey = config.apiKey;
 
   if (!apiKey) {
@@ -321,7 +324,9 @@ export async function* streamOpenAI(
   messages: LLMMessage[],
   config: ProviderConfig
 ): AsyncGenerator<AIStreamChunk> {
-  const baseUrl = config.endpoint || 'https://api.openai.com';
+  // Normalize endpoint - handle both with and without /v1 suffix
+  let baseUrl = config.endpoint || 'https://api.openai.com';
+  baseUrl = baseUrl.replace(/\/v1\/?$/, '');
   const apiKey = config.apiKey;
 
   if (!apiKey) {
