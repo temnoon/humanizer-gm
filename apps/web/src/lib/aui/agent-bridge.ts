@@ -49,12 +49,27 @@ const ALLOWED_AUI_TOOLS = new Set([
   'humanize', 'detect_ai', 'translate', 'analyze_text', 'quantum_read',
   // Pyramid tools
   'build_pyramid', 'get_pyramid', 'search_pyramid',
-  // Draft tools
+  // Draft tools (legacy)
   'generate_first_draft',
   // Agent tools
   'list_agents', 'get_agent_status', 'list_pending_proposals', 'request_agent',
   // Workflow tools
   'discover_threads', 'start_book_workflow',
+  // Book Studio Card tools
+  'list_cards', 'harvest_card', 'update_card', 'move_card', 'batch_update_cards',
+  // Book Studio Harvest workflow tools
+  'search_for_harvest', 'commit_harvest', 'iterate_harvest',
+  'get_harvest_history', 'create_harvest_rule',
+  // Book Studio Draft tools
+  'generate_chapter_draft', 'save_draft', 'review_draft',
+  'accept_draft', 'compare_drafts',
+  // Book Studio Voice tools
+  'extract_voice', 'list_book_voices', 'apply_book_voice',
+  'set_primary_voice', 'get_voice_features',
+  // Book Studio Assignment tools
+  'auto_assign_cards', 'apply_assignments', 'get_assignment_stats',
+  // Book Studio Batch tools
+  'create_chapters_batch', 'harvest_cards_batch',
 ]);
 
 /**

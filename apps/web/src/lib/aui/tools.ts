@@ -332,6 +332,91 @@ export async function executeTool(
     case 'trace_arc':
       return executeTraceNarrativeArc(params, context);
 
+    // ─────────────────────────────────────────────────────────────────
+    // Book Studio API Tools (25 tools)
+    // ─────────────────────────────────────────────────────────────────
+
+    // Card tools (5)
+    case 'list_cards':
+      return executeListCards(params, context);
+
+    case 'harvest_card':
+      return executeHarvestCard(params, context);
+
+    case 'update_card':
+      return executeUpdateCard(params, context);
+
+    case 'move_card':
+      return executeMoveCard(params, context);
+
+    case 'batch_update_cards':
+      return executeBatchUpdateCards(params, context);
+
+    // Harvest workflow tools (5)
+    case 'search_for_harvest':
+      return executeSearchForHarvest(params, context);
+
+    case 'commit_harvest':
+      return executeCommitHarvest(params, context);
+
+    case 'iterate_harvest':
+      return executeIterateHarvest(params, context);
+
+    case 'get_harvest_history':
+      return executeGetHarvestHistory(params, context);
+
+    case 'create_harvest_rule':
+      return executeCreateHarvestRule(params, context);
+
+    // Draft tools (5)
+    case 'generate_chapter_draft':
+      return executeGenerateChapterDraft(params, context);
+
+    case 'save_draft':
+      return executeSaveDraft(params, context);
+
+    case 'review_draft':
+      return executeReviewDraft(params, context);
+
+    case 'accept_draft':
+      return executeAcceptDraft(params, context);
+
+    case 'compare_drafts':
+      return executeCompareDrafts(params, context);
+
+    // Voice tools (5)
+    case 'extract_voice':
+      return executeExtractVoice(params, context);
+
+    case 'list_book_voices':
+      return executeListBookVoices(params, context);
+
+    case 'apply_book_voice':
+      return executeApplyBookVoice(params, context);
+
+    case 'set_primary_voice':
+      return executeSetPrimaryVoice(params, context);
+
+    case 'get_voice_features':
+      return executeGetVoiceFeatures(params, context);
+
+    // Assignment tools (3)
+    case 'auto_assign_cards':
+      return executeAutoAssignCards(params, context);
+
+    case 'apply_assignments':
+      return executeApplyAssignments(params, context);
+
+    case 'get_assignment_stats':
+      return executeGetAssignmentStats(params, context);
+
+    // Batch tools (2)
+    case 'create_chapters_batch':
+      return executeCreateChaptersBatch(params, context);
+
+    case 'harvest_cards_batch':
+      return executeHarvestCardsBatch(params, context);
+
     default:
       return {
         success: false,
@@ -469,6 +554,39 @@ import {
   executeFindResonantMirrors,
   executeDetectNarrativeGaps,
 } from './tools/harvest-buckets';
+import {
+  // Card tools
+  executeListCards,
+  executeHarvestCard,
+  executeUpdateCard,
+  executeMoveCard,
+  executeBatchUpdateCards,
+  // Harvest workflow tools
+  executeSearchForHarvest,
+  executeCommitHarvest,
+  executeIterateHarvest,
+  executeGetHarvestHistory,
+  executeCreateHarvestRule,
+  // Draft tools
+  executeGenerateChapterDraft,
+  executeSaveDraft,
+  executeReviewDraft,
+  executeAcceptDraft,
+  executeCompareDrafts,
+  // Voice tools
+  executeExtractVoice,
+  executeListBookVoices,
+  executeApplyBookVoice,
+  executeSetPrimaryVoice,
+  executeGetVoiceFeatures,
+  // Assignment tools
+  executeAutoAssignCards,
+  executeApplyAssignments,
+  executeGetAssignmentStats,
+  // Batch tools
+  executeCreateChaptersBatch,
+  executeHarvestCardsBatch,
+} from './tools/book-studio';
 
 // ═══════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT → Moved to tools/system-prompt.ts

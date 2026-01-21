@@ -546,6 +546,189 @@ Found 3 gaps: Chapter 2 needs more content (only 2 passages), transition needed 
 
 ---
 
+## BOOK STUDIO API TOOLS
+
+These tools connect to the Book Studio API for persistent book creation and management.
+
+### Card Management Tools
+
+48. **list_cards** - List all cards in active book
+    \`USE_TOOL(list_cards, {"status": "staging"})\`
+    - Optional: status ("staging", "placed", "archived"), chapterId
+    - Returns: cards with counts by status
+
+49. **harvest_card** - Create a single card from content
+    \`USE_TOOL(harvest_card, {"content": "My passage text...", "title": "Opening thought", "tags": ["intro"]})\`
+    - Creates a card in staging status
+    - Optional: title, sourceType, tags
+
+50. **update_card** - Update card metadata
+    \`USE_TOOL(update_card, {"cardId": "card-123", "userNotes": "Good opening", "status": "reviewed"})\`
+    - Can update: userNotes, tags, status, grade
+
+51. **move_card** - Assign card to a chapter
+    \`USE_TOOL(move_card, {"cardId": "card-123", "chapterId": "ch-1"})\`
+    - Moves card from staging to the specified chapter
+
+52. **batch_update_cards** - Update multiple cards at once
+    \`USE_TOOL(batch_update_cards, {"cardIds": ["c-1", "c-2"], "chapterId": "ch-1", "status": "placed"})\`
+    - Efficiently update many cards together
+
+### Harvest Workflow Tools
+
+53. **search_for_harvest** - Search archive for content to harvest
+    \`USE_TOOL(search_for_harvest, {"query": "consciousness", "limit": 20})\`
+    - Returns: results with harvestId for committing
+    - Optional: similarityThreshold, sourceTypes, chapterId
+
+54. **commit_harvest** - Convert search results to cards
+    \`USE_TOOL(commit_harvest, {"harvestId": "h-123", "acceptedIds": ["r-1", "r-2", "r-3"]})\`
+    - Creates cards from accepted search results
+    - Optional: rejectedIds to track what was skipped
+
+55. **iterate_harvest** - Refine a previous search
+    \`USE_TOOL(iterate_harvest, {"harvestId": "h-123", "query": "embodied consciousness", "limit": 30})\`
+    - Adjusts parameters to find better results
+    - Optional: similarityThreshold, sourceTypes
+
+56. **get_harvest_history** - View past harvest sessions
+    \`USE_TOOL(get_harvest_history, {"page": 1, "limit": 10})\`
+    - Shows all harvests with result counts and status
+
+57. **create_harvest_rule** - Add include/exclude rules
+    \`USE_TOOL(create_harvest_rule, {"type": "include", "text": "phenomenology", "priority": 1})\`
+    - type: "include", "exclude", "prefer", "avoid"
+    - Rules guide what content to harvest
+
+### Draft Generation Tools
+
+58. **generate_chapter_draft** - Generate draft via LLM
+    \`USE_TOOL(generate_chapter_draft, {"chapterId": "ch-1", "voiceId": "voice-123"})\`
+    - Uses cards assigned to the chapter
+    - Optional: cardIds (override), model, temperature, prompt
+
+59. **save_draft** - Save a manual draft version
+    \`USE_TOOL(save_draft, {"chapterId": "ch-1", "content": "# Chapter content..."})\`
+    - Creates a new version for tracking changes
+
+60. **review_draft** - Set draft review status
+    \`USE_TOOL(review_draft, {"versionId": "v-123", "status": "approved", "notes": "Good flow"})\`
+    - status: "pending", "approved", "rejected", "needs_revision"
+
+61. **accept_draft** - Publish draft to chapter
+    \`USE_TOOL(accept_draft, {"versionId": "v-123"})\`
+    - Copies draft content to the official chapter
+
+62. **compare_drafts** - Diff two draft versions
+    \`USE_TOOL(compare_drafts, {"v1": "v-1", "v2": "v-2"})\`
+    - Returns: additions, deletions, word count diff
+
+### Voice Profile Tools
+
+63. **extract_voice** - Extract voice from card samples
+    \`USE_TOOL(extract_voice, {"cardIds": ["c-1", "c-2", "c-3"], "name": "My Voice"})\`
+    - Creates a voice profile from your writing
+    - Optional: description
+
+64. **list_book_voices** - List voices for active book
+    \`USE_TOOL(list_book_voices, {})\`
+    - Returns: all voice profiles with primary indicated
+
+65. **apply_book_voice** - Transform content with voice
+    \`USE_TOOL(apply_book_voice, {"voiceId": "v-123", "content": "Text to transform...", "strength": 0.8})\`
+    - Rewrites content to match voice style
+
+66. **set_primary_voice** - Set default voice for book
+    \`USE_TOOL(set_primary_voice, {"voiceId": "v-123"})\`
+    - Primary voice used when generating drafts
+
+67. **get_voice_features** - Get extracted voice features
+    \`USE_TOOL(get_voice_features, {"voiceId": "v-123"})\`
+    - Returns: sentence patterns, vocabulary level, tone descriptors
+
+### Assignment Tools
+
+68. **auto_assign_cards** - Get ML-based assignment proposals
+    \`USE_TOOL(auto_assign_cards, {})\`
+    - Suggests which chapter each unassigned card belongs to
+    - Returns: proposals with confidence scores
+
+69. **apply_assignments** - Apply selected proposals
+    \`USE_TOOL(apply_assignments, {"assignments": [{"cardId": "c-1", "chapterId": "ch-1"}]})\`
+    - Moves cards to their assigned chapters
+
+70. **get_assignment_stats** - Get organization progress
+    \`USE_TOOL(get_assignment_stats, {})\`
+    - Returns: card counts by status, cards per chapter
+
+### Batch Operations
+
+71. **create_chapters_batch** - Create multiple chapters
+    \`USE_TOOL(create_chapters_batch, {"titles": ["Origins", "Perception", "Memory"]})\`
+    - Quickly sets up book structure
+
+72. **harvest_cards_batch** - Create multiple cards at once
+    \`USE_TOOL(harvest_cards_batch, {"contents": [{"content": "Text 1", "title": "Card 1"}, {"content": "Text 2"}]})\`
+    - Efficiently imports multiple passages
+
+---
+
+## END-TO-END BOOK CREATION WORKFLOW
+
+Here's how to use these tools together to create a book:
+
+### Step 1: Create book and chapters
+\`\`\`
+"Create a book about consciousness"
+→ USE_TOOL(create_book, {"name": "Exploring Consciousness"})
+
+"Add chapters: Origins, Perception, Memory"
+→ USE_TOOL(create_chapters_batch, {"titles": ["Origins", "Perception", "Memory"]})
+\`\`\`
+
+### Step 2: Harvest content
+\`\`\`
+"Find content about phenomenology"
+→ USE_TOOL(search_for_harvest, {"query": "phenomenology", "limit": 20})
+→ Returns harvestId: "h-abc123"
+
+"Accept results 1-10"
+→ USE_TOOL(commit_harvest, {"harvestId": "h-abc123", "acceptedIds": ["r-1", "r-2", ...]})
+\`\`\`
+
+### Step 3: Organize cards
+\`\`\`
+"Show me my cards"
+→ USE_TOOL(list_cards, {})
+
+"Assign cards to chapters"
+→ USE_TOOL(auto_assign_cards, {})
+→ Returns proposals
+
+"Apply the assignments"
+→ USE_TOOL(apply_assignments, {"assignments": [...]})
+\`\`\`
+
+### Step 4: Extract voice
+\`\`\`
+"Extract my voice from these cards"
+→ USE_TOOL(extract_voice, {"cardIds": ["c-1", "c-2", "c-3"], "name": "My Voice"})
+
+"Set it as primary"
+→ USE_TOOL(set_primary_voice, {"voiceId": "v-123"})
+\`\`\`
+
+### Step 5: Generate drafts
+\`\`\`
+"Generate draft for chapter 1"
+→ USE_TOOL(generate_chapter_draft, {"chapterId": "ch-1"})
+
+"Accept this draft"
+→ USE_TOOL(accept_draft, {"versionId": "v-123"})
+\`\`\`
+
+---
+
 ### Important:
 - These tools REALLY work - they modify your book and search your archives
 - Each chapter update creates a new version (v1, v2, v3...)
@@ -555,4 +738,5 @@ Found 3 gaps: Chapter 2 needs more content (only 2 passages), transition needed 
 - Extract tools require Pro+ tier subscription
 - Personal personas and styles are saved per-user
 - Agent tools work best in guided mode (approve each action)
+- Book Studio tools persist data to SQLite via the API server (port 3004)
 `;

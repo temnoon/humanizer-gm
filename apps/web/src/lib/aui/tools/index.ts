@@ -87,3 +87,38 @@ export {
   executeFindResonantMirrors,
   executeDetectNarrativeGaps,
 } from './harvest-buckets';
+
+// Re-export Book Studio API tools (25 tools)
+export {
+  // Card tools
+  executeListCards,
+  executeHarvestCard,
+  executeUpdateCard,
+  executeMoveCard,
+  executeBatchUpdateCards,
+  // Harvest workflow tools
+  executeSearchForHarvest,
+  executeCommitHarvest,
+  executeIterateHarvest,
+  executeGetHarvestHistory,
+  executeCreateHarvestRule,
+  // Draft tools
+  executeGenerateChapterDraft,
+  executeSaveDraft,
+  executeReviewDraft,
+  executeAcceptDraft,
+  executeCompareDrafts,
+  // Voice tools
+  executeExtractVoice,
+  executeListBookVoices,
+  executeApplyBookVoice,
+  executeSetPrimaryVoice,
+  executeGetVoiceFeatures,
+  // Assignment tools
+  executeAutoAssignCards,
+  executeApplyAssignments,
+  executeGetAssignmentStats,
+  // Batch tools
+  executeCreateChaptersBatch,
+  executeHarvestCardsBatch,
+} from './book-studio';
