@@ -19,6 +19,12 @@ import os from 'os';
 // Types
 // ============================================================================
 
+export interface DeduplicationConfig {
+  method: 'prefix' | 'jaccard' | 'both';
+  jaccardThreshold: number;
+  prefixLength: number;
+}
+
 export interface HarvestConfig {
   defaultTarget: number;
   searchLimit: number;
@@ -26,6 +32,11 @@ export interface HarvestConfig {
   expandBreadcrumbs: boolean;
   contextSize: number;
   prioritizeConversations: boolean;
+  minGrade: number;
+  lengthBonusMax: number;
+  lengthBonusDivisor: number;
+  useHybridSearch: boolean;
+  deduplication: DeduplicationConfig;
 }
 
 export interface CacheConfig {
@@ -105,6 +116,15 @@ const DEFAULT_CONFIG: ArchiveServerConfig = {
     expandBreadcrumbs: true,
     contextSize: 3, // More context for breadcrumbs
     prioritizeConversations: true,
+    minGrade: 2.5, // Minimum grade threshold (was hardcoded to 3)
+    lengthBonusMax: 0.3, // Maximum length bonus (was 0.2)
+    lengthBonusDivisor: 400, // Full bonus at this many words (was 5000 chars)
+    useHybridSearch: true, // Enable hybrid dense+sparse search
+    deduplication: {
+      method: 'both', // 'prefix' | 'jaccard' | 'both'
+      jaccardThreshold: 0.5, // For Jaccard similarity dedup
+      prefixLength: 200, // Characters for prefix-based dedup
+    },
   },
   cache: {
     healthTtlMs: 60000, // 1 minute

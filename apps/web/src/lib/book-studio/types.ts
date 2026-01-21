@@ -331,7 +331,7 @@ export function jaccardSimilarity(text1: string, text2: string): number {
 export function findDuplicateCard(
   content: string,
   existingCards: HarvestCard[],
-  similarityThreshold: number = 0.85
+  similarityThreshold: number = 0.5 // Lowered from 0.85 - allows more similar cards
 ): HarvestCard | null {
   if (existingCards.length === 0) return null
 
@@ -361,7 +361,7 @@ export function findDuplicateCard(
 export function deduplicateSearchResults(
   results: import('../archive-reader').SearchResult[],
   existingCards: HarvestCard[],
-  similarityThreshold: number = 0.85
+  similarityThreshold: number = 0.5 // Lowered from 0.85 - allows more similar cards
 ): { unique: import('../archive-reader').SearchResult[]; duplicateCount: number } {
   const seen = new Set<string>()
   const unique: import('../archive-reader').SearchResult[] = []

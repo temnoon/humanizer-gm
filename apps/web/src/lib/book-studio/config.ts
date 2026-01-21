@@ -190,7 +190,7 @@ export function getConfig(): BookStudioConfig {
   const schemaDefaults: BookStudioConfig = {
     search: {
       defaultLimit: 20,
-      similarityThreshold: 0.85,
+      similarityThreshold: 0.5, // Lowered from 0.85 - start conservative, tune up if too many dupes
       debounceMs: 300,
     },
     metadata: {
