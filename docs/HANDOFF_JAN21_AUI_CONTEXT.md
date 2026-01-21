@@ -358,8 +358,61 @@ b6c4709 refactor(aui): remove hardcoded models, use AI Control router with cloud
 
 ---
 
+## Implementation Progress
+
+### Phase 1: Complete ✅
+
+**Implemented January 21, 2026 (Session 2)**
+
+Changes made to `apps/web/src/lib/aui/AUIContext.tsx`:
+
+1. **Imported BookStudio context** (line 32):
+   ```typescript
+   import { useBookStudioOptional } from '../book-studio';
+   ```
+
+2. **Added BookStudio to AUIProvider** (line 392):
+   ```typescript
+   const bookStudio = useBookStudioOptional();
+   ```
+
+3. **Enhanced buildWorkspaceContext** (lines 167-310):
+   - Now accepts `bookStudio: BookStudioContextValue | null` parameter
+   - Includes full book inventory with card/chapter counts
+   - Shows active book details (chapters, cards, voices)
+   - Shows agent states (harvest, outline, draft in progress)
+   - Formats context as markdown with headers
+
+4. **Updated system prompt** (lines 312-344):
+   - Imported comprehensive `AUI_BOOK_SYSTEM_PROMPT` with all 72 tools
+   - Added intro explaining workspace state awareness
+   - Added vocabulary mapping guidance
+   - Combined into `AUI_SYSTEM_PROMPT`
+
+5. **Updated sendMessage callback** (line 672):
+   - Passes `bookStudio` to `buildWorkspaceContext()`
+   - Added to dependency array
+
+### Testing
+
+Test these queries to verify the implementation works:
+
+1. "What books do I have?" → Should list all books from context
+2. "What's in this book?" → Should describe active book
+3. "Show me the cards" → Should use list_cards tool OR answer from context
+4. "How many staging cards?" → Should answer directly from context
+5. "Generate a draft" → Should use generate_chapter_draft with chapter context
+
+### Remaining Phases
+
+- **Phase 2**: Tool documentation - Already complete (using AUI_BOOK_SYSTEM_PROMPT)
+- **Phase 3**: Vocabulary mapping - Basic version in system prompt intro
+- **Phase 4**: GUI State Hook - Not needed; using BookStudioOptional directly
+- **Phase 5**: Smart dispatch - Future enhancement
+
 ## Next Steps
 
-1. Start with Phase 1 (buildWorkspaceContext enhancement)
-2. Test with "What books do I have?"
-3. Proceed through phases as needed
+1. Test the implementation in the running app
+2. If the context is too long, consider summarizing
+3. Add more vocabulary mappings as user patterns emerge
+4. Consider Phase 5 (smart dispatch) for intent-based tool suggestions

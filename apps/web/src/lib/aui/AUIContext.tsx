@@ -26,9 +26,10 @@ import {
 
 import { auiAnimator, teachingToAnimation, type AnimatorState } from './animator';
 import { loadAUISettings, saveAUISettings, type AUISettings } from './settings';
-import { executeAllTools, cleanToolsFromResponse, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
+import { executeAllTools, cleanToolsFromResponse, AUI_BOOK_SYSTEM_PROMPT, type AUIContext as AUIToolContext, type AUIToolResult } from './tools';
 import { useLayout } from '../../components/layout/LayoutContext';
 import { useBookshelf } from '../bookshelf';
+import { useBookStudioOptional } from '../book-studio';
 import { getArchiveServerUrl } from '../platform';
 import {
   getAgentBridge,
@@ -152,15 +153,104 @@ interface ElectronChatAPI {
 // WORKSPACE CONTEXT BUILDER
 // ═══════════════════════════════════════════════════════════════════
 
+import type { BookStudioContextValue } from '../book-studio/BookStudioProvider';
+
 /**
  * Build a context string from current workspace state
  * This is passed to the LLM so it knows what the user is looking at
+ *
+ * Includes:
+ * - Book Studio state (all books, active book, chapters, cards, voices)
+ * - Current workspace selection
+ * - View mode
  */
 function buildWorkspaceContext(
   workspace: AUIToolContext['workspace'] | undefined,
-  book: { activeProject: { id: string } | null } | null
+  book: { activeProject: { id: string } | null } | null,
+  bookStudio: BookStudioContextValue | null
 ): string {
   const parts: string[] = [];
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 1. BOOK STUDIO STATE (Primary context for book-building)
+  // ═══════════════════════════════════════════════════════════════════
+
+  if (bookStudio) {
+    const { books, activeBook, activeBookId, voice } = bookStudio;
+
+    // List all books
+    if (books.length > 0) {
+      parts.push(`## Your Books (${books.length} total)`);
+      books.forEach((b, i) => {
+        const isActive = b.id === activeBookId;
+        const marker = isActive ? ' [ACTIVE]' : '';
+        const cardCount = b.cardCount ?? b.stagingCards?.length ?? 0;
+        const chapterCount = b.chapterCount ?? b.chapters?.length ?? 0;
+        parts.push(`${i + 1}. "${b.title}"${marker} - ${cardCount} cards, ${chapterCount} chapters`);
+      });
+      parts.push('');
+    } else {
+      parts.push('## Your Books: No books yet. Use create_book to start.\n');
+    }
+
+    // Active book details
+    if (activeBook) {
+      parts.push(`## Active Book: "${activeBook.title}"`);
+      if (activeBook.description) {
+        parts.push(`Description: ${activeBook.description}`);
+      }
+
+      // Chapters with details
+      if (activeBook.chapters.length > 0) {
+        parts.push(`\n### Chapters (${activeBook.chapters.length}):`);
+        activeBook.chapters.forEach((ch, i) => {
+          const cardCount = ch.cards?.length || 0;
+          const wordStr = ch.wordCount > 0 ? `${ch.wordCount} words` : 'empty';
+          parts.push(`  ${i + 1}. "${ch.title}" (${wordStr}, ${cardCount} cards)`);
+        });
+      } else {
+        parts.push('\n### Chapters: None yet. User can create with create_chapter or generate_outline.');
+      }
+
+      // Staging cards summary
+      const stagingCards = activeBook.stagingCards || [];
+      const stagingCount = stagingCards.filter(c => c.status === 'staging').length;
+      const placedCount = stagingCards.filter(c => c.status === 'placed').length;
+
+      parts.push(`\n### Cards:`);
+      parts.push(`  - Staging (unassigned): ${stagingCount}`);
+      parts.push(`  - Placed in chapters: ${placedCount}`);
+      parts.push(`  - Total: ${stagingCards.length}`);
+
+      // Voice profiles
+      const voices = voice?.state?.voices || [];
+      if (voices.length > 0) {
+        parts.push(`\n### Voice Profiles:`);
+        voices.forEach(v => {
+          const primary = v.isPrimary ? ' [PRIMARY]' : '';
+          parts.push(`  - "${v.name}"${primary}`);
+        });
+      }
+
+      // Agent states
+      const { harvest, outline, draft } = bookStudio;
+      if (harvest.state.isRunning) {
+        parts.push(`\n### Agents: Harvest in progress...`);
+      }
+      if (outline.state.isGenerating || outline.state.isResearching) {
+        parts.push(`\n### Agents: Outline generation in progress...`);
+      }
+      if (draft.state.isGenerating) {
+        parts.push(`\n### Agents: Draft generation for "${draft.state.progress?.chapterTitle || 'chapter'}"...`);
+      }
+
+      parts.push('');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 2. CURRENT WORKSPACE SELECTION
+  // ═══════════════════════════════════════════════════════════════════
 
   // Currently selected container (unified content model)
   if (workspace?.selectedContainer) {
@@ -168,100 +258,90 @@ function buildWorkspaceContext(
     const title = container.meta?.title || container.id;
     const contentPreview = container.content?.raw?.slice(0, 300) || '';
 
-    parts.push(`Selected ${container.type}: "${title}"`);
+    parts.push(`## Current Selection`);
+    parts.push(`Type: ${container.type}`);
+    parts.push(`Title: "${title}"`);
 
     // Add source info
     if (container.source?.type) {
-      parts.push(`  Source: ${container.source.type}${container.source.originalId ? ` (${container.source.originalId})` : ''}`);
+      parts.push(`Source: ${container.source.type}${container.source.originalId ? ` (${container.source.originalId})` : ''}`);
     }
 
     // Add content preview
     if (contentPreview) {
-      parts.push(`  Preview: "${contentPreview}${container.content?.raw && container.content.raw.length > 300 ? '...' : ''}"`);
+      parts.push(`Preview: "${contentPreview}${container.content?.raw && container.content.raw.length > 300 ? '...' : ''}"`);
     }
 
     // Add metadata
     if (container.meta?.tags?.length) {
-      parts.push(`  Tags: ${container.meta.tags.join(', ')}`);
+      parts.push(`Tags: ${container.meta.tags.join(', ')}`);
     }
+    parts.push('');
   }
 
   // Active buffer content (if different from container)
   if (workspace?.bufferContent && !workspace?.selectedContainer) {
     const preview = workspace.bufferContent.slice(0, 500);
-    parts.push(`Buffer "${workspace.bufferName || 'untitled'}" (${workspace.bufferContent.length} chars): "${preview}${workspace.bufferContent.length > 500 ? '...' : ''}"`);
+    parts.push(`## Current Buffer`);
+    parts.push(`Name: "${workspace.bufferName || 'untitled'}"`);
+    parts.push(`Length: ${workspace.bufferContent.length} chars`);
+    parts.push(`Preview: "${preview}${workspace.bufferContent.length > 500 ? '...' : ''}"`);
+    parts.push('');
   }
 
   // Current view mode
   if (workspace?.viewMode) {
-    parts.push(`View mode: ${workspace.viewMode}`);
+    parts.push(`## View Mode: ${workspace.viewMode}`);
   }
 
   // Legacy: Selected Facebook content (fallback if no container)
   if (workspace?.selectedContent && !workspace?.selectedContainer) {
+    parts.push(`## Legacy Selection`);
     parts.push(`Viewing: ${workspace.selectedContent.type} from ${workspace.selectedContent.source || 'unknown'}`);
   }
 
-  // Active book info
-  if (book?.activeProject) {
+  // Active book info (legacy from bookshelf)
+  if (book?.activeProject && !bookStudio?.activeBook) {
     const project = book.activeProject;
-    parts.push(`Active book: ${project.id}`);
+    parts.push(`## Legacy Book: ${project.id}`);
   }
 
-  return parts.length > 0 ? parts.join('\n') : '';
+  return parts.length > 0 ? parts.join('\n') : 'No workspace context available.';
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CONSTANTS
+// SYSTEM PROMPT
 // ═══════════════════════════════════════════════════════════════════
 
-const AUI_SYSTEM_PROMPT = `You are AUI (Agentic User Interface), an assistant integrated into the Humanizer Studio.
+// Build full system prompt with intro and context-awareness instructions
+const AUI_SYSTEM_PROMPT_INTRO = `You are AUI (Agentic User Interface), an assistant integrated into the Humanizer Studio.
 
-IMPORTANT: When the user requests an action, you MUST use USE_TOOL to execute it. Do NOT describe what you would do - actually do it.
+## CRITICAL: You Know the Workspace State
 
-AVAILABLE TOOLS:
+Your context includes the current state of the user's workspace:
+- All books they have (with card counts, chapter counts)
+- The active book (with detailed chapter list, card status, voice profiles)
+- What content is currently selected or displayed
+- What view mode they're using
 
-ARCHIVE & SEARCH:
-- search_archive({"query": "text", "limit": 10}) - Search all conversations
-- search_facebook({"query": "text", "type": "posts|comments|messages"}) - Search Facebook content
-- list_conversations({"limit": 20}) - List recent conversations
-- harvest_archive({"queries": ["query1", "query2"], "threadName": "name"}) - Collect passages by query
+**ALWAYS use this context to answer questions about the GUI state.** When the user asks "What books do I have?" or "How many cards are in staging?" - you KNOW this from the context above.
 
-BOOK & CHAPTERS:
-- create_chapter({"title": "Chapter Title"}) - Create a new chapter
-- update_chapter({"chapterId": "id", "content": "markdown"}) - Update chapter content
-- list_chapters({}) - List all chapters in active book
-- get_chapter({"chapterId": "id"}) - Get chapter content
-- add_passage({"content": "text", "conversationTitle": "source"}) - Add passage to book
-- generate_first_draft({"chapterId": "id", "arc": "description"}) - Generate chapter draft
+## IMPORTANT RULES
 
-TEXT TOOLS:
-- detect_ai({"text": "content"}) - Check if text is AI-generated
-- humanize({"text": "content"}) - Transform to sound more human
-- analyze_text({"text": "content"}) - Sentence-level analysis
-- apply_persona({"text": "content", "personaId": "id"}) - Apply writing persona
-- apply_style({"text": "content", "styleId": "id"}) - Apply writing style
+1. **When asked about GUI state, answer directly from context** - don't use tools to "look up" what you already know.
+2. **When asked to take actions, use USE_TOOL** to execute them. Don't describe what you would do - actually do it.
+3. **Be concise.** Don't explain what you're about to do unless the user asked for explanation.
+4. **Use natural vocabulary mapping:**
+   - "this book" / "my book" / "the current book" → the active book
+   - "this chapter" / "the current chapter" → depends on context
+   - "staging cards" / "unassigned cards" → cards with status "staging"
+   - "add this to the book" → harvest_card
+   - "move to chapter X" → move_card
 
-PERSONAS & STYLES:
-- list_personas({}) - List available personas
-- list_styles({}) - List available styles
-- extract_persona({"text": "sample"}) - Extract persona from text
-- extract_style({"text": "sample"}) - Extract style from text
+`;
 
-WORKSPACE:
-- get_workspace({}) - Get current buffer content and state
-
-EXAMPLES:
-User: "Search for conversations about phenomenology"
-You: USE_TOOL(search_archive, {"query": "phenomenology", "limit": 10})
-
-User: "Analyze this text for AI"
-You: USE_TOOL(detect_ai, {"text": "[current buffer content]"})
-
-User: "Create a chapter called Introduction"
-You: USE_TOOL(create_chapter, {"title": "Introduction"})
-
-Be concise. Execute tools directly. Don't explain what you're going to do - just do it.`;
+// Full system prompt combines intro + comprehensive tool documentation
+const AUI_SYSTEM_PROMPT = AUI_SYSTEM_PROMPT_INTRO + AUI_BOOK_SYSTEM_PROMPT;
 
 // ═══════════════════════════════════════════════════════════════════
 // CONTEXT
@@ -291,6 +371,7 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
   // Dependencies
   const layout = useLayout();
   const bookshelf = useBookshelf();
+  const bookStudio = useBookStudioOptional(); // Book Studio context for enhanced GUI awareness
 
   // Build book interface from bookshelf's simple methods
   // IMPORTANT: Memoize to prevent infinite re-renders in useEffect dependencies
@@ -569,8 +650,8 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
         let modelUsed: string | undefined;
         let providerUsed: string | undefined;
 
-        // Build workspace context for the LLM
-        const workspaceContext = buildWorkspaceContext(workspaceState, book);
+        // Build workspace context for the LLM (includes book studio state)
+        const workspaceContext = buildWorkspaceContext(workspaceState, book, bookStudio);
 
         // Use Electron chat service if available (routes through AgentMaster)
         // This provides tiered prompts based on device RAM and automatic output vetting
@@ -741,7 +822,7 @@ export function AUIProvider({ children, workspace: initialWorkspace }: AUIProvid
         abortControllerRef.current = null;
       }
     },
-    [conversation.messages, isLoading, book, workspaceState, settings.animation.enabled]
+    [conversation.messages, isLoading, book, bookStudio, workspaceState, settings.animation.enabled]
   );
 
   // Clear conversation
