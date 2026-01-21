@@ -30,7 +30,9 @@ export function registerChatHandlers(config: {
     dbPath: chatDbPath,
     llm: {
       provider: 'ollama',
-      model: (store.get('ollamaModel') as string) || 'qwen3:14b',
+      // 'auto' lets the AI Control router select the best available model
+      // Model preferences are set via Settings > AI Models
+      model: 'auto',
       baseUrl: 'http://localhost:11434',
     },
     archiveUrl: archiveServerPort ? `http://localhost:${archiveServerPort}` : undefined,

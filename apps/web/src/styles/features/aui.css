@@ -521,6 +521,42 @@
   40% { transform: scale(1.2); opacity: 1; }
 }
 
+/* Cloud LLM Warning - Indicates data was sent to cloud API */
+.aui-chat-tab__message--cloud {
+  position: relative;
+}
+
+.aui-chat-tab__cloud-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: var(--space-xs);
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  color: var(--studio-warning-text, #92400e);
+  background: var(--studio-warning-bg, #fef3c7);
+  border: 1px solid var(--studio-warning-border, #f59e0b);
+  border-radius: var(--radius-small);
+  cursor: help;
+}
+
+.aui-chat-tab__cloud-icon {
+  font-size: 0.8rem;
+}
+
+.aui-chat-tab__cloud-text {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Dark theme adjustments for cloud warning */
+[data-theme='dark'] .aui-chat-tab__cloud-warning {
+  color: var(--studio-warning-text, #fcd34d);
+  background: var(--studio-warning-bg, rgba(245, 158, 11, 0.15));
+  border-color: var(--studio-warning-border, rgba(245, 158, 11, 0.4));
+}
+
 /* Tool results */
 .aui-chat-tab__tool-results {
   display: flex;

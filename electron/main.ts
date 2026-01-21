@@ -70,7 +70,8 @@ const store = new Store({
     ollamaEnabled: false,
     whisperEnabled: true,
     whisperModel: 'ggml-base.en.bin',
-    ollamaModel: 'qwen3:14b',  // Larger model for better tool-following
+    // Model selection is handled by AI Control router - no hardcoded models
+    // User preferences are set via Settings > AI Models
     firstRunComplete: false,
   },
 });

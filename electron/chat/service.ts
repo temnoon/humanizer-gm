@@ -475,10 +475,16 @@ export class ChatService {
       forceModel: this.config.llm.model !== 'auto' ? this.config.llm.model : undefined,
     });
 
+    // Determine if this was a cloud provider call
+    const cloudProviders = ['anthropic', 'openai', 'cloudflare', 'google', 'cohere', 'mistral', 'groq', 'together', 'deepseek'];
+    const isCloud = cloudProviders.includes(result.providerUsed);
+
     // Convert AgentMaster response to LLMResponse format
     return {
       content: result.output,
       model: result.modelUsed,
+      provider: result.providerUsed,
+      isCloud,
       usage: {
         promptTokens: result.inputTokens,
         completionTokens: result.outputTokens,

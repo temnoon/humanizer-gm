@@ -186,8 +186,15 @@ export function AUIChatTab() {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`aui-chat-tab__message aui-chat-tab__message--${msg.role}`}
+            className={`aui-chat-tab__message aui-chat-tab__message--${msg.role}${msg.isCloud ? ' aui-chat-tab__message--cloud' : ''}`}
           >
+            {/* Cloud LLM Warning */}
+            {msg.isCloud && msg.role === 'assistant' && (
+              <div className="aui-chat-tab__cloud-warning" title={`Sent via ${msg.provider || 'cloud'} (${msg.model || 'unknown model'})`}>
+                <span className="aui-chat-tab__cloud-icon">☁</span>
+                <span className="aui-chat-tab__cloud-text">Cloud LLM</span>
+              </div>
+            )}
             {msg.role === 'tool' ? (
               <div className="aui-chat-tab__tool-results">
                 {msg.toolResults?.map((result, i) => (

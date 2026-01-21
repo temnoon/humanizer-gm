@@ -80,6 +80,10 @@ export interface LLMMessage {
 export interface LLMResponse {
   content: string;
   model: string;
+  /** Provider that handled the request */
+  provider?: string;
+  /** Whether the request was sent to a cloud API (true) or local model (false) */
+  isCloud?: boolean;
   usage?: {
     promptTokens: number;
     completionTokens: number;
