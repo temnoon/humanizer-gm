@@ -7,6 +7,7 @@
 
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { getAuthContext } from './auth';
+import { configService } from '../services/ConfigService';
 
 interface RateLimitEntry {
   count: number;
@@ -98,40 +99,99 @@ export function createRateLimit(config: RateLimitConfig): RequestHandler {
 }
 
 // Pre-configured rate limiters for common use cases
+// Uses lazy initialization to allow ConfigService to be initialized first
+
+let _globalRateLimit: RequestHandler | null = null;
+let _searchRateLimit: RequestHandler | null = null;
+let _importRateLimit: RequestHandler | null = null;
+let _authFailureRateLimit: RequestHandler | null = null;
+
+/**
+ * Get rate limit config, with fallbacks if not initialized
+ */
+function getRateLimitConfig() {
+  try {
+    return configService.getSection('rateLimit');
+  } catch {
+    // Fallback defaults if config not initialized
+    return {
+      searchMaxRequests: 120,
+      searchWindowMs: 60000,
+      importMaxRequests: 10,
+      importWindowMs: 300000,
+    };
+  }
+}
 
 /**
  * Global rate limiter - 1000 requests per 15 minutes
  */
-export const globalRateLimit = createRateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 minutes
-  maxRequests: 1000,
-});
+export function getGlobalRateLimit(): RequestHandler {
+  if (!_globalRateLimit) {
+    _globalRateLimit = createRateLimit({
+      windowMs: 15 * 60 * 1000,  // 15 minutes
+      maxRequests: 1000,
+    });
+  }
+  return _globalRateLimit;
+}
+export const globalRateLimit: RequestHandler = (req, res, next) => getGlobalRateLimit()(req, res, next);
 
 /**
- * Search rate limiter - 120 requests per minute
+ * Search rate limiter - uses config values
  * (increased for local Electron app with React StrictMode double-invocations)
  */
-export const searchRateLimit = createRateLimit({
-  windowMs: 60 * 1000,  // 1 minute
-  maxRequests: 120,
-});
+export function getSearchRateLimit(): RequestHandler {
+  if (!_searchRateLimit) {
+    const config = getRateLimitConfig();
+    _searchRateLimit = createRateLimit({
+      windowMs: config.searchWindowMs,
+      maxRequests: config.searchMaxRequests,
+    });
+  }
+  return _searchRateLimit;
+}
+export const searchRateLimit: RequestHandler = (req, res, next) => getSearchRateLimit()(req, res, next);
 
 /**
- * Import rate limiter - 10 imports per minute
+ * Import rate limiter - uses config values
  * (imports are very expensive operations)
  */
-export const importRateLimit = createRateLimit({
-  windowMs: 60 * 1000,  // 1 minute
-  maxRequests: 10,
-});
+export function getImportRateLimit(): RequestHandler {
+  if (!_importRateLimit) {
+    const config = getRateLimitConfig();
+    _importRateLimit = createRateLimit({
+      windowMs: config.importWindowMs,
+      maxRequests: config.importMaxRequests,
+    });
+  }
+  return _importRateLimit;
+}
+export const importRateLimit: RequestHandler = (req, res, next) => getImportRateLimit()(req, res, next);
 
 /**
  * Auth failure rate limiter - 5 attempts per minute
  * (protects against brute force attacks)
  */
-export const authFailureRateLimit = createRateLimit({
-  windowMs: 60 * 1000,  // 1 minute
-  maxRequests: 5,
-  keyGenerator: (req) => `auth:${req.ip || 'unknown'}`,
-  skipOnDev: false,  // Always enforce for auth failures
-});
+export function getAuthFailureRateLimit(): RequestHandler {
+  if (!_authFailureRateLimit) {
+    _authFailureRateLimit = createRateLimit({
+      windowMs: 60 * 1000,  // 1 minute
+      maxRequests: 5,
+      keyGenerator: (req) => `auth:${req.ip || 'unknown'}`,
+      skipOnDev: false,  // Always enforce for auth failures
+    });
+  }
+  return _authFailureRateLimit;
+}
+export const authFailureRateLimit: RequestHandler = (req, res, next) => getAuthFailureRateLimit()(req, res, next);
+
+/**
+ * Reset all cached rate limiters (useful when config changes)
+ */
+export function resetRateLimiters(): void {
+  _globalRateLimit = null;
+  _searchRateLimit = null;
+  _importRateLimit = null;
+  _authFailureRateLimit = null;
+}

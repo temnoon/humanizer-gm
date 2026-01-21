@@ -52,6 +52,10 @@ export interface BookStudioApiActions {
   updateCard: (cardId: string, updates: Partial<HarvestCard>) => Promise<void>
   moveCardToChapter: (cardId: string, chapterId: string) => Promise<void>
   deleteCard: (cardId: string) => Promise<void>
+  batchUpdateCards: (
+    cardIds: string[],
+    updates: Partial<Pick<HarvestCard, 'suggestedChapterId' | 'status' | 'grade' | 'tags'>>
+  ) => Promise<{ updatedCount: number; cards: HarvestCard[] }>
 }
 
 export interface UseBookStudioApiResult extends BookStudioApiState {
@@ -398,6 +402,28 @@ export function useBookStudioApi(): UseBookStudioApiResult {
     })
   }, [])
 
+  const batchUpdateCards = useCallback(async (
+    cardIds: string[],
+    updates: Partial<Pick<HarvestCard, 'suggestedChapterId' | 'status' | 'grade' | 'tags'>>
+  ) => {
+    const result = await apiClient.batchUpdateCards(cardIds, updates)
+
+    // Update local state
+    setActiveBook(prev => {
+      if (!prev) return null
+      const updatedCardMap = new Map(result.cards.map(c => [c.id, c]))
+
+      return {
+        ...prev,
+        stagingCards: prev.stagingCards.map(card =>
+          updatedCardMap.has(card.id) ? updatedCardMap.get(card.id)! : card
+        ),
+      }
+    })
+
+    return result
+  }, [])
+
   // --------------------------------------------------------------------------
   // Return
   // --------------------------------------------------------------------------
@@ -425,6 +451,7 @@ export function useBookStudioApi(): UseBookStudioApiResult {
       updateCard,
       moveCardToChapter,
       deleteCard,
+      batchUpdateCards,
     },
   }
 }

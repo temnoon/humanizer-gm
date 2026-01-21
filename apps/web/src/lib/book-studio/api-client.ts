@@ -459,6 +459,23 @@ class BookStudioApiClient {
   async deleteCard(cardId: string): Promise<void> {
     await this.fetch(`/cards/${cardId}`, { method: 'DELETE' })
   }
+
+  /**
+   * Batch update multiple cards at once
+   */
+  async batchUpdateCards(
+    cardIds: string[],
+    updates: Partial<Pick<HarvestCard, 'suggestedChapterId' | 'status' | 'grade' | 'tags'>>
+  ): Promise<{ updatedCount: number; cards: HarvestCard[] }> {
+    const response = await this.fetch<{ updatedCount: number; cards: ApiCard[] }>('/cards/batch-update', {
+      method: 'POST',
+      body: JSON.stringify({ cardIds, updates }),
+    })
+    return {
+      updatedCount: response.updatedCount,
+      cards: response.cards.map(apiCardToHarvestCard),
+    }
+  }
 }
 
 // ============================================================================

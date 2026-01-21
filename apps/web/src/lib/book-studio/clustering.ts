@@ -7,10 +7,16 @@
  * 2. Find all similar cards above threshold
  * 3. Form a cluster
  * 4. Repeat until all cards clustered
+ *
+ * NOTE: As of Jan 2026, business logic has moved to server-side.
+ * Use clusterCardsViaApi when bookId is available.
+ * Local clusterCardsSemantically is kept as fallback.
  */
 
 import { unifiedSearch } from '../archive-reader'
+import { getConfig } from './config'
 import type { HarvestCard } from './types'
+import { computeClusters as apiComputeClusters, type ClusteringResult } from './clustering-api'
 
 export interface SemanticCluster {
   id: string
@@ -27,10 +33,16 @@ export interface ClusteringConfig {
   maxClusters: number // Maximum clusters to create, default 10
 }
 
-const DEFAULT_CONFIG: ClusteringConfig = {
-  similarityThreshold: 0.55,
-  minClusterSize: 2,
-  maxClusters: 10,
+/**
+ * Get clustering config from centralized config system
+ */
+function getClusteringConfig(): ClusteringConfig {
+  const config = getConfig()
+  return {
+    similarityThreshold: config.clustering.similarityThreshold,
+    minClusterSize: config.clustering.minClusterSize,
+    maxClusters: config.clustering.maxClusters,
+  }
 }
 
 /**
@@ -41,7 +53,8 @@ export async function clusterCardsSemantically(
   config: Partial<ClusteringConfig> = {},
   onProgress?: (progress: { phase: string; current: number; total: number }) => void
 ): Promise<SemanticCluster[]> {
-  const cfg = { ...DEFAULT_CONFIG, ...config }
+  const defaults = getClusteringConfig()
+  const cfg = { ...defaults, ...config }
   const clusters: SemanticCluster[] = []
   const clustered = new Set<string>()
 
@@ -61,8 +74,9 @@ export async function clusterCardsSemantically(
     const searchQuery = card.content.slice(0, 500) // Limit query length
 
     try {
+      const fullConfig = getConfig()
       const results = await unifiedSearch(searchQuery, {
-        limit: 30,
+        limit: fullConfig.clustering.searchLimit,
         includeMessages: true,
         includeContentItems: true,
       })
@@ -86,7 +100,8 @@ export async function clusterCardsSemantically(
 
     // Small delay to avoid overwhelming the server
     if (i < cards.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+      const delay = getConfig().clustering.searchDelayMs
+      await new Promise(resolve => setTimeout(resolve, delay))
     }
   }
 
@@ -297,7 +312,8 @@ export function quickClusterByContent(cards: HarvestCard[]): SemanticCluster[] {
       const union = new Set([...cardWords, ...otherWords])
       const similarity = intersection.size / union.size
 
-      if (similarity > 0.15) {
+      const jaccardThreshold = getConfig().clustering.jaccardThreshold
+      if (similarity > jaccardThreshold) {
         clusterCards.push(other)
         clustered.add(other.id)
       }
@@ -327,4 +343,60 @@ export function quickClusterByContent(cards: HarvestCard[]): SemanticCluster[] {
   }
 
   return clusters
+}
+
+// ============================================================================
+// API-Aware Functions (Server-Side Delegation)
+// ============================================================================
+
+/**
+ * Cluster cards via server API.
+ * This is the preferred method when bookId is available.
+ *
+ * @param bookId - The book ID to cluster cards for
+ * @param options - Clustering options
+ * @returns Clustering result with clusters and stats
+ */
+export async function clusterCardsViaApi(
+  bookId: string,
+  options: Partial<ClusteringConfig> = {}
+): Promise<ClusteringResult> {
+  try {
+    const result = await apiComputeClusters(bookId, {
+      similarityThreshold: options.similarityThreshold,
+      minClusterSize: options.minClusterSize,
+      maxClusters: options.maxClusters,
+      save: true, // Save clusters to database
+    })
+    return result
+  } catch (error) {
+    console.error('[clustering] API clustering failed:', error)
+    throw error
+  }
+}
+
+/**
+ * Convert API ClusteringResult to local SemanticCluster format.
+ * Useful when you need HarvestCard objects in the clusters.
+ */
+export function convertApiResultToLocalClusters(
+  result: ClusteringResult,
+  cards: HarvestCard[]
+): SemanticCluster[] {
+  const cardMap = new Map(cards.map(c => [c.id, c]))
+
+  return result.clusters.map(apiCluster => {
+    const clusterCards = apiCluster.cardIds
+      .map(id => cardMap.get(id))
+      .filter((c): c is HarvestCard => c !== undefined)
+
+    return {
+      id: apiCluster.id,
+      name: apiCluster.name,
+      theme: apiCluster.theme,
+      cards: clusterCards,
+      seedCard: cardMap.get(apiCluster.seedCardId) || clusterCards[0],
+      avgSimilarity: apiCluster.avgSimilarity,
+    }
+  })
 }

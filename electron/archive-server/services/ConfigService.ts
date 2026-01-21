@@ -60,11 +60,37 @@ export interface RateLimitConfig {
   importWindowMs: number;
 }
 
+export interface PyramidConfig {
+  /** Chunks to combine per summary (default: 5) */
+  chunksPerSummary: number;
+  /** Target words for L1 summaries (default: 150) */
+  targetSummaryWords: number;
+  /** Target words for apex synthesis (default: 300) */
+  targetApexWords: number;
+  /** Default summarization model (default: 'llama3.2') */
+  summarizationModel: string;
+}
+
+export interface EmbeddingsConfig {
+  /** Vector dimensions (default: 768) */
+  dimensions: number;
+  /** Batch size for embedding operations (default: 32) */
+  batchSize: number;
+  /** Maximum chunk size in chars (default: 4000) */
+  maxChunkChars: number;
+  /** Target chunk size in chars (default: 2000) */
+  targetChunkChars: number;
+  /** Minimum chunk size in chars (default: 200) */
+  minChunkChars: number;
+}
+
 export interface ArchiveServerConfig {
   harvest: HarvestConfig;
   cache: CacheConfig;
   retrieval: RetrievalConfig;
   rateLimit: RateLimitConfig;
+  pyramid: PyramidConfig;
+  embeddings: EmbeddingsConfig;
 }
 
 // ============================================================================
@@ -104,6 +130,19 @@ const DEFAULT_CONFIG: ArchiveServerConfig = {
     searchWindowMs: 60000, // 1 minute
     importMaxRequests: 10,
     importWindowMs: 300000, // 5 minutes
+  },
+  pyramid: {
+    chunksPerSummary: 5,
+    targetSummaryWords: 150,
+    targetApexWords: 300,
+    summarizationModel: 'llama3.2',
+  },
+  embeddings: {
+    dimensions: 768,
+    batchSize: 32,
+    maxChunkChars: 4000,
+    targetChunkChars: 2000,
+    minChunkChars: 200,
   },
 };
 
@@ -281,6 +320,14 @@ class ConfigService {
       rateLimit: {
         ...DEFAULT_CONFIG.rateLimit,
         ...(loaded.rateLimit || {}),
+      },
+      pyramid: {
+        ...DEFAULT_CONFIG.pyramid,
+        ...(loaded.pyramid || {}),
+      },
+      embeddings: {
+        ...DEFAULT_CONFIG.embeddings,
+        ...(loaded.embeddings || {}),
       },
     };
   }

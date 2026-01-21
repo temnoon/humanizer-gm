@@ -6,6 +6,10 @@
  * 2. Review Phase - Evaluate proposed outlines against research findings
  * 3. Generation Phase - Create or refine outlines from research + prompts
  * 4. Ordering Phase - Map cards to outline items for draft generation
+ *
+ * NOTE: As of Jan 2026, business logic has moved to server-side.
+ * This file now delegates to outline-api.ts for API calls.
+ * Local functions are kept as fallback and for type exports.
  */
 
 import type {
@@ -16,6 +20,16 @@ import type {
 } from './types'
 import type { ReactiveCluster } from './reactive-clustering'
 import { analyzeNecessity } from './chekhov-local'
+
+// Import API functions for server-side delegation
+import {
+  runResearch as apiRunResearch,
+  generateOutline as apiGenerateOutline,
+  orderCardsForDraft as apiOrderCardsForDraft,
+  type OutlineResearch as ApiOutlineResearch,
+  type GeneratedOutline as ApiGeneratedOutline,
+  type OrderedSection as ApiOrderedSection,
+} from './outline-api'
 
 // Re-export types needed by review/generation phases
 export type { OutlineStructure, OutlineItem }
@@ -1450,4 +1464,76 @@ export function orderCardsForOutline(
   })
 
   return sections
+}
+
+// ============================================================================
+// API-Aware Functions (Server-Side Delegation)
+// ============================================================================
+
+/**
+ * Research harvest cards via server API.
+ * This is the preferred method when bookId is available.
+ *
+ * @deprecated for direct card-based calls - use researchHarvestViaApi when bookId available
+ */
+export async function researchHarvestViaApi(bookId: string): Promise<OutlineResearch> {
+  try {
+    const apiResearch = await apiRunResearch(bookId)
+    // API returns compatible OutlineResearch type
+    return apiResearch as unknown as OutlineResearch
+  } catch (error) {
+    console.error('[outline-agent] API research failed, cannot fallback without cards:', error)
+    throw error
+  }
+}
+
+/**
+ * Generate outline via server API.
+ * This is the preferred method when bookId is available.
+ */
+export async function generateOutlineViaApi(
+  bookId: string,
+  config: OutlineGenerationConfig = {}
+): Promise<GeneratedOutline> {
+  try {
+    const apiOutline = await apiGenerateOutline(bookId, {
+      maxSections: config.maxSections,
+      preferArcStructure: config.preferArcStructure,
+    })
+
+    // Convert API response to local GeneratedOutline type
+    // The API returns a slightly different structure, so we adapt it
+    return {
+      structure: apiOutline.structure as unknown as OutlineStructure,
+      itemCardAssignments: new Map(Object.entries(apiOutline.itemCardAssignments || {})),
+      confidence: apiOutline.confidence,
+      generatedAt: apiOutline.generatedAt,
+      basedOn: apiOutline.basedOn,
+    }
+  } catch (error) {
+    console.error('[outline-agent] API outline generation failed:', error)
+    throw error
+  }
+}
+
+/**
+ * Order cards for draft via server API.
+ */
+export async function orderCardsForDraftViaApi(
+  bookId: string,
+  outlineId?: string
+): Promise<OrderedSection[]> {
+  try {
+    const apiSections = await apiOrderCardsForDraft(bookId, outlineId)
+    // Convert API response to local OrderedSection type
+    return apiSections.map(section => ({
+      title: section.title,
+      outlineItemPath: section.outlineItemPath,
+      cards: section.cards as unknown as HarvestCard[],
+      keyPassageIds: section.keyPassageIds,
+    }))
+  } catch (error) {
+    console.error('[outline-agent] API order cards failed:', error)
+    throw error
+  }
 }

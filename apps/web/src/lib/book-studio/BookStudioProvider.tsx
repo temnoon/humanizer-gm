@@ -34,6 +34,8 @@ import {
   reviewOutline,
   generateOutline,
   orderCardsForOutline,
+  researchHarvestViaApi,
+  generateOutlineViaApi,
   type OutlineResearch,
   type OutlineReview,
   type GeneratedOutline,
@@ -112,6 +114,13 @@ export interface BookStudioContextValue extends UseBookStudioApiResult {
     generate: (chapter: Chapter, config?: DraftGenerationConfig) => Promise<string>
     cancel: () => void
   }
+
+  // Outline suggestion banner (shown after harvest when no chapters exist)
+  outlineSuggestion: {
+    show: boolean
+    dismiss: () => void
+    onGenerate: () => Promise<void>
+  }
 }
 
 // ============================================================================
@@ -161,6 +170,9 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
   // Abort controller for cancellable operations
   const [draftAbortController, setDraftAbortController] = useState<AbortController | null>(null)
 
+  // Outline suggestion state (shown after harvest when no chapters exist)
+  const [showOutlineSuggestion, setShowOutlineSuggestion] = useState(false)
+
   // --------------------------------------------------------------------------
   // Harvest Agent Operations
   // --------------------------------------------------------------------------
@@ -194,6 +206,17 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
           const cards = result.results.map(convertToHarvestCard)
           await api.actions.harvestCardsBatch(cards)
           console.log(`[harvest] Auto-committed ${cards.length} cards to staging`)
+
+          // Check if we should show outline suggestion
+          // Show if: we have cards, no chapters exist, and enough cards harvested
+          const hasChapters = (api.activeBook?.chapters.length ?? 0) > 0
+          const totalCards = (api.activeBook?.stagingCards.length ?? 0) + cards.length
+          const MIN_CARDS_FOR_SUGGESTION = 5
+
+          if (!hasChapters && totalCards >= MIN_CARDS_FOR_SUGGESTION) {
+            setShowOutlineSuggestion(true)
+            console.log(`[harvest] Triggering outline suggestion (${totalCards} cards, no chapters)`)
+          }
         }
 
         setHarvestState(prev => ({
@@ -246,7 +269,7 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
   // --------------------------------------------------------------------------
 
   const runOutlineResearch = useCallback(async (): Promise<OutlineResearch> => {
-    if (!api.activeBook) {
+    if (!api.activeBook || !api.activeBookId) {
       throw new Error('No active book')
     }
 
@@ -257,8 +280,17 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
     }))
 
     try {
-      const cards = api.activeBook.stagingCards
-      const research = await researchHarvest(cards)
+      // Use server-side API for research (preferred)
+      let research: OutlineResearch
+      try {
+        research = await researchHarvestViaApi(api.activeBookId)
+        console.log('[outline] Research completed via API')
+      } catch (apiError) {
+        // Fallback to local research if API fails
+        console.warn('[outline] API research failed, falling back to local:', apiError)
+        const cards = api.activeBook.stagingCards
+        research = await researchHarvest(cards)
+      }
 
       setOutlineState(prev => ({
         ...prev,
@@ -276,7 +308,7 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
       }))
       throw err
     }
-  }, [api.activeBook])
+  }, [api.activeBook, api.activeBookId])
 
   const runOutlineReview = useCallback(
     (outline: OutlineStructure): OutlineReview => {
@@ -298,7 +330,7 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
 
   const runOutlineGeneration = useCallback(
     async (config?: OutlineGenerationConfig): Promise<GeneratedOutline> => {
-      if (!api.activeBook) {
+      if (!api.activeBook || !api.activeBookId) {
         throw new Error('No active book')
       }
 
@@ -309,19 +341,29 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
       }))
 
       try {
-        // Ensure we have research
-        let research = outlineState.research
-        if (!research) {
-          research = await researchHarvest(api.activeBook.stagingCards)
-          setOutlineState(prev => ({ ...prev, research }))
-        }
+        // Use server-side API for generation (preferred)
+        let generated: GeneratedOutline
+        try {
+          generated = await generateOutlineViaApi(api.activeBookId, config)
+          console.log('[outline] Outline generated via API')
+        } catch (apiError) {
+          // Fallback to local generation if API fails
+          console.warn('[outline] API generation failed, falling back to local:', apiError)
 
-        const generated = generateOutline(
-          api.activeBook.stagingCards,
-          research,
-          undefined, // No proposed outline
-          config
-        )
+          // Ensure we have research for local fallback
+          let research = outlineState.research
+          if (!research) {
+            research = await researchHarvest(api.activeBook.stagingCards)
+            setOutlineState(prev => ({ ...prev, research }))
+          }
+
+          generated = generateOutline(
+            api.activeBook.stagingCards,
+            research,
+            undefined, // No proposed outline
+            config
+          )
+        }
 
         setOutlineState(prev => ({
           ...prev,
@@ -340,7 +382,7 @@ export function BookStudioProvider({ children }: BookStudioProviderProps) {
         throw err
       }
     },
-    [api.activeBook, outlineState.research]
+    [api.activeBook, api.activeBookId, outlineState.research]
   )
 
   const orderOutlineCards = useCallback(
@@ -507,6 +549,23 @@ Begin the draft:`
   }, [draftAbortController])
 
   // --------------------------------------------------------------------------
+  // Outline Suggestion Handlers
+  // --------------------------------------------------------------------------
+
+  const dismissOutlineSuggestion = useCallback(() => {
+    setShowOutlineSuggestion(false)
+  }, [])
+
+  const handleOutlineSuggestionGenerate = useCallback(async () => {
+    setShowOutlineSuggestion(false)
+    // Trigger outline generation through the outline agent
+    if (api.activeBook?.stagingCards.length) {
+      await runOutlineResearch()
+      await runOutlineGeneration()
+    }
+  }, [api.activeBook?.stagingCards.length, runOutlineResearch, runOutlineGeneration])
+
+  // --------------------------------------------------------------------------
   // Context Value
   // --------------------------------------------------------------------------
 
@@ -537,6 +596,13 @@ Begin the draft:`
       state: draftState,
       generate: generateDraft,
       cancel: cancelDraft,
+    },
+
+    // Outline suggestion banner
+    outlineSuggestion: {
+      show: showOutlineSuggestion,
+      dismiss: dismissOutlineSuggestion,
+      onGenerate: handleOutlineSuggestionGenerate,
     },
   }
 

@@ -18,6 +18,7 @@ import { getArchiveRoot } from '../config';
 import { EmbeddingDatabase } from '../services/embeddings/EmbeddingDatabase';
 import { ArchiveIndexer, type IndexingOptions } from '../services/embeddings/ArchiveIndexer';
 import type { IndexingProgress } from '../services/embeddings/types';
+import { configService } from '../services/ConfigService';
 
 // ═══════════════════════════════════════════════════════════════════
 // EMBEDDING MODULE (uses ESM loader workaround)
@@ -342,7 +343,10 @@ export function createEmbeddingsRouter(): Router {
   // Semantic search
   router.post('/search/messages', async (req: Request, res: Response) => {
     try {
-      const { query, limit = 20, role } = req.body;
+      await configService.init();
+      const harvestConfig = configService.getSection('harvest');
+      const { query, role } = req.body;
+      const limit = req.body.limit ?? harvestConfig.defaultTarget;
 
       if (!query) {
         res.status(400).json({ error: 'query required' });
@@ -377,7 +381,10 @@ export function createEmbeddingsRouter(): Router {
   // Find similar messages
   router.post('/search/similar', async (req: Request, res: Response) => {
     try {
-      const { messageId, embeddingId, limit = 10, excludeSameConversation = false } = req.body;
+      await configService.init();
+      const harvestConfig = configService.getSection('harvest');
+      const { messageId, embeddingId, excludeSameConversation = false } = req.body;
+      const limit = req.body.limit ?? Math.floor(harvestConfig.defaultTarget / 2); // Default to half of harvest target
 
       if (!messageId && !embeddingId) {
         res.status(400).json({ error: 'messageId or embeddingId required' });
@@ -405,7 +412,10 @@ export function createEmbeddingsRouter(): Router {
   // Search pyramid chunks with content-type filtering (Phase 5)
   router.post('/search/chunks', async (req: Request, res: Response) => {
     try {
-      const { query, limit = 20, contentTypes } = req.body;
+      await configService.init();
+      const harvestConfig = configService.getSection('harvest');
+      const { query, contentTypes } = req.body;
+      const limit = req.body.limit ?? harvestConfig.defaultTarget;
 
       if (!query) {
         res.status(400).json({ error: 'query required' });
@@ -457,7 +467,10 @@ export function createEmbeddingsRouter(): Router {
    */
   router.post('/search/filtered', async (req: Request, res: Response) => {
     try {
-      const { query, filters = [], limit = 20 } = req.body;
+      await configService.init();
+      const harvestConfig = configService.getSection('harvest');
+      const { query, filters = [] } = req.body;
+      const limit = req.body.limit ?? harvestConfig.defaultTarget;
 
       if (!query) {
         res.status(400).json({ error: 'query required' });
@@ -509,14 +522,16 @@ export function createEmbeddingsRouter(): Router {
    */
   router.post('/search/unified', async (req: Request, res: Response) => {
     try {
+      await configService.init();
+      const harvestConfig = configService.getSection('harvest');
       const {
         query,
-        limit = 20,
         sources,      // Optional: ['facebook', 'openai', 'claude'] to filter
         types,        // Optional: ['post', 'comment', 'message'] to filter
         includeMessages = true,
         includeContentItems = true,
       } = req.body;
+      const limit = req.body.limit ?? harvestConfig.defaultTarget;
 
       if (!query) {
         res.status(400).json({ error: 'query required' });

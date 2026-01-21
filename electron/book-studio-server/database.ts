@@ -234,6 +234,69 @@ const MIGRATIONS = [
 
   INSERT OR IGNORE INTO schema_version (version) VALUES (3);
   `,
+
+  // Migration 4: Card orders table for draft generation
+  `
+  -- Card orders table for persisting card ordering within outline sections
+  -- Used by draft generation to maintain consistent card order
+  CREATE TABLE IF NOT EXISTS card_orders (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    outline_id TEXT,
+    section_index INTEGER NOT NULL,
+    card_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    user_id TEXT,
+    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+    FOREIGN KEY (outline_id) REFERENCES outlines(id) ON DELETE SET NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_card_orders_book ON card_orders(book_id);
+  CREATE INDEX IF NOT EXISTS idx_card_orders_outline ON card_orders(outline_id);
+  CREATE INDEX IF NOT EXISTS idx_card_orders_section ON card_orders(outline_id, section_index);
+  CREATE INDEX IF NOT EXISTS idx_card_orders_position ON card_orders(outline_id, section_index, position);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_card_orders_unique ON card_orders(outline_id, section_index, card_id);
+
+  INSERT OR IGNORE INTO schema_version (version) VALUES (4);
+  `,
+
+  // Migration 5: Book metrics table for tracking quality at each stage
+  `
+  -- Book metrics table for tracking quality metrics at each stage
+  CREATE TABLE IF NOT EXISTS book_metrics (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    metrics_json TEXT NOT NULL,
+    computed_at INTEGER NOT NULL,
+    user_id TEXT,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_book_metrics_book ON book_metrics(book_id);
+  CREATE INDEX IF NOT EXISTS idx_book_metrics_stage ON book_metrics(book_id, stage);
+  CREATE INDEX IF NOT EXISTS idx_book_metrics_computed ON book_metrics(computed_at);
+
+  -- Research cache table for persisting research results
+  CREATE TABLE IF NOT EXISTS research_cache (
+    id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    research_json TEXT NOT NULL,
+    card_count INTEGER NOT NULL,
+    card_hash TEXT NOT NULL,
+    confidence REAL,
+    computed_at INTEGER NOT NULL,
+    user_id TEXT,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_research_cache_book ON research_cache(book_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_research_cache_unique ON research_cache(book_id, card_hash);
+
+  INSERT OR IGNORE INTO schema_version (version) VALUES (5);
+  `,
 ];
 
 /**
@@ -353,6 +416,37 @@ export interface DbEvent {
   payload: string | null;
   user_id: string | null;
   created_at: number;
+}
+
+export interface DbCardOrder {
+  id: string;
+  book_id: string;
+  outline_id: string | null;
+  section_index: number;
+  card_id: string;
+  position: number;
+  user_id: string | null;
+  created_at: number;
+}
+
+export interface DbBookMetrics {
+  id: string;
+  book_id: string;
+  stage: 'harvest' | 'research' | 'clustering' | 'outline' | 'assignment' | 'draft';
+  metrics_json: string; // JSON object
+  computed_at: number;
+  user_id: string | null;
+}
+
+export interface DbResearchCache {
+  id: string;
+  book_id: string;
+  research_json: string;
+  card_count: number;
+  card_hash: string;
+  confidence: number | null;
+  computed_at: number;
+  user_id: string | null;
 }
 
 // ============================================================================

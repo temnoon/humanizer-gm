@@ -47,13 +47,33 @@ export function OutlineView() {
     }
   }, [bookStudio.outline, cardCount])
 
-  // Create chapters from generated outline
+  // Create chapters from generated outline AND assign cards
   const handleCreateChapters = useCallback(async () => {
     if (!outlineState.generatedOutline) return
 
     const items = outlineState.generatedOutline.structure.items
-    for (const item of items) {
-      await bookStudio.actions.createChapter(item.text)
+    const assignments = outlineState.generatedOutline.itemCardAssignments
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const item = items[idx]
+      // Create the chapter and get its ID
+      const newChapter = await bookStudio.actions.createChapter(item.text)
+
+      if (!newChapter) {
+        console.error(`Failed to create chapter: ${item.text}`)
+        continue
+      }
+
+      // Get the card IDs assigned to this chapter
+      const cardIds = assignments.get(`${idx}`) || []
+
+      // Update each card to be assigned to this chapter
+      for (const cardId of cardIds) {
+        await bookStudio.actions.updateCard(cardId, {
+          suggestedChapterId: newChapter.id,
+          status: 'placed',
+        })
+      }
     }
 
     // Clear generated outline after creating

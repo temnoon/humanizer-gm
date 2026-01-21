@@ -18,6 +18,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useBookStudio } from '../../../lib/book-studio/BookStudioProvider'
 import type { HarvestCard, Chapter, StagingView as StagingViewType, CardPosition, CardGrade } from '../../../lib/book-studio/types'
 import { gradingQueue } from '../../../lib/book-studio/harvest-review-agent'
+import { AssignmentModal } from '../AssignmentModal'
+import { OutlineSuggestionBanner } from '../OutlineSuggestionBanner'
 
 // =============================================================================
 // InputDialog Component (replaces browser prompt())
@@ -168,7 +170,7 @@ interface HarvestCardDisplayProps {
   chapters: Chapter[]
   isSelected?: boolean
   isCompact?: boolean
-  onSelect?: () => void
+  onSelect?: (event?: React.MouseEvent) => void
   onUpdateNotes?: (notes: string) => void
   onMoveToChapter?: (chapterId: string) => void
   onCreateChapter?: (title: string) => void
@@ -229,7 +231,7 @@ function HarvestCardDisplay({
     return (
       <div
         className={`staging-card staging-card--compact ${isSelected ? 'staging-card--selected' : ''} ${isStub ? 'staging-card--stub' : ''} ${isKeyPassage ? 'staging-card--key' : ''}`}
-        onClick={onSelect}
+        onClick={(e) => onSelect?.(e)}
       >
         <div className="staging-card__header">
           <span className="staging-card__icon">{getTypeIcon()}</span>
@@ -632,12 +634,15 @@ function formatClusterName(name: string, groupBy: GroupBy): string {
 export function StagingView() {
   const bookStudio = useBookStudio()
   const [view, setView] = useState<StagingViewType>('grid')
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [hideStubs, setHideStubs] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('grade')
   const [isHarvesting, setIsHarvesting] = useState(false)
   const [harvestQuery, setHarvestQuery] = useState('')
   const [gradingCount, setGradingCount] = useState(gradingQueue.length)
+
+  // Selection state - multi-select support
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
 
   // Dialog states
   const [harvestDialog, setHarvestDialog] = useState(false)
@@ -647,6 +652,9 @@ export function StagingView() {
     cardIds?: string[]
     defaultTitle: string
   }>({ isOpen: false, defaultTitle: '' })
+
+  // Assignment modal state
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
 
   const cards = bookStudio.activeBook?.stagingCards || []
   const chapters = bookStudio.activeBook?.chapters || []
@@ -705,7 +713,56 @@ export function StagingView() {
     return result
   }, [cards, hideStubs, sortBy])
 
-  const selectedCard = cards.find((c) => c.id === selectedCardId)
+  // Get single selected card for detail panel (first selected if multiple)
+  const selectedCard = selectedCardIds.size > 0
+    ? cards.find((c) => selectedCardIds.has(c.id))
+    : null
+
+  // Selection helpers
+  const toggleCardSelection = useCallback((cardId: string, event?: React.MouseEvent) => {
+    // Shift+click for range selection
+    if (event?.shiftKey && selectedCardIds.size > 0) {
+      const lastSelected = [...selectedCardIds].pop()
+      const lastIndex = filteredCards.findIndex(c => c.id === lastSelected)
+      const currentIndex = filteredCards.findIndex(c => c.id === cardId)
+      if (lastIndex >= 0 && currentIndex >= 0) {
+        const start = Math.min(lastIndex, currentIndex)
+        const end = Math.max(lastIndex, currentIndex)
+        const rangeIds = filteredCards.slice(start, end + 1).map(c => c.id)
+        setSelectedCardIds(prev => {
+          const next = new Set(prev)
+          rangeIds.forEach(id => next.add(id))
+          return next
+        })
+        return
+      }
+    }
+
+    // Regular toggle
+    setSelectedCardIds(prev => {
+      const next = new Set(prev)
+      if (next.has(cardId)) {
+        next.delete(cardId)
+      } else {
+        next.add(cardId)
+      }
+      // Enable selection mode if we have selections
+      if (next.size > 0 && !selectionMode) {
+        setSelectionMode(true)
+      }
+      return next
+    })
+  }, [selectedCardIds, filteredCards, selectionMode])
+
+  const selectAllVisible = useCallback(() => {
+    setSelectedCardIds(new Set(filteredCards.map(c => c.id)))
+    setSelectionMode(true)
+  }, [filteredCards])
+
+  const clearSelection = useCallback(() => {
+    setSelectedCardIds(new Set())
+    setSelectionMode(false)
+  }, [])
 
   // Card actions
   const handleUpdateCard = useCallback((cardId: string, updates: Partial<HarvestCard>) => {
@@ -714,8 +771,50 @@ export function StagingView() {
 
   const handleDeleteCard = useCallback((cardId: string) => {
     bookStudio.actions.deleteCard(cardId)
-    if (selectedCardId === cardId) setSelectedCardId(null)
-  }, [bookStudio.actions, selectedCardId])
+    setSelectedCardIds(prev => {
+      const next = new Set(prev)
+      next.delete(cardId)
+      return next
+    })
+  }, [bookStudio.actions])
+
+  // Bulk actions
+  const handleBulkAssignToChapter = useCallback(async (chapterId: string) => {
+    for (const cardId of selectedCardIds) {
+      await bookStudio.actions.updateCard(cardId, {
+        suggestedChapterId: chapterId,
+        status: 'placed'
+      })
+    }
+    clearSelection()
+  }, [selectedCardIds, bookStudio.actions, clearSelection])
+
+  const handleBulkDelete = useCallback(async () => {
+    for (const cardId of selectedCardIds) {
+      await bookStudio.actions.deleteCard(cardId)
+    }
+    clearSelection()
+  }, [selectedCardIds, bookStudio.actions, clearSelection])
+
+  const handleBulkArchive = useCallback(async () => {
+    for (const cardId of selectedCardIds) {
+      await bookStudio.actions.updateCard(cardId, { status: 'archived' })
+    }
+    clearSelection()
+  }, [selectedCardIds, bookStudio.actions, clearSelection])
+
+  // Handle applying agent-assisted assignments
+  const handleApplyAssignments = useCallback(async (
+    assignments: Array<{ cardId: string; chapterId: string }>
+  ) => {
+    for (const { cardId, chapterId } of assignments) {
+      await bookStudio.actions.updateCard(cardId, {
+        suggestedChapterId: chapterId,
+        status: 'placed'
+      })
+    }
+    clearSelection()
+  }, [bookStudio.actions, clearSelection])
 
   const handleMoveToChapter = useCallback((cardId: string, chapterId: string) => {
     handleUpdateCard(cardId, { suggestedChapterId: chapterId, status: 'placed' })
@@ -871,6 +970,38 @@ export function StagingView() {
           )}
         </div>
 
+        <div className="staging-view__selection-controls">
+          {selectionMode ? (
+            <>
+              <span className="staging-view__selection-count">
+                {selectedCardIds.size} selected
+              </span>
+              <button
+                className="staging-view__selection-btn"
+                onClick={selectAllVisible}
+                title="Select all visible"
+              >
+                Select All
+              </button>
+              <button
+                className="staging-view__selection-btn staging-view__selection-btn--clear"
+                onClick={clearSelection}
+                title="Clear selection"
+              >
+                Clear
+              </button>
+            </>
+          ) : (
+            <button
+              className="staging-view__selection-btn"
+              onClick={() => setSelectionMode(true)}
+              title="Enter selection mode"
+            >
+              Select
+            </button>
+          )}
+        </div>
+
         <button
           className="staging-view__harvest-more-btn"
           onClick={handleHarvestMore}
@@ -879,6 +1010,15 @@ export function StagingView() {
           {isHarvesting ? 'Harvesting...' : '+ Harvest More'}
         </button>
       </div>
+
+      {/* Outline Suggestion Banner - show when cards exist but no chapters */}
+      {bookStudio.outlineSuggestion.show && chapters.length === 0 && cards.length >= 5 && (
+        <OutlineSuggestionBanner
+          cardCount={cards.length}
+          onGenerateOutline={bookStudio.outlineSuggestion.onGenerate}
+          onDismiss={bookStudio.outlineSuggestion.dismiss}
+        />
+      )}
 
       <div className="staging-view__body">
         <div className="staging-view__content">
@@ -891,15 +1031,44 @@ export function StagingView() {
           ) : view === 'grid' ? (
             <div className="staging-view__grid">
               {filteredCards.map((card) => (
-                <HarvestCardDisplay
+                <div
                   key={card.id}
-                  card={card}
-                  chapters={chapters}
-                  isCompact
-                  isSelected={card.id === selectedCardId}
-                  onSelect={() => setSelectedCardId(card.id === selectedCardId ? null : card.id)}
-                  onCreateChapter={(title) => handleCreateChapterForCard(card.id, title)}
-                />
+                  className={`staging-view__card-wrapper ${selectionMode ? 'staging-view__card-wrapper--selectable' : ''}`}
+                >
+                  {selectionMode && (
+                    <label className="staging-view__checkbox-wrapper" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedCardIds.has(card.id)}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          toggleCardSelection(card.id)
+                        }}
+                        className="staging-view__card-checkbox"
+                      />
+                    </label>
+                  )}
+                  <HarvestCardDisplay
+                    card={card}
+                    chapters={chapters}
+                    isCompact
+                    isSelected={selectedCardIds.has(card.id)}
+                    onSelect={(e?: React.MouseEvent) => {
+                      if (selectionMode) {
+                        toggleCardSelection(card.id, e)
+                      } else {
+                        // Single selection mode - toggle for detail panel
+                        setSelectedCardIds(prev => {
+                          if (prev.has(card.id) && prev.size === 1) {
+                            return new Set()
+                          }
+                          return new Set([card.id])
+                        })
+                      }
+                    }}
+                    onCreateChapter={(title) => handleCreateChapterForCard(card.id, title)}
+                  />
+                </div>
               ))}
             </div>
           ) : view === 'timeline' ? (
@@ -911,9 +1080,29 @@ export function StagingView() {
                     {yearCards.map((card) => (
                       <div
                         key={card.id}
-                        className={`staging-view__timeline-item ${card.id === selectedCardId ? 'staging-view__timeline-item--selected' : ''}`}
-                        onClick={() => setSelectedCardId(card.id === selectedCardId ? null : card.id)}
+                        className={`staging-view__timeline-item ${selectedCardIds.has(card.id) ? 'staging-view__timeline-item--selected' : ''}`}
+                        onClick={(e) => {
+                          if (selectionMode) {
+                            toggleCardSelection(card.id, e)
+                          } else {
+                            setSelectedCardIds(prev => {
+                              if (prev.has(card.id) && prev.size === 1) {
+                                return new Set()
+                              }
+                              return new Set([card.id])
+                            })
+                          }
+                        }}
                       >
+                        {selectionMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedCardIds.has(card.id)}
+                            onChange={() => toggleCardSelection(card.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="staging-view__timeline-checkbox"
+                          />
+                        )}
                         <div className="staging-view__timeline-content">
                           {card.content.length > 80 ? card.content.slice(0, 80) + '...' : card.content}
                         </div>
@@ -926,24 +1115,36 @@ export function StagingView() {
           ) : view === 'canvas' ? (
             <CanvasView
               cards={filteredCards}
-              selectedCardId={selectedCardId}
-              onSelectCard={setSelectedCardId}
+              selectedCardId={selectedCardIds.size === 1 ? [...selectedCardIds][0] : null}
+              onSelectCard={(cardId) => {
+                if (cardId) {
+                  setSelectedCardIds(new Set([cardId]))
+                } else {
+                  setSelectedCardIds(new Set())
+                }
+              }}
               onUpdateCardPosition={handleUpdateCardPosition}
             />
           ) : (
             <ClustersView
               cards={filteredCards}
               chapters={chapters}
-              selectedCardId={selectedCardId}
-              onSelectCard={setSelectedCardId}
+              selectedCardId={selectedCardIds.size === 1 ? [...selectedCardIds][0] : null}
+              onSelectCard={(cardId) => {
+                if (cardId) {
+                  setSelectedCardIds(new Set([cardId]))
+                } else {
+                  setSelectedCardIds(new Set())
+                }
+              }}
               onMoveToChapter={handleMoveToChapter}
               onCreateChapter={handleCreateChapter}
             />
           )}
         </div>
 
-        {/* Detail panel */}
-        {selectedCard && (
+        {/* Detail panel - only show when single card selected and not in selection mode */}
+        {selectedCard && !selectionMode && selectedCardIds.size === 1 && (
           <div className="staging-view__detail">
             <HarvestCardDisplay
               card={selectedCard}
@@ -956,6 +1157,60 @@ export function StagingView() {
           </div>
         )}
       </div>
+
+      {/* Bulk Action Bar - shows when cards are selected */}
+      {selectedCardIds.size > 0 && (
+        <div className="staging-view__bulk-bar">
+          <div className="staging-view__bulk-bar-info">
+            <span className="staging-view__bulk-bar-count">{selectedCardIds.size} cards selected</span>
+          </div>
+          <div className="staging-view__bulk-bar-actions">
+            {chapters.length > 0 && (
+              <select
+                className="staging-view__bulk-bar-select"
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleBulkAssignToChapter(e.target.value)
+                  }
+                }}
+                defaultValue=""
+              >
+                <option value="" disabled>Assign to chapter...</option>
+                {chapters.map((ch) => (
+                  <option key={ch.id} value={ch.id}>{ch.title}</option>
+                ))}
+              </select>
+            )}
+            <button
+              className="staging-view__bulk-bar-btn staging-view__bulk-bar-btn--agent"
+              onClick={() => setShowAssignmentModal(true)}
+              title="Use AI to suggest chapter assignments"
+            >
+              🤖 Agent Assign
+            </button>
+            <button
+              className="staging-view__bulk-bar-btn staging-view__bulk-bar-btn--archive"
+              onClick={handleBulkArchive}
+              title="Archive selected cards"
+            >
+              Archive
+            </button>
+            <button
+              className="staging-view__bulk-bar-btn staging-view__bulk-bar-btn--delete"
+              onClick={handleBulkDelete}
+              title="Delete selected cards"
+            >
+              Delete
+            </button>
+            <button
+              className="staging-view__bulk-bar-btn staging-view__bulk-bar-btn--clear"
+              onClick={clearSelection}
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Harvest Query Dialog */}
       <InputDialog
@@ -975,6 +1230,15 @@ export function StagingView() {
         defaultValue={chapterDialog.defaultTitle}
         onSubmit={handleChapterDialogSubmit}
         onCancel={() => setChapterDialog({ isOpen: false, defaultTitle: '' })}
+      />
+
+      {/* Assignment Modal for AI-assisted chapter assignment */}
+      <AssignmentModal
+        isOpen={showAssignmentModal}
+        cards={cards.filter(c => selectedCardIds.has(c.id))}
+        chapters={chapters}
+        onClose={() => setShowAssignmentModal(false)}
+        onApply={handleApplyAssignments}
       />
     </div>
   )

@@ -84,6 +84,9 @@ export interface BookStudioConfig {
     similarityThreshold: number // 0.0-1.0
     minClusterSize: number
     maxClusters: number
+    jaccardThreshold: number // For quick/keyword clustering (default: 0.15)
+    searchLimit: number // Limit for similarity searches (default: 30)
+    searchDelayMs: number // Delay between cluster searches (default: 100)
     enableReactiveClustering: boolean
     autoRecomputeThreshold: number // Number of changes before prompting recompute
   }
@@ -239,6 +242,9 @@ export function getConfig(): BookStudioConfig {
       similarityThreshold: 0.55,
       minClusterSize: 2,
       maxClusters: 10,
+      jaccardThreshold: 0.15,
+      searchLimit: 30,
+      searchDelayMs: 100,
       enableReactiveClustering: true,
       autoRecomputeThreshold: 5,
     },

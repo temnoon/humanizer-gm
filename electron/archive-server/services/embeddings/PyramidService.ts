@@ -22,6 +22,7 @@ import {
   computeCentroid,
   cosineSimilarity,
 } from './EmbeddingGenerator';
+import { configService } from '../ConfigService';
 
 // ============================================================================
 // Types
@@ -102,10 +103,13 @@ export interface BatchResult {
 // ============================================================================
 
 const OLLAMA_ENDPOINT = 'http://localhost:11434';
-const DEFAULT_SUMMARIZATION_MODEL = 'llama3.2';
-const CHUNKS_PER_SUMMARY = 5;  // Number of L0 chunks to summarize at L1
-const TARGET_SUMMARY_WORDS = 150;  // Target words for L1 summaries
-const TARGET_APEX_WORDS = 300;  // Target words for apex synthesis
+
+// These are now loaded from ConfigService
+// Access via: configService.getSection('pyramid').chunksPerSummary
+// - chunksPerSummary: Number of L0 chunks to summarize at L1
+// - targetSummaryWords: Target words for L1 summaries
+// - targetApexWords: Target words for apex synthesis
+// - summarizationModel: Default LLM model for summarization
 
 // ============================================================================
 // Service
@@ -115,11 +119,26 @@ export class PyramidService {
   private db: Database.Database;
   private chunkingService: ChunkingService;
   private summarizationModel: string;
+  private configInitialized: boolean = false;
 
   constructor(db: Database.Database, summarizationModel?: string) {
     this.db = db;
     this.chunkingService = new ChunkingService();
-    this.summarizationModel = summarizationModel || DEFAULT_SUMMARIZATION_MODEL;
+    // Will be set properly after config init
+    this.summarizationModel = summarizationModel || 'llama3.2';
+  }
+
+  /** Ensure config is initialized and get pyramid config */
+  private async getPyramidConfig() {
+    if (!this.configInitialized) {
+      await configService.init();
+      const config = configService.getSection('pyramid');
+      if (!this.summarizationModel || this.summarizationModel === 'llama3.2') {
+        this.summarizationModel = config.summarizationModel;
+      }
+      this.configInitialized = true;
+    }
+    return configService.getSection('pyramid');
   }
 
   /**
@@ -422,12 +441,13 @@ export class PyramidService {
     chunks: PyramidChunk[],
     threadId: string
   ): Promise<PyramidSummary[]> {
+    const pyramidConfig = await this.getPyramidConfig();
     const summaries: PyramidSummary[] = [];
-    const numGroups = Math.ceil(chunks.length / CHUNKS_PER_SUMMARY);
+    const numGroups = Math.ceil(chunks.length / pyramidConfig.chunksPerSummary);
 
     for (let i = 0; i < numGroups; i++) {
-      const groupStart = i * CHUNKS_PER_SUMMARY;
-      const groupEnd = Math.min(groupStart + CHUNKS_PER_SUMMARY, chunks.length);
+      const groupStart = i * pyramidConfig.chunksPerSummary;
+      const groupEnd = Math.min(groupStart + pyramidConfig.chunksPerSummary, chunks.length);
       const groupChunks = chunks.slice(groupStart, groupEnd);
 
       // Combine chunks for summarization
@@ -437,7 +457,7 @@ export class PyramidService {
       try {
         const summaryText = await this.summarize(
           combinedText,
-          TARGET_SUMMARY_WORDS,
+          pyramidConfig.targetSummaryWords,
           'Summarize the following content concisely:'
         );
 
@@ -487,6 +507,8 @@ export class PyramidService {
     totalSourceWords: number
   ): Promise<PyramidApex | null> {
     try {
+      const pyramidConfig = await this.getPyramidConfig();
+
       // Use summaries if available, otherwise use chunks
       const contentToSynthesize = summaries.length > 0
         ? summaries.map(s => s.content).join('\n\n')
@@ -499,7 +521,7 @@ export class PyramidService {
 
 Content:`;
 
-      const synthesis = await this.summarize(contentToSynthesize, TARGET_APEX_WORDS, prompt);
+      const synthesis = await this.summarize(contentToSynthesize, pyramidConfig.targetApexWords, prompt);
 
       // Extract themes
       const themes = this.extractThemes(synthesis);

@@ -21,6 +21,8 @@ const VALID_SECTIONS: (keyof ArchiveServerConfig)[] = [
   'cache',
   'retrieval',
   'rateLimit',
+  'pyramid',
+  'embeddings',
 ];
 
 function isValidSection(section: string): section is keyof ArchiveServerConfig {

@@ -8,6 +8,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, generateId, now, DbCluster, DbBook } from '../database';
 import { broadcastEvent } from '../server';
 import { requireAuth, getUserId, isOwner } from '../middleware/auth';
+import { getClusteringService } from '../services/ClusteringService';
 
 export function createClustersRouter(): Router {
   const router = Router();
@@ -114,6 +115,57 @@ export function createClustersRouter(): Router {
 
       res.status(201).json({ cluster: parseClusterJsonFields(cluster) });
     } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // POST /api/clusters/compute - Compute clusters for a book
+  router.post('/compute', (req: Request, res: Response) => {
+    try {
+      const { bookId, options = {} } = req.body;
+
+      if (!bookId) {
+        return res.status(400).json({ error: 'bookId is required' });
+      }
+
+      // Verify book ownership
+      const book = verifyBookOwnership(bookId, req);
+      if (!book) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const clusteringService = getClusteringService();
+      const result = clusteringService.computeClusters(bookId, {
+        similarityThreshold: options.similarityThreshold,
+        minClusterSize: options.minClusterSize,
+        maxClusters: options.maxClusters,
+        jaccardThreshold: options.jaccardThreshold,
+      });
+
+      // Optionally save to database
+      if (options.save !== false) {
+        clusteringService.saveClusters(bookId, result);
+
+        // Broadcast event
+        broadcastEvent({
+          type: 'clusters-computed',
+          bookId,
+          entityType: 'cluster',
+          payload: {
+            clusterCount: result.clusters.length,
+            totalCards: result.stats.totalCards,
+          },
+          timestamp: Date.now(),
+        });
+      }
+
+      res.json({
+        success: true,
+        result,
+        message: `Computed ${result.clusters.length} clusters from ${result.stats.totalCards} cards`,
+      });
+    } catch (err) {
+      console.error('[clusters] Compute failed:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });

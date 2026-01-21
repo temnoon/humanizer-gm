@@ -12,6 +12,7 @@
 import { Router, Request, Response } from 'express';
 import { getEmbeddingDatabase } from '../services/registry';
 import { getPyramidService } from '../services/embeddings/PyramidService';
+import { configService } from '../services/ConfigService';
 
 export function createPyramidRouter(): Router {
   const router = Router();
@@ -189,7 +190,10 @@ export function createPyramidRouter(): Router {
    */
   router.post('/search', async (req: Request, res: Response) => {
     try {
-      const { query, limit = 20, levels, threadTypes } = req.body;
+      await configService.init();
+      const harvestConfig = configService.getSection('harvest');
+      const { query, levels, threadTypes } = req.body;
+      const limit = req.body.limit ?? harvestConfig.defaultTarget;
 
       if (!query || typeof query !== 'string') {
         return res.status(400).json({ error: 'Query is required' });

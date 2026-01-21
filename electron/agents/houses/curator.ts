@@ -71,6 +71,7 @@ export class CuratorAgent extends AgentBase {
     'suggest-clusters',
     'organize-thread',
     'evaluate-coherence',
+    'assign-cards-to-chapters',
   ];
 
   // Curator's semantic concerns - what it watches for
@@ -125,6 +126,9 @@ export class CuratorAgent extends AgentBase {
 
       case 'organize-thread':
         return this.organizeThread(message.payload as OrganizeThreadRequest);
+
+      case 'assign-cards-to-chapters':
+        return this.assignCardsToChapters(message.payload as AssignCardsToChaptersRequest);
 
       case 'get-intentions':
         return this.getIntentions();
@@ -398,6 +402,129 @@ Respond with JSON: { clusters: [{ theme, passageIndices: [], suggestedThreads: [
   }
 
   // ─────────────────────────────────────────────────────────────────
+  // CARD TO CHAPTER ASSIGNMENT
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Assign cards to chapters using AI-assisted semantic matching.
+   * Analyzes card content and chapter titles to find best-fit assignments.
+   */
+  private async assignCardsToChapters(request: AssignCardsToChaptersRequest): Promise<AssignmentProposalBatch> {
+    const { cards, chapters } = request;
+
+    if (chapters.length === 0) {
+      return {
+        proposals: [],
+        generatedAt: new Date().toISOString(),
+        totalCards: cards.length,
+        assignedCards: 0,
+        unassignedCards: cards.length,
+      };
+    }
+
+    const proposals: CardAssignmentProposal[] = [];
+
+    // Format chapter info for the prompt
+    const chapterDescriptions = chapters.map((ch, i) =>
+      `${i + 1}. "${ch.title}"${ch.description ? ` - ${ch.description}` : ''}`
+    ).join('\n');
+
+    // Process cards in batches to avoid overly long prompts
+    const batchSize = 10;
+    for (let i = 0; i < cards.length; i += batchSize) {
+      const cardBatch = cards.slice(i, i + batchSize);
+
+      const cardDescriptions = cardBatch.map((card, idx) =>
+        `Card ${idx + 1} (ID: ${card.id}): ${card.title ? `"${card.title}" - ` : ''}${card.content.substring(0, 200)}${card.content.length > 200 ? '...' : ''}`
+      ).join('\n\n');
+
+      const prompt = `Analyze these cards and assign each to the most appropriate chapter.
+
+CHAPTERS:
+${chapterDescriptions}
+
+CARDS:
+${cardDescriptions}
+
+For each card, determine which chapter it best fits based on:
+1. Thematic relevance to the chapter title
+2. Content alignment with the chapter's apparent topic
+3. Narrative coherence
+
+Respond with JSON array:
+[
+  {
+    "cardId": "card-id",
+    "chapterIndex": 1-based chapter number or 0 if no good fit,
+    "confidence": 0.0-1.0,
+    "reasoning": "Brief explanation"
+  }
+]`;
+
+      try {
+        const analysis = await this.callAI('analysis', prompt, {
+          systemPrompt: 'You are a literary curator helping organize content into chapters. Be precise and analytical.',
+        });
+
+        const parsed = this.parseAnalysis(analysis);
+        const assignments = Array.isArray(parsed) ? parsed as Array<{
+          cardId?: string;
+          chapterIndex?: number;
+          confidence?: number;
+          reasoning?: string;
+        }> : [];
+
+        if (assignments.length > 0) {
+          for (const assignment of assignments) {
+            if (!assignment.cardId) continue;
+
+            const chapterIndex = (assignment.chapterIndex ?? 0) - 1;
+            const chapter = chapters[chapterIndex];
+
+            if (chapter && assignment.confidence && assignment.confidence >= 0.3) {
+              // Find alternative chapters
+              const alternatives: Array<{ chapterId: string; confidence: number }> = [];
+
+              // Simple heuristic: suggest adjacent chapters as alternatives
+              if (chapterIndex > 0) {
+                alternatives.push({
+                  chapterId: chapters[chapterIndex - 1].id,
+                  confidence: Math.max(0, (assignment.confidence || 0.5) - 0.2),
+                });
+              }
+              if (chapterIndex < chapters.length - 1) {
+                alternatives.push({
+                  chapterId: chapters[chapterIndex + 1].id,
+                  confidence: Math.max(0, (assignment.confidence || 0.5) - 0.2),
+                });
+              }
+
+              proposals.push({
+                cardId: assignment.cardId,
+                suggestedChapterId: chapter.id,
+                confidence: assignment.confidence || 0.5,
+                reasoning: assignment.reasoning || 'Thematic match',
+                alternatives: alternatives.length > 0 ? alternatives : undefined,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        this.log('error', `Failed to assign cards batch: ${error}`);
+        // Continue with next batch
+      }
+    }
+
+    return {
+      proposals,
+      generatedAt: new Date().toISOString(),
+      totalCards: cards.length,
+      assignedCards: proposals.length,
+      unassignedCards: cards.length - proposals.length,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────
   // INTENTIONS
   // ─────────────────────────────────────────────────────────────────
 
@@ -576,6 +703,28 @@ interface RedundancyReport {
     similarity: number;
     recommendation: string;
   }>;
+}
+
+interface AssignCardsToChaptersRequest {
+  cards: Array<{ id: string; content: string; title?: string }>;
+  chapters: Array<{ id: string; title: string; description?: string }>;
+  projectId?: string;
+}
+
+interface CardAssignmentProposal {
+  cardId: string;
+  suggestedChapterId: string;
+  confidence: number;
+  reasoning: string;
+  alternatives?: Array<{ chapterId: string; confidence: number }>;
+}
+
+interface AssignmentProposalBatch {
+  proposals: CardAssignmentProposal[];
+  generatedAt: string;
+  totalCards: number;
+  assignedCards: number;
+  unassignedCards: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════

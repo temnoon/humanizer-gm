@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, generateId, now, DbCard, DbBook } from '../database';
 import { broadcastEvent } from '../server';
 import { requireAuth, getUserId, isOwner } from '../middleware/auth';
+import { getAssignmentService } from '../services/AssignmentService';
 
 export function createCardsRouter(): Router {
   const router = Router();
@@ -253,6 +254,220 @@ export function createCardsRouter(): Router {
       });
 
       res.status(201).json({ cards: createdCards.map(parseCardJsonFields) });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // POST /api/cards/batch-update - Batch update multiple cards
+  router.post('/batch-update', (req: Request, res: Response) => {
+    try {
+      const { cardIds, updates } = req.body;
+
+      if (!Array.isArray(cardIds) || cardIds.length === 0) {
+        return res.status(400).json({ error: 'cardIds array is required' });
+      }
+
+      if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({ error: 'updates object is required' });
+      }
+
+      const db = getDatabase();
+      const timestamp = now();
+      const updatedCards: DbCard[] = [];
+      let bookId: string | null = null;
+
+      // Build update statement dynamically based on provided updates
+      const updateFields: string[] = ['updated_at = ?'];
+      const baseValues: (string | number | null)[] = [timestamp];
+
+      if (updates.suggestedChapterId !== undefined) {
+        updateFields.push('chapter_id = ?');
+        baseValues.push(updates.suggestedChapterId);
+      }
+      if (updates.status !== undefined) {
+        updateFields.push('status = ?');
+        baseValues.push(updates.status);
+      }
+      if (updates.grade !== undefined) {
+        updateFields.push('grade = ?');
+        baseValues.push(updates.grade ? JSON.stringify(updates.grade) : null);
+      }
+      if (updates.tags !== undefined) {
+        updateFields.push('tags = ?');
+        baseValues.push(JSON.stringify(updates.tags));
+      }
+
+      const updateMany = db.transaction((ids: string[]) => {
+        for (const cardId of ids) {
+          const existing = db.prepare('SELECT * FROM cards WHERE id = ?').get(cardId) as DbCard | undefined;
+          if (!existing) continue;
+
+          // Verify book ownership (first card sets the bookId, subsequent must match)
+          if (!bookId) {
+            if (!verifyBookOwnership(existing.book_id, req)) {
+              throw new Error('Access denied');
+            }
+            bookId = existing.book_id;
+          } else if (existing.book_id !== bookId) {
+            continue; // Skip cards from different books
+          }
+
+          const values = [...baseValues, cardId];
+          db.prepare(`
+            UPDATE cards SET ${updateFields.join(', ')} WHERE id = ?
+          `).run(...values);
+
+          const updated = db.prepare('SELECT * FROM cards WHERE id = ?').get(cardId) as DbCard;
+          updatedCards.push(updated);
+        }
+      });
+
+      updateMany(cardIds);
+
+      // Update book's updated_at if we have a bookId
+      if (bookId) {
+        db.prepare('UPDATE books SET updated_at = ? WHERE id = ?').run(timestamp, bookId);
+
+        // Broadcast event
+        broadcastEvent({
+          type: 'cards-batch-updated',
+          bookId,
+          entityType: 'card',
+          payload: updatedCards.map(parseCardJsonFields),
+          timestamp: Date.now(),
+        });
+      }
+
+      res.json({
+        updatedCount: updatedCards.length,
+        cards: updatedCards.map(parseCardJsonFields),
+      });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // POST /api/cards/assign-to-chapters - Auto-assign cards to chapters
+  router.post('/assign-to-chapters', (req: Request, res: Response) => {
+    try {
+      const { bookId, options = {} } = req.body;
+
+      if (!bookId) {
+        return res.status(400).json({ error: 'bookId is required' });
+      }
+
+      // Verify book ownership
+      const book = verifyBookOwnership(bookId, req);
+      if (!book) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const assignmentService = getAssignmentService();
+      const result = assignmentService.assignCardsToChapters(bookId, {
+        minConfidence: options.minConfidence,
+        maxAlternatives: options.maxAlternatives,
+        autoApply: options.autoApply,
+      });
+
+      if (result.error && result.batch.proposals.length === 0) {
+        return res.status(400).json({
+          error: result.error,
+          batch: result.batch,
+        });
+      }
+
+      // Broadcast event if any cards were assigned
+      if (result.appliedCount && result.appliedCount > 0) {
+        const db = getDatabase();
+        const timestamp = now();
+        db.prepare('UPDATE books SET updated_at = ? WHERE id = ?').run(timestamp, bookId);
+
+        broadcastEvent({
+          type: 'cards-assigned',
+          bookId,
+          entityType: 'card',
+          payload: {
+            assignedCount: result.appliedCount,
+            totalProposals: result.batch.proposals.length,
+          },
+          timestamp: Date.now(),
+        });
+      }
+
+      res.json({
+        success: true,
+        batch: result.batch,
+        appliedCount: result.appliedCount,
+        message: result.error || `Generated ${result.batch.proposals.length} assignment proposals`,
+      });
+    } catch (err) {
+      console.error('[cards] Assignment failed:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // POST /api/cards/apply-assignments - Apply selected assignment proposals
+  router.post('/apply-assignments', (req: Request, res: Response) => {
+    try {
+      const { bookId, cardIds, chapterAssignments } = req.body;
+
+      if (!bookId || !Array.isArray(cardIds) || !chapterAssignments) {
+        return res.status(400).json({ error: 'bookId, cardIds, and chapterAssignments are required' });
+      }
+
+      // Verify book ownership
+      const book = verifyBookOwnership(bookId, req);
+      if (!book) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const assignmentService = getAssignmentService();
+      const appliedCount = assignmentService.applySelectedProposals(bookId, cardIds, chapterAssignments);
+
+      // Update book's updated_at
+      const db = getDatabase();
+      const timestamp = now();
+      db.prepare('UPDATE books SET updated_at = ? WHERE id = ?').run(timestamp, bookId);
+
+      // Broadcast event
+      broadcastEvent({
+        type: 'cards-assigned',
+        bookId,
+        entityType: 'card',
+        payload: { assignedCount: appliedCount },
+        timestamp: Date.now(),
+      });
+
+      res.json({
+        success: true,
+        appliedCount,
+        message: `Applied ${appliedCount} assignments`,
+      });
+    } catch (err) {
+      console.error('[cards] Apply assignments failed:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // GET /api/cards/assignment-stats - Get assignment statistics for a book
+  router.get('/assignment-stats', (req: Request, res: Response) => {
+    try {
+      const { bookId } = req.query;
+
+      if (!bookId) {
+        return res.status(400).json({ error: 'bookId is required' });
+      }
+
+      // Verify book ownership
+      if (!verifyBookOwnership(bookId as string, req)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const assignmentService = getAssignmentService();
+      const stats = assignmentService.getAssignmentStats(bookId as string);
+
+      res.json({ stats });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }

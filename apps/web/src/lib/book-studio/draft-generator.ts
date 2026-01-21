@@ -59,14 +59,16 @@ function isSubstantialSubset(shorter: string, longer: string, threshold = 0.8): 
  * Deduplicate harvest cards, keeping the most complete/unique versions
  *
  * Strategy:
- * 1. Group cards by high similarity (>0.85 Jaccard)
+ * 1. Group cards by high similarity (configured threshold, default 0.85 Jaccard)
  * 2. From each group, keep the longest/most complete version
  * 3. Also remove cards that are substantial subsets of others
  */
 export function deduplicateCards(
   cards: HarvestCard[],
-  similarityThreshold = 0.85
+  similarityThreshold?: number
 ): { unique: HarvestCard[]; duplicates: HarvestCard[]; stats: DedupeStats } {
+  // Use config value if no threshold provided
+  const threshold = similarityThreshold ?? getConfig().search.similarityThreshold
   if (cards.length <= 1) {
     return { unique: cards, duplicates: [], stats: { original: cards.length, unique: cards.length, removed: 0 } }
   }
@@ -85,7 +87,7 @@ export function deduplicateCards(
       const similarity = jaccardSimilarity(card.content, kept.content)
 
       // High similarity = duplicate
-      if (similarity >= similarityThreshold) {
+      if (similarity >= threshold) {
         isDuplicate = true
         break
       }
