@@ -410,9 +410,28 @@ Test these queries to verify the implementation works:
 - **Phase 4**: GUI State Hook - Not needed; using BookStudioOptional directly
 - **Phase 5**: Smart dispatch - Future enhancement
 
+### Session 2 Bug Fix: Error Visibility
+
+**Commit:** `960811c` fix(aui): show actual errors instead of "I couldn't process that"
+
+**Problem:** User saw "I couldn't process that" for all queries. The actual error was hidden because:
+- Backend sends errors as `role: 'system'` messages
+- Frontend only checked for `role: 'assistant'` messages
+
+**Fix in `apps/web/src/lib/aui/AUIContext.tsx`:**
+- Added check for system messages starting with "Error:"
+- Shows actual error message to user
+- Added helpful message when Ollama is not running
+
+**Fix in `electron/agent-master/prompts/chat.ts`:**
+- Updated all three tiered prompts (tiny, standard, full)
+- Added CONTEXT AWARENESS section explaining workspace state
+- LLM now knows to answer questions from context directly
+- Only use tools for ACTIONS (search, create, modify)
+
 ## Next Steps
 
-1. Test the implementation in the running app
-2. If the context is too long, consider summarizing
-3. Add more vocabulary mappings as user patterns emerge
-4. Consider Phase 5 (smart dispatch) for intent-based tool suggestions
+1. Test the implementation - should now see actual errors
+2. Verify workspace context is being passed correctly
+3. If context is too long, consider summarizing
+4. Add more vocabulary mappings as user patterns emerge
